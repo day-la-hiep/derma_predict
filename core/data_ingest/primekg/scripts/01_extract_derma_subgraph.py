@@ -10,11 +10,15 @@ Mục đích:
 
 Cam kết:
   - Bỏ 100% các nút ngoại lai không thuộc da liễu (tim mạch, thần kinh, tim, xương...).
-  - Chỉ giữ 4 loại quan hệ lâm sàng da liễu:
+  - Chỉ giữ 7 loại quan hệ lâm sàng da liễu:
       1. Bệnh da liễu ↔ Triệu chứng lâm sàng (disease_phenotype)
       2. Bệnh da liễu ↔ Thuốc điều trị (disease_drug / indication)
       3. Bệnh da liễu ↔ Gen / Đột biến di truyền (disease_gene)
       4. Bệnh da liễu ↔ Bệnh da liễu phân biệt (disease_disease)
+      5. Thuốc ↔ Thuốc tương tác (drug_drug)
+      6. Thuốc ↔ Tác dụng phụ/Phenotype (drug_effect)
+      7. Phenotype ↔ Phenotype (phenotype_phenotype)
+      8. Phơi nhiễm ↔ Bệnh da liễu (exposure_disease)
 
 Input : primekg/input/kg.csv (PrimeKG gốc) + byt/output/pdf_guideline_2015.json (mốc neo)
 Output: primekg/output/{derma_nodes.csv, derma_edges.csv, derma_kg.json, entity_mapping.json}
@@ -27,13 +31,17 @@ Sau đó `01_normalize/` gom 2 file CSV vào `01_normalize/output/kg/` và
 """
 
 import argparse
-import os
-import sys
 import csv
+import io
 import json
-import time
+import os
 import re
+import sys
+import time
 from pathlib import Path
+
+# Fix Unicode stdout tren Windows terminal
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 
 SOURCE_DIR = Path(__file__).resolve().parents[1]  # data-ingest/primekg
@@ -98,8 +106,9 @@ strict_derma_regex = re.compile(
     "|".join(STRICT_DERMA_DISEASE_KEYWORDS), flags=re.IGNORECASE
 )
 
-# Chỉ chấp nhận 4 nhóm quan hệ lâm sàng có giá trị chẩn đoán da liễu
+# Chấp nhận 7 nhóm quan hệ lâm sàng có giá trị chẩn đoán da liễu
 ALLOWED_RELATION_TYPES = {
+    # Disease-* (neo vào disease da liễu)
     "disease_phenotype_positive",
     "disease_phenotype_negative",
     "indication",
@@ -108,6 +117,18 @@ ALLOWED_RELATION_TYPES = {
     "disease_protein",
     "disease_gene",
     "disease_disease",
+    # Drug-Drug
+    "drug_drug",
+    # Drug-Effect/Phenotype
+    "drug_effect",
+    # Phenotype-Phenotype
+    "phenotype_phenotype",
+    # Exposure-Disease
+    "exposure_disease",
+    # Quan hệ lâm sàng Bộ Y Tế
+    "disease_typical_location",
+    "disease_risk_factor",
+    "disease_red_flag",
 }
 
 
@@ -141,7 +162,7 @@ def step1_load_guideline_diseases():
     print(
         f"-> Nạp thành công {len(guideline_data)} bệnh lý da liễu chính thức."
     )
-    return seed_disease_names, guideline_map
+    return seed_disease_names, guideline_map, guideline_data
 
 
 def step2_3_extract_pure_derma_subgraph(seed_disease_names, guideline_map):
@@ -243,11 +264,16 @@ def step2_3_extract_pure_derma_subgraph(seed_disease_names, guideline_map):
             x_id, x_type, x_name, x_source = row[3], row[4], row[5], row[6]
             y_id, y_type, y_name, y_source = row[8], row[9], row[10], row[11]
 
-            # CHỈ giữ cạnh nếu một đầu là Nút Bệnh Da Liễu VÀ đầu kia là Triệu chứng, Thuốc hoặc Gen.
-            # Phải so cả `type`: id PrimeKG chỉ duy nhất trong từng loại nút (vd id bệnh MONDO
-            # trùng số với id gen NCBI), so mỗi id sẽ kéo cả cạnh gen-gen, giải phẫu... vào.
-            allowed_other = {"disease", "effect/phenotype", "drug", "gene/protein"}
-            is_valid_edge = (
+            # Giữ cạnh theo 3 nhóm tiêu chí:
+            #  A) Một đầu là Nút Bệnh Da Liễu, đầu kia là disease/phenotype/drug/gene/exposure.
+            #  B) Drug ↔ Drug (drug_drug)
+            #  C) Drug ↔ Effect/Phenotype (drug_effect)
+            #  D) Phenotype ↔ Phenotype (phenotype_phenotype)
+            # Phải so cả `type` vì id PrimeKG chỉ duy nhất trong từng loại nút.
+            allowed_other = {"disease", "effect/phenotype", "drug", "gene/protein", "exposure"}
+
+            # Nhóm A: disease da liễu là một đầu
+            is_disease_edge = (
                 x_type == "disease"
                 and x_id in derma_disease_node_ids
                 and y_type in allowed_other
@@ -255,6 +281,27 @@ def step2_3_extract_pure_derma_subgraph(seed_disease_names, guideline_map):
                 y_type == "disease"
                 and y_id in derma_disease_node_ids
                 and x_type in allowed_other
+            )
+
+            # Nhóm B: drug ↔ drug
+            is_drug_drug = (x_type == "drug" and y_type == "drug")
+
+            # Nhóm C: drug ↔ effect/phenotype
+            is_drug_effect = (
+                (x_type == "drug" and y_type == "effect/phenotype")
+                or (x_type == "effect/phenotype" and y_type == "drug")
+            )
+
+            # Nhóm D: phenotype ↔ phenotype
+            is_phenotype_phenotype = (
+                x_type == "effect/phenotype" and y_type == "effect/phenotype"
+            )
+
+            is_valid_edge = (
+                is_disease_edge
+                or is_drug_drug
+                or is_drug_effect
+                or is_phenotype_phenotype
             )
 
             if is_valid_edge:
@@ -289,6 +336,145 @@ def step2_3_extract_pure_derma_subgraph(seed_disease_names, guideline_map):
     print(f"-> Tổng Cạnh Da Liễu chuẩn: {len(edges_list)}\n")
 
     return nodes_dict, edges_list, entity_mapping
+
+
+def make_clean_node_id(prefix: str, text: str) -> str:
+    s = text.lower().strip()
+    s = re.sub(r"\s+", "_", s)
+    s = re.sub(r"[^\w_]", "", s)
+    return f"{prefix}_{s}"
+
+
+def step3b_enrich_from_guidelines(guideline_data, entity_mapping, nodes_dict, edges_list):
+    print("=" * 75)
+    print(" [BƯỚC 3b] Bổ sung quan hệ lâm sàng Bộ Y Tế (Vị trí, Yếu tố nguy cơ, Cờ đỏ)")
+    print("=" * 75)
+
+    count_loc = 0
+    count_rf = 0
+    count_flag = 0
+
+    for d in guideline_data:
+        byt_id = d.get("id", "").strip()
+        byt_name = d.get("name", "").strip()
+        if not byt_id or not byt_name:
+            continue
+
+        byt_node_id = f"byt_{byt_id}"
+        # Luôn đảm bảo Node bệnh Bộ Y tế có mặt trong graph
+        if byt_node_id not in nodes_dict:
+            nodes_dict[byt_node_id] = {
+                "id": byt_node_id,
+                "name": byt_name,
+                "type": "disease",
+                "source": "BYT",
+            }
+
+        # Danh sách disease nodes để neo quan hệ vào:
+        # 1. Node bệnh tiếng Việt (BYT)
+        # 2. Node bệnh PrimeKG (nếu đã mapping)
+        disease_targets = [(byt_node_id, byt_name)]
+        if byt_id in entity_mapping:
+            pkg_id = entity_mapping[byt_id]["primekg_node_id"]
+            pkg_name = entity_mapping[byt_id]["primekg_node_name"]
+            disease_targets.append((pkg_id, pkg_name))
+
+            # Nối quan hệ giữa nút BYT và PrimeKG
+            edges_list.append({
+                "relation": "disease_disease",
+                "display_relation": "mapped to primekg",
+                "x_id": byt_node_id,
+                "x_name": byt_name,
+                "x_type": "disease",
+                "y_id": pkg_id,
+                "y_name": pkg_name,
+                "y_type": "disease",
+            })
+
+        # 1. Typical locations (Vị trí tổn thương điển hình)
+        for loc in d.get("typical_locations", []):
+            loc_str = str(loc).strip()
+            if not loc_str:
+                continue
+            loc_id = make_clean_node_id("loc", loc_str)
+            if loc_id not in nodes_dict:
+                nodes_dict[loc_id] = {
+                    "id": loc_id,
+                    "name": loc_str,
+                    "type": "typical_location",
+                    "source": "BYT",
+                }
+            for dis_id, dis_name in disease_targets:
+                edges_list.append({
+                    "relation": "disease_typical_location",
+                    "display_relation": "typical location",
+                    "x_id": dis_id,
+                    "x_name": dis_name,
+                    "x_type": "disease",
+                    "y_id": loc_id,
+                    "y_name": loc_str,
+                    "y_type": "typical_location",
+                })
+                count_loc += 1
+
+        # 2. Risk factors (Yếu tố nguy cơ)
+        for rf in d.get("risk_factors", []):
+            rf_str = str(rf).strip()
+            if not rf_str:
+                continue
+            rf_id = make_clean_node_id("rf", rf_str)
+            if rf_id not in nodes_dict:
+                nodes_dict[rf_id] = {
+                    "id": rf_id,
+                    "name": rf_str,
+                    "type": "risk_factor",
+                    "source": "BYT",
+                }
+            for dis_id, dis_name in disease_targets:
+                edges_list.append({
+                    "relation": "disease_risk_factor",
+                    "display_relation": "risk factor",
+                    "x_id": dis_id,
+                    "x_name": dis_name,
+                    "x_type": "disease",
+                    "y_id": rf_id,
+                    "y_name": rf_str,
+                    "y_type": "risk_factor",
+                })
+                count_rf += 1
+
+        # 3. Red flags (Cờ đỏ / Dấu hiệu cảnh báo nguy hiểm)
+        for flag in d.get("red_flags", []):
+            flag_str = str(flag).strip()
+            if not flag_str:
+                continue
+            flag_id = make_clean_node_id("redflag", flag_str)
+            if flag_id not in nodes_dict:
+                nodes_dict[flag_id] = {
+                    "id": flag_id,
+                    "name": flag_str,
+                    "type": "red_flag",
+                    "source": "BYT",
+                }
+            for dis_id, dis_name in disease_targets:
+                edges_list.append({
+                    "relation": "disease_red_flag",
+                    "display_relation": "red flag",
+                    "x_id": dis_id,
+                    "x_name": dis_name,
+                    "x_type": "disease",
+                    "y_id": flag_id,
+                    "y_name": flag_str,
+                    "y_type": "red_flag",
+                })
+                count_flag += 1
+
+    print(f"-> Đã bổ sung thành công:")
+    print(f"   - {count_loc} cạnh disease_typical_location")
+    print(f"   - {count_rf} cạnh disease_risk_factor")
+    print(f"   - {count_flag} cạnh disease_red_flag")
+    print(f"-> Tổng Nút sau khi bổ sung: {len(nodes_dict)}")
+    print(f"-> Tổng Cạnh sau khi bổ sung: {len(edges_list)}\n")
 
 
 def step4_save_outputs(nodes_dict, edges_list, entity_mapping):
@@ -385,9 +571,12 @@ def main():
         "==========================================================================\n"
     )
 
-    seed_disease_names, guideline_map = step1_load_guideline_diseases()
+    seed_disease_names, guideline_map, guideline_data = step1_load_guideline_diseases()
     nodes_dict, edges_list, entity_mapping = (
         step2_3_extract_pure_derma_subgraph(seed_disease_names, guideline_map)
+    )
+    step3b_enrich_from_guidelines(
+        guideline_data, entity_mapping, nodes_dict, edges_list
     )
     step4_save_outputs(nodes_dict, edges_list, entity_mapping)
 

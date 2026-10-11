@@ -66,6 +66,8 @@ def main() -> int:
     nodes = INGEST_DIR / "primekg" / "output" / "derma_nodes.csv"
     edges = INGEST_DIR / "primekg" / "output" / "derma_edges.csv"
     dermo = INGEST_DIR / "dermo" / "output" / "dermo_kg.json"
+    if not dermo.exists() and (OUT_DIR / "dermo" / "dermo_kg.json").exists():
+        dermo = OUT_DIR / "dermo" / "dermo_kg.json"
 
     missing = [p for p in (nodes, edges, dermo) if not p.exists()]
     if missing:
