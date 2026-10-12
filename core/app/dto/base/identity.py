@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from app.common.constant import Gender
+from app.common.constant import Gender, ProfileRelationship
 
 if TYPE_CHECKING:
     # import chéo context chỉ để type-check; vòng tham chiếu được rebuild một lần trong `app/dto/base/__init__.py`
@@ -37,5 +37,10 @@ class PatientProfile(BaseModel):
     full_name: str
     dob: date
     gender: Gender
+    relationship: ProfileRelationship = ProfileRelationship.SELF
+    phone: str | None = None
+    # tự khai, chữ tự do — khác `clinical_facts` (trích từ hội thoại theo template)
+    allergies: str = ""
+    medical_history: str = ""
     medical_records: list[MedicalRecord] = []
     clinical_facts: list[ClinicalFact] = []  # dữ kiện lâm sàng của người bệnh, gom từ nhiều hội thoại hoặc bác sĩ nhập
