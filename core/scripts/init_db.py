@@ -46,7 +46,12 @@ def _restore_documents(s: Session) -> list[str]:
 
     created: list[str] = []
     for d in data["documents"]:
-        if s.get(Document, d["id"]) is not None:
+        existing = s.get(Document, d["id"])
+        if existing is not None:
+            # Seed là nguồn đúng của cấu hình xử lý: ghi đè để sửa profile cũ (key thừa làm `Profile` validate lỗi).
+            if existing.profile != d["profile"]:
+                existing.profile = d["profile"]
+                created.append(f"document {d['id']} (cập nhật profile)")
             continue
         for f in data["files"]:
             if f["id"] in (d["source_file_id"], d["ingested_file_id"]) and s.get(File, f["id"]) is None:
