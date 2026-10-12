@@ -34,6 +34,10 @@ Table patient_profiles {
   full_name varchar(255) [not null]
   dob date [not null]
   gender varchar(16) [not null, note: 'male | female']
+  relationship varchar(16) [not null, default: 'self', note: 'self | child | parent | spouse | other']
+  phone varchar(32) [null]
+  allergies text [not null, default: '', note: 'tự khai']
+  medical_history text [not null, default: '', note: 'tự khai']
   created_at timestamptz [not null]
   Indexes {
     user_id

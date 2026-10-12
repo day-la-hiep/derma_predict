@@ -91,7 +91,7 @@ async def create_conversation(
         conversation = await service.create_conversation(body.model_copy(update={"user_id": current_user.id}))
     except PatientProfileNotFoundError as exc:
         raise HTTPException(
-            status_code=400, detail="Tài khoản chưa có hồ sơ bệnh nhân."
+            status_code=400, detail="Không tìm thấy hồ sơ bệnh nhân của tài khoản."
         ) from exc
     return ApiResponse(data=conversation)
 

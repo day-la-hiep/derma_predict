@@ -32,7 +32,7 @@ Trạng thái được đối chiếu với code ngày **2026-10-05** (nhánh `f
 | M3 | Clinical fact & báo cáo tiền tư vấn | Bệnh nhân → Bác sĩ | 🟡 mới có schema | — |
 | M4 | Tư vấn trực tiếp với bác sĩ (chat / video) | Bệnh nhân, Bác sĩ | 🟡 mới có schema | — |
 | M5 | Đặt lịch khám | Bệnh nhân, Bác sĩ | ⏸ hoãn (ngoài scope hiện tại) | — |
-| M6 | Hồ sơ bệnh nhân & bệnh án | Bệnh nhân, Bác sĩ | 🟡 mới có schema (hồ sơ, bệnh án, ảnh) | — |
+| M6 | Hồ sơ bệnh nhân & bệnh án | Bệnh nhân, Bác sĩ | 🟡 bệnh nhân quản lý hồ sơ + xem bệnh án; phía bác sĩ chưa có | — |
 | M7 | Ca bệnh & ảnh đã xác nhận (dữ liệu CNN) | Bác sĩ | 🟡 mới có cột nhãn ảnh | — |
 | M8 | Knowledge Graph | Bác sĩ, Chatbot | 🟡 agent tra được, chưa trực quan hoá | — |
 | M9 | Quản lý Knowledge Base (tài liệu y khoa) | Bác sĩ (hiện là Admin) | 🟡 nạp sách PDF xong, chatbot chưa dùng | [book-ingest-pipeline.md](../module/book-ingest-pipeline.md) |
@@ -96,8 +96,8 @@ Trạng thái được đối chiếu với code ngày **2026-10-05** (nhánh `f
 
 | Mã | Chức năng | Trạng thái | Hiện trạng / việc cần làm |
 |---|---|---|---|
-| M6.1 | Quản lý hồ sơ bệnh nhân (một tài khoản nhiều hồ sơ, ví dụ cho người nhà) | 🟡 | bảng `patient_profiles` có, seed sẵn; tạo hội thoại bắt buộc có hồ sơ. Chưa có API CRUD / UI |
-| M6.2 | Bệnh án / lịch sử khám | 🟡 | đã có schema: `PatientProfile.medical_records` → bảng `medical_records` (bác sĩ ghi, gắn phiên tư vấn), ảnh bệnh trong `patient_images`. Chưa có API / UI |
+| M6.1 | Quản lý hồ sơ bệnh nhân (một tài khoản nhiều hồ sơ, ví dụ cho người nhà) | ✅ | API `/patient-profiles` (CRUD theo tài khoản trong JWT; chặn xoá hồ sơ cuối / hồ sơ đã có hội thoại hoặc bệnh án). Hồ sơ có quan hệ, SĐT, dị ứng và tiền sử tự khai. UI: dialog "Hồ sơ" ở menu tài khoản + chọn hồ sơ cho cuộc trò chuyện mới ở sidebar chat |
+| M6.2 | Bệnh án / lịch sử khám | 🟡 | bệnh nhân xem được bệnh án của từng hồ sơ (chỉ đọc, `GET /patient-profiles/{id}/medical-records`, tab "Bệnh án"); seed 2 bệnh án mẫu cho `user-1`. Bác sĩ ghi bệnh án chưa làm (M6.5); ảnh bệnh trong `patient_images` chưa có API |
 | M6.3 | Thư viện ảnh bệnh đã lưu của bệnh nhân | 🟡 | ảnh chat nằm trong `files` + `message_files`; ảnh đã gắn bệnh án nằm trong `patient_images`. Chưa có màn xem tập trung |
 | M6.4 | Bác sĩ xem hồ sơ + lịch sử bệnh án của bệnh nhân | 🔲 | phụ thuộc M1.4, M6.2 |
 | M6.5 | Bác sĩ cập nhật hồ sơ / bệnh án sau mỗi lượt khám | 🔲 | phụ thuộc M6.2 |

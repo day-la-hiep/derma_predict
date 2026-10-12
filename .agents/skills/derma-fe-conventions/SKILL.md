@@ -18,7 +18,7 @@ structure) — trust this skill and the code over it.
 | Path | Owns | Must not |
 |---|---|---|
 | `app/` | Next.js App Router routes only (`page.tsx` = thin, imports a feature component) | hold business logic or API calls |
-| `app/providers.tsx` | app-wide providers: `ThemeProvider`, `TooltipProvider`, `AccessGate`, `Toaster` | |
+| `app/providers.tsx` | app-wide providers: `QueryClientProvider` (TanStack Query cho mọi trang; khu bác sĩ còn client riêng trong `components/layout/app-shell.tsx`), `ThemeProvider`, `TooltipProvider`, `AccessGate`, `Toaster` | |
 | `app/access-gate.tsx` | login gate: shows `features/auth` `AuthScreen` until a JWT is stored (see Gotchas) | |
 | `components/ui/` | shadcn primitives (`components.json`: style `new-york`, baseColor `neutral`) — generated/edited via shadcn conventions | hold feature-specific logic |
 | `features/<name>/` | one folder per feature: `types.ts`, `api.ts` (axios calls + `unwrap`), `hooks.ts` (TanStack Query) or `store.ts` (Zustand), `constants.ts`, `components/` | import another feature's internals directly (go through its exported hooks/store) |
@@ -45,6 +45,10 @@ every response in `{ data: T }` — `ApiResponse[T]` on the Python side, see
 query keys (`qk`), and polls (`refetchInterval`) while a pipeline stage is `running` instead of
 needing a push channel. `useRefreshDocument` is the one place that invalidates — call it from every
 mutation's `onSuccess`, don't invalidate ad hoc in components.
+
+**Patient profile (`features/patient-profile/`)** — same TanStack pattern (`profileApi` + `hooks.ts` with `qk`), plus a tiny
+persisted Zustand store for the UI choice `activeProfileId`; `features/chat/store.ts` reads it via `getActiveProfileId()`
+when creating a conversation (`patient_profile_id` in the body).
 
 **Rule of thumb:** server pushes deltas you must splice into existing state in real time → a
 Zustand store like chat's. Everything else (CRUD + polling) → TanStack Query hooks like

@@ -11,6 +11,7 @@ class ModelOption(BaseModel):
 
 class ConversationOutput(BaseModel):
     id: str
+    patient_profile_id: str
     title: str
     model: str
     created_at: str

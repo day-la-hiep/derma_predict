@@ -24,6 +24,7 @@ from app.infra.redis_client import RedisClient
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.file_repository import FileRepository
 from app.repositories.message_repository import MessageRepository
+from app.repositories.medical_record_repository import MedicalRecordRepository
 from app.repositories.patient_profile_repository import PatientProfileRepository
 from app.services.file_store_service import FileStoreService
 from app.repositories.document_repository import DocumentRepository
@@ -32,6 +33,7 @@ from app.services.conversation_service import ConversationService
 from app.services.knowledge_base_service import KnowledgeBaseService
 from app.services.knowledge_graph_service import KnowledgeGraphService
 from app.services.message_service import MessageService
+from app.services.patient_profile_service import PatientProfileService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
 
 T = TypeVar("T")
@@ -182,6 +184,23 @@ def get_patient_profile_repository(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PatientProfileRepository:
     return PatientProfileRepository(db)
+
+
+def get_medical_record_repository(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> MedicalRecordRepository:
+    return MedicalRecordRepository(db)
+
+
+def get_patient_profile_service(
+    patient_profile_repository: Annotated[
+        PatientProfileRepository, Depends(get_patient_profile_repository)
+    ],
+    medical_record_repository: Annotated[
+        MedicalRecordRepository, Depends(get_medical_record_repository)
+    ],
+) -> PatientProfileService:
+    return PatientProfileService(patient_profile_repository, medical_record_repository)
 
 
 def get_message_repository(

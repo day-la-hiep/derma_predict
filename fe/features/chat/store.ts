@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { chatService } from "@/services";
 import { getCurrentUserId } from "@/services/client";
+import { getActiveProfileId } from "@/features/patient-profile/store";
 import { MODEL_OPTIONS } from "./constants";
 import type {
   ChatMessage,
@@ -545,6 +546,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           try {
             const conversation = await chatService.createConversation({
               userId: getCurrentUserId(),
+              patientProfileId: getActiveProfileId(),
               // Không seed content ở đây — sendMessage bên dưới sẽ gửi tin
               // đầu tiên (tránh trùng lặp user message ở turn đầu).
               content: "",

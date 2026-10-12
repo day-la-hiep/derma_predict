@@ -1,7 +1,7 @@
 """Khởi tạo dữ liệu cho môi trường mới"""
 import json
 import sys
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # chạy được từ `core/` mà không cần cài package
@@ -17,6 +17,7 @@ from app.models.admin import Admin  # noqa: E402
 from app.models.doctor import Doctor  # noqa: E402
 from app.models.document import Document, DocumentOverride, DocumentStage  # noqa: E402
 from app.models.file import File  # noqa: E402
+from app.models.medical_record import MedicalRecord  # noqa: E402
 from app.models.patient_profile import PatientProfile  # noqa: E402
 from app.models.user import User  # noqa: E402
 
@@ -33,6 +34,25 @@ DOCTORS = [{"user_id": "doctor-1", "description": "Bác sĩ chuyên khoa Da li�
 ADMINS = [{"user_id": "admin-1"}]
 DOCUMENTS_SEED = Path(__file__).with_name("seed_documents.json")  # sinh bằng `export_documents_seed.py`
 PROFILE_OWNERS = ["user-1"]  # tài khoản bệnh nhân cần hồ sơ "chính mình" để tạo hội thoại
+# bệnh án mẫu để màn "Bệnh án" của bệnh nhân có dữ liệu khi demo (chưa có màn bác sĩ ghi bệnh án)
+MEDICAL_RECORDS = [
+    {
+        "id": "mr-user-1-1",
+        "patient_profile_id": "pp-user-1-self",
+        "doctor_id": "doctor-1",
+        "diagnosis": "Viêm da cơ địa (chàm thể tạng) mức độ nhẹ",
+        "notes": "Ngứa nhiều về đêm, mảng da khô ở khuỷu tay. Dưỡng ẩm 2 lần/ngày, tránh xà phòng mạnh; tái khám sau 4 tuần.",
+        "created_at": datetime(2026, 8, 3, 9, 30, tzinfo=UTC),
+    },
+    {
+        "id": "mr-user-1-2",
+        "patient_profile_id": "pp-user-1-self",
+        "doctor_id": "doctor-1",
+        "diagnosis": "Viêm da cơ địa — tái khám, cải thiện",
+        "notes": "Giảm ngứa, da bớt khô. Tiếp tục dưỡng ẩm, hẹn tái khám khi có đợt bùng phát.",
+        "created_at": datetime(2026, 9, 1, 10, 0, tzinfo=UTC),
+    },
+]
 
 
 def _restore_documents(s: Session) -> list[str]:
@@ -110,6 +130,11 @@ def _seed(s: Session) -> list[str]:
             u = next(x for x in USERS if x["id"] == owner)
             s.add(PatientProfile(id=pid, user_id=owner, full_name=u["full_name"], dob=u["dob"], gender=u["gender"]))
             created.append(f"patient_profile {pid}")
+    s.flush()
+    for r in MEDICAL_RECORDS:
+        if s.get(MedicalRecord, r["id"]) is None:
+            s.add(MedicalRecord(**r))
+            created.append(f"medical_record {r['id']}")
     s.commit()
     return created
 
