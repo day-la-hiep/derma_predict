@@ -6,6 +6,16 @@ class Gender(str, Enum):
     FEMALE = "female"
 
 
+class ProfileRelationship(str, Enum):
+    """Quan hệ của hồ sơ bệnh nhân với chủ tài khoản (một tài khoản quản lý hồ sơ cho cả người nhà)."""
+
+    SELF = "self"
+    CHILD = "child"
+    PARENT = "parent"
+    SPOUSE = "spouse"
+    OTHER = "other"
+
+
 class MessageType(str, Enum):
     TEXT = "text"
     VIDEO_CALL = "video_call"

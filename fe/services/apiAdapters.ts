@@ -23,6 +23,7 @@ import type {
 
 export interface ApiConversation {
   id: string;
+  patient_profile_id?: string;
   title: string;
   created_at: string;
   updated_at: string;
@@ -120,6 +121,7 @@ export interface ApiSendMessageBody {
 export function toConversation(a: ApiConversation): Conversation {
   return {
     id: a.id,
+    patientProfileId: a.patient_profile_id,
     title: a.title ?? "",
     createdAt: a.created_at,
     updatedAt: a.updated_at ?? a.created_at,

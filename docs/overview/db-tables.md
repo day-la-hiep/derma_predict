@@ -67,6 +67,10 @@ Một tài khoản quản lý được **nhiều hồ sơ** (bản thân, ngư�
 | `full_name` | varchar(255) | không | Họ tên người bệnh (có thể khác chủ tài khoản). |
 | `dob` | date | không | Ngày sinh người bệnh. |
 | `gender` | varchar(16) | không | `male` \| `female`. |
+| `relationship` | varchar(16) | không | Quan hệ với chủ tài khoản: `self` \| `child` \| `parent` \| `spouse` \| `other`. Mặc định `self`. |
+| `phone` | varchar(32) | có | SĐT liên hệ của người bệnh. |
+| `allergies` | text | không | Dị ứng **tự khai** (chữ tự do), mặc định `''`. Khác `clinical_facts` (trích từ hội thoại theo template). |
+| `medical_history` | text | không | Tiền sử bệnh **tự khai**, mặc định `''`. |
 | `created_at` | timestamptz | không | Thời điểm tạo hồ sơ. |
 
 ### `doctors` — vai trò bác sĩ

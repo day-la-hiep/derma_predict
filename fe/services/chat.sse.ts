@@ -61,11 +61,17 @@ const impl = {
             userId: input?.userId ?? getCurrentUserId(),
             content: input?.content ?? "",
             title: input?.title ?? "",
+            patientProfileId: input?.patientProfileId ?? null,
           };
 
     const { data } = await api.post<{ data: ApiConversation }>(
       endpoints.conversations,
-      { user_id: payload.userId, content: payload.content, title: payload.title }
+      {
+        user_id: payload.userId,
+        content: payload.content,
+        title: payload.title,
+        patient_profile_id: payload.patientProfileId || undefined,
+      }
     );
     return toConversation(data.data);
   },

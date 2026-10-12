@@ -78,6 +78,7 @@ export interface ChatMessage {
 
 export interface Conversation {
   id: string;
+  patientProfileId?: string;
   title: string;
   createdAt: string;
   updatedAt: string;
@@ -234,6 +235,8 @@ export interface CreateConversationInput {
   /** tin nhắn đầu tiên — cùng tên `Message.content` ở base */
   content: string;
   title?: string;
+  /** hồ sơ bệnh nhân của hội thoại; bỏ trống = backend dùng hồ sơ tạo sớm nhất */
+  patientProfileId?: string | null;
 }
 
 /** Input nội bộ store → chatService. Adapter (services/apiAdapters.ts) map sang wire body. */

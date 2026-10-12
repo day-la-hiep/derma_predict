@@ -9,13 +9,16 @@ import {
   Plus,
   Settings,
   Stethoscope,
+  UserRound,
   X,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { getInitials } from "@/features/user";
 import { logout } from "@/features/auth/logout";
 import { getAuthenticatedUser, type AuthenticatedUser } from "@/services/client";
 import { SettingsDialog } from "@/features/settings/components/SettingsDialog";
-import { Button } from "@/components/ui/button";
+import { ProfileSwitcher } from "@/features/patient-profile/components/ProfileSwitcher";
+import { useActiveProfile } from "@/features/patient-profile/hooks";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -44,23 +47,48 @@ import {
 import { useChatStore } from "../store";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
+type MainView = "chat" | "profile";
+
+// style dòng chọn dùng chung cho mọi mục của sidebar (tác vụ phía trên, hội thoại phía dưới)
+const selectedRow = "bg-brand/10 text-brand font-medium border border-brand/25 shadow-xs";
+const unselectedRow = "text-muted-foreground hover:bg-muted/70 hover:text-foreground border border-transparent";
+
 function SidebarInner({
   collapsed,
+  activeView,
   onClose,
   onToggleCollapse,
+  onOpenProfile,
+  onNewChat,
+  onSelectConversation,
   setSettingsOpen,
 }: {
   collapsed: boolean;
+  activeView: MainView;
   onClose: () => void;
   onToggleCollapse: () => void;
+  onOpenProfile: () => void;
+  onNewChat: () => void;
+  onSelectConversation: (id: string) => void;
   setSettingsOpen: (open: boolean) => void;
 }) {
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
-  const conversations = useChatStore((s) => s.conversations);
+  const allConversations = useChatStore((s) => s.conversations);
   const activeId = useChatStore((s) => s.activeId);
   const loading = useChatStore((s) => s.loadingConversations);
-  const startNewChat = useChatStore((s) => s.startNewChat);
-  const selectConversation = useChatStore((s) => s.selectConversation);
+  // gọi cả khi thu gọn: giữ hồ sơ đang chọn hợp lệ dù switcher bị ẩn
+  const { activeProfile } = useActiveProfile();
+  // hội thoại không có `patientProfileId` (mock) thì vẫn hiện
+  const conversations = activeProfile
+    ? allConversations.filter((c) => !c.patientProfileId || c.patientProfileId === activeProfile.id)
+    : allConversations;
+  // "Cuộc trò chuyện mới" được coi là đang chọn khi chưa vào hội thoại nào (chưa gửi tin đầu tiên)
+  const isNewChatActive = activeView === "chat" && activeId === null;
+  const handleSwitchProfile = (profileId: string) => {
+    // hội thoại đang mở thuộc hồ sơ khác thì về màn hội thoại mới, tránh gửi tiếp vào hồ sơ cũ
+    const open = allConversations.find((c) => c.id === activeId);
+    if (open?.patientProfileId && open.patientProfileId !== profileId) onNewChat();
+  };
 
   useEffect(() => {
     setCurrentUser(getAuthenticatedUser());
@@ -139,34 +167,55 @@ function SidebarInner({
         </div>
       </SidebarHeader>
 
-      {/* Tác vụ Cuộc trò chuyện mới */}
-      <SidebarGroup className={cn("py-3 overflow-hidden transition-all border-b border-border/60", collapsed ? "px-0 flex justify-center" : "px-3")}>
-        <SidebarMenu className="w-full">
-          <SidebarMenuItem className="w-full flex justify-center">
-            <SidebarMenuButton
-              size="lg"
-              onClick={() => {
-                startNewChat();
-                onClose();
-              }}
-              tooltip="Cuộc trò chuyện mới"
-              className={cn(
-                "rounded-xl bg-gradient-to-r from-[var(--brand)] to-[var(--brand-secondary,#4d7cff)] text-brand-foreground font-medium text-xs shadow-xs transition-all hover:shadow-accent hover:-translate-y-0.5 active:scale-[0.98] overflow-hidden cursor-pointer",
-                collapsed
-                  ? "size-9 p-0 justify-center mx-auto"
-                  : "w-full justify-start gap-2.5 px-3.5 py-2.5"
-              )}
-            >
-              <Plus className="size-4 shrink-0" />
-              {!collapsed && (
-                <span className="whitespace-nowrap truncate text-xs font-semibold">
-                  Cuộc trò chuyện mới
-                </span>
-              )}
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      {/* Tác vụ phía trên: cuộc trò chuyện mới + các chức năng bên cạnh chat (hiện chỉ có Hồ sơ) — dạng list tối giản,
+          dòng đang được chọn tô nền giống mục hội thoại đang mở bên dưới */}
+      <SidebarGroup className={cn("py-3 overflow-hidden transition-all", collapsed ? "px-0 flex justify-center" : "px-3")}>
+        <div className={cn("flex w-full flex-col gap-1", collapsed && "items-center")}>
+          <SidebarMenuButton
+            size="lg"
+            onClick={() => {
+              onNewChat();
+              onClose();
+            }}
+            tooltip="Cuộc trò chuyện mới"
+            className={cn(
+              "rounded-xl transition-colors cursor-pointer",
+              isNewChatActive ? selectedRow : unselectedRow,
+              collapsed ? "size-9 p-0 justify-center" : "w-full justify-start gap-2.5 px-3 py-2"
+            )}
+          >
+            <Plus className="size-4 shrink-0" />
+            {!collapsed && (
+              <span className="whitespace-nowrap truncate text-xs">
+                Cuộc trò chuyện mới
+              </span>
+            )}
+          </SidebarMenuButton>
+          <SidebarMenuButton
+            size="lg"
+            onClick={onOpenProfile}
+            tooltip="Hồ sơ"
+            className={cn(
+              "rounded-xl transition-colors cursor-pointer",
+              activeView === "profile" ? selectedRow : unselectedRow,
+              collapsed ? "size-9 p-0 justify-center" : "w-full justify-start gap-2.5 px-3 py-2"
+            )}
+          >
+            <UserRound className="size-4 shrink-0" />
+            {!collapsed && <span className="whitespace-nowrap truncate text-xs">Hồ sơ</span>}
+          </SidebarMenuButton>
+        </div>
       </SidebarGroup>
+
+      {/* Chọn hồ sơ cho cuộc trò chuyện mới — tách khỏi nhóm chức năng phía trên để không bị hiểu nhầm là một mục điều hướng */}
+      {!collapsed && (
+        <div className="border-y border-border/60 bg-muted/30 px-3 py-2.5">
+          <span className="mb-1.5 block font-mono text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground">
+            Hồ sơ đang dùng
+          </span>
+          <ProfileSwitcher onSwitch={handleSwitchProfile} />
+        </div>
+      )}
 
       {/* Nhãn nhóm */}
       {!collapsed && (
@@ -186,6 +235,9 @@ function SidebarInner({
           <SidebarGroup className="p-0">
             <SidebarGroupContent>
               <SidebarMenu className="gap-1">
+                {!loading && conversations.length === 0 && (
+                  <p className="px-2 py-3 text-xs text-muted-foreground">Chưa có cuộc trò chuyện</p>
+                )}
                 {loading && conversations.length === 0 ? (
                   <div className="flex flex-col gap-1.5 p-1">
                     {[0, 1, 2].map((i) => (
@@ -194,20 +246,18 @@ function SidebarInner({
                   </div>
                 ) : (
                   conversations.map((conversation) => {
-                    const isActive = activeId === conversation.id;
+                    const isActive = activeView === "chat" && activeId === conversation.id;
                     return (
                       <SidebarMenuItem key={conversation.id}>
                         <SidebarMenuButton
                           isActive={isActive}
                           onClick={() => {
-                            selectConversation(conversation.id);
+                            onSelectConversation(conversation.id);
                             onClose();
                           }}
                           className={cn(
                             "h-auto w-full flex-col items-start gap-1 rounded-xl px-3 py-2.5 text-left transition-all duration-200 cursor-pointer overflow-hidden whitespace-nowrap",
-                            isActive
-                              ? "bg-brand/10 text-brand font-medium border border-brand/25 shadow-xs"
-                              : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                            isActive ? selectedRow : "border border-transparent text-muted-foreground hover:bg-muted/70 hover:text-foreground"
                           )}
                         >
                           <span className="w-full truncate text-xs">
@@ -289,13 +339,21 @@ function SidebarInner({
 export function ChatSidebar({
   open,
   collapsed,
+  activeView,
   onClose,
   onToggleCollapse,
+  onOpenProfile,
+  onNewChat,
+  onSelectConversation,
 }: {
   open: boolean;
   collapsed: boolean;
+  activeView: MainView;
   onClose: () => void;
   onToggleCollapse: () => void;
+  onOpenProfile: () => void;
+  onNewChat: () => void;
+  onSelectConversation: (id: string) => void;
 }) {
   const init = useChatStore((s) => s.init);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -312,8 +370,12 @@ export function ChatSidebar({
           <SheetTitle className="sr-only">Thanh bên điều hướng</SheetTitle>
           <SidebarInner
             collapsed={false}
+            activeView={activeView}
             onClose={onClose}
             onToggleCollapse={onToggleCollapse}
+            onOpenProfile={onOpenProfile}
+            onNewChat={onNewChat}
+            onSelectConversation={onSelectConversation}
             setSettingsOpen={setSettingsOpen}
           />
         </SheetContent>
@@ -328,8 +390,12 @@ export function ChatSidebar({
       >
         <SidebarInner
           collapsed={collapsed}
+          activeView={activeView}
           onClose={onClose}
           onToggleCollapse={onToggleCollapse}
+          onOpenProfile={onOpenProfile}
+          onNewChat={onNewChat}
+          onSelectConversation={onSelectConversation}
           setSettingsOpen={setSettingsOpen}
         />
       </aside>

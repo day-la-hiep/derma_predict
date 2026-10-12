@@ -14,7 +14,7 @@ class ConversationNotFoundError(Exception):
 
 
 class PatientProfileNotFoundError(Exception):
-    """Tài khoản chưa có hồ sơ bệnh nhân nào — hội thoại bắt buộc gắn hồ sơ (`Conversation.patient`)."""
+    """Không có hồ sơ dùng được (tài khoản chưa có hồ sơ, hoặc hồ sơ được chọn không thuộc tài khoản)."""
 
 
 class ConversationService:
@@ -38,8 +38,10 @@ class ConversationService:
         self, body: CreateConversationInput
     ) -> ConversationOutput:
         """Tạo hội thoại + lưu `content`"""
-        # API chưa cho chọn hồ sơ -> dùng hồ sơ mặc định (tạo sớm nhất) của tài khoản
-        profile = await self._patient_profiles.first_for_user(body.user_id)
+        if body.patient_profile_id:
+            profile = await self._patient_profiles.get_for_user(body.user_id, body.patient_profile_id)
+        else:
+            profile = await self._patient_profiles.first_for_user(body.user_id)
         if profile is None:
             raise PatientProfileNotFoundError(body.user_id)
         conversation = Conversation(
@@ -70,6 +72,7 @@ class ConversationService:
 def _to_output(conversation: Conversation) -> ConversationOutput:
     return ConversationOutput(
         id=conversation.id,
+        patient_profile_id=conversation.patient_profile_id,
         title=conversation.title,
         model=conversation.model,
         created_at=conversation.created_at.isoformat(),

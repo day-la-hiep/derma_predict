@@ -17,6 +17,7 @@ class CreateConversationInput(BaseModel):
 
     user_id: str
     content: str
+    patient_profile_id: str | None = None
     title: str | None = None
     # id trong `AGENT_MODEL_CHOICES` (`app/config/settings.py`) — bỏ trống dùng
     # `AGENT_DEFAULT_MODEL_ID`.
