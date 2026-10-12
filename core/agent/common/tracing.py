@@ -6,6 +6,7 @@ from uuid import UUID
 
 from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.messages import AIMessage
+from langchain_core.messages.utils import count_tokens_approximately
 from langchain_core.outputs import ChatGeneration, LLMResult
 
 logger = logging.getLogger("agent.trace")
@@ -66,7 +67,10 @@ class TraceCallback(AsyncCallbackHandler):
     async def on_chat_model_start(self, serialized: dict[str, Any] | None, messages: list[list[Any]], *, run_id: UUID,
                                   metadata: dict[str, Any] | None = None, **kwargs: Any) -> None:
         self._begin(run_id)
-        logger.info("LLM  ▶ %s (%d tin nhắn trong ngữ cảnh)", _model_name(serialized, metadata), len(messages[0]) if messages else 0)
+        prompt = messages[0] if messages else []
+        # Ước lượng (~4 ký tự/token) vì số token thật chỉ có sau khi provider trả lời; không tính schema tool.
+        logger.info("LLM  ▶ %s (%d tin nhắn, ~%d token ngữ cảnh)", _model_name(serialized, metadata), len(prompt),
+                    count_tokens_approximately(prompt))
 
     async def on_llm_end(self, response: LLMResult, *, run_id: UUID, **kwargs: Any) -> None:
         gen = response.generations[0][0] if response.generations and response.generations[0] else None
@@ -75,7 +79,8 @@ class TraceCallback(AsyncCallbackHandler):
         if isinstance(message, AIMessage):
             usage = message.usage_metadata
             if usage:
-                parts.append(f"token in={usage.get('input_tokens', '?')} out={usage.get('output_tokens', '?')}")
+                parts.append(f"token in={usage.get('input_tokens', '?')} out={usage.get('output_tokens', '?')} "
+                             f"total={usage.get('total_tokens', '?')}")
             if message.tool_calls:
                 parts.append("tool_calls=" + ",".join(c["name"] for c in message.tool_calls))
             else:

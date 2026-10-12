@@ -52,7 +52,7 @@ uv run python $E/experiment.py --cases $E/examples/cases.json --variants $E/exam
   calls, §3), plus the case's `expect_tools`/`forbid_tools`. Exit code 1 if any run errors or fails.
 - `examples/ask_policy.json` checks the ask-now (`ask_user`) vs answer-and-ask-later policy in
   SYSTEM_PROMPT §6; run it with `--repeat 3` since single runs are noisy.
-- `examples/expand_cases.json` + `examples/expand_variants.json` were written for the removed `expand_entity_context` tool (now `hybrid_retrieval`'s KG leg / `knowledge_graph_search`) — rewrite them
+- `examples/expand_cases.json` + `examples/expand_variants.json` were written for the removed `expand_entity_context` tool (now `knowledge_graph_query`) — rewrite them
   before reuse. In general the "without" variant still names the tool in the system prompt, so the model may call it and get an
   invalid-tool error — read `tool_errors` before trusting an A/B.
 - Typical loop: change `agent/prompt/orchestrator.py` or a tool docstring (or pass the change as a

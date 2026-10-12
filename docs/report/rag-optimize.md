@@ -13,7 +13,7 @@ câu hỏi ─► LLM trích thực thể y khoa (tên Anh + tên Việt)
                                          Qwen3-Reranker chấm (câu hỏi, đoạn) ─► top_k kèm nguồn (sách, mục, trang)
 ```
 
-Tool mặc định của agent là `hybrid_retrieval`; ba tool chuyên biệt `semantic_search`, `keyword_search`, `knowledge_graph_search` dùng khi đã biết cần loại thông tin nào. Kết quả luôn kèm nguồn trích dẫn và ghi rõ chỉ là gợi ý, không phải chẩn đoán.
+Tool mặc định của agent là `hybrid_retrieval`; hai tool chuyên biệt `semantic_search`, `keyword_search` dùng khi đã biết cần loại thông tin nào; `knowledge_graph_query(intent, entities)` là tool riêng tra đồ thị theo mục đích. Kết quả luôn kèm nguồn trích dẫn và ghi rõ chỉ là gợi ý, không phải chẩn đoán.
 
 ## 2. Những việc đã làm
 

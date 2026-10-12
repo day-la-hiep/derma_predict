@@ -28,7 +28,7 @@ chat graph:   START ──▶ triage ──answer──▶ END                (t
                            │
                            └─diagnose / lỗi / có ảnh──▶ pre_diagnosis ──▶ END
                                                           │
-graph tiền chẩn đoán (create_agent):  model ⇄ tools ... (record_reasoning, hybrid_retrieval + semantic_search / keyword_search / knowledge_graph_search chuyên biệt, ask_user...)
+graph tiền chẩn đoán (create_agent):  model ⇄ tools ... (record_reasoning, hybrid_retrieval (sách) + semantic_search / keyword_search chuyên biệt + knowledge_graph_query (đồ thị theo intent), ask_user...)
 ```
 
 Một turn **không có số bước cố định**: model quyết định gọi tool nào, mấy lần; turn kết thúc khi model
@@ -115,7 +115,7 @@ Middleware của **graph tiền chẩn đoán**, thứ tự trong `default_middl
 | `inject_long_term_memory` | `wrap_model_call` | Tìm memory dài hạn liên quan tin nhắn gần nhất rồi chèn vào system message (`tools/memory.py`). |
 | `force_reasoning` | `wrap_model_call` | Ngay sau một đợt kết quả tool, ép model gọi `record_reasoning` trước khi đi tiếp. |
 | `enforce_initial_reasoning` | `after_model` | Lưới an toàn: model chưa lập luận mà đã trả lời / gọi tool thì bắt làm lại (tối đa `MAX_REASONING_RETRIES`, hết lượt thì cho qua). |
-| `evidence_rules` | `wrap_model_call` | Lượt đã tra cứu (`hybrid_retrieval`, `semantic_search`, `keyword_search`, `knowledge_graph_search`, web) mà **không có bằng chứng** (không có đoạn sách `source="book"`, không có trang web; quan hệ đồ thị và kết quả ảnh không tính) thì thêm quy tắc cứng vào system prompt trước mỗi lần gọi model: không nêu tên bệnh / xếp hạng / độ tin cậy / lời khuyên điều trị, chỉ nói rõ chưa tra cứu được, nhắc lại lời người dùng, hỏi thêm hoặc khuyên khám. |
+| `evidence_rules` | `wrap_model_call` | Lượt đã tra cứu (`hybrid_retrieval`, `semantic_search`, `keyword_search`, `knowledge_graph_query`, web) mà **không có bằng chứng** (không có đoạn sách `source="book"`, không có trang web; quan hệ đồ thị và kết quả ảnh không tính) thì thêm quy tắc cứng vào system prompt trước mỗi lần gọi model: không nêu tên bệnh / xếp hạng / độ tin cậy / lời khuyên điều trị, chỉ nói rõ chưa tra cứu được, nhắc lại lời người dùng, hỏi thêm hoặc khuyên khám. |
 | `evidence_answer_check` | `after_model` | Lưới an toàn: câu trả lời cuối vẫn nhắc tên giả thuyết đã nêu khi không có bằng chứng thì bắt viết lại (tối đa 2 lần; bản nháp có thể đã stream ra, giới hạn đã biết). |
 | `emit_tool_result` | `wrap_tool_call` | Sau mỗi tool: ghi một bước `type="tool"` vào `AgentContext.reasoning_steps` và phát `message.tool_result`. |
 
