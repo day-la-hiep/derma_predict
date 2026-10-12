@@ -72,11 +72,11 @@ def trim(text: str) -> str:
     return text if len(text) <= CHUNK_MAX_CHARS else text[: CHUNK_MAX_CHARS - 1] + "…"
 
 
-# Phenotype của bệnh (kèm độ hiếm `degree`, phenotype nối càng ít nút càng đặc hiệu) để chọn câu hỏi phân biệt.
+# Phenotype của bệnh (kèm độ hiếm `degree` = số bệnh nối tới, càng ít càng đặc hiệu; không đếm cạnh thuốc/phenotype khác) để chọn câu hỏi phân biệt.
 _DISEASE_PHENOTYPES_QUERY = """
 MATCH (d:Entity {type: 'disease'}) WHERE d.id IN $dids
 MATCH (d)-[:DISEASE_PHENOTYPE_POSITIVE]-(p:Entity {type: 'effect/phenotype'})
-RETURN d.id AS did, p.id AS pid, p.name AS pname, COUNT { (p)--() } AS degree
+RETURN d.id AS did, p.id AS pid, p.name AS pname, COUNT { (p)-[:DISEASE_PHENOTYPE_POSITIVE]-() } AS degree
 """
 
 

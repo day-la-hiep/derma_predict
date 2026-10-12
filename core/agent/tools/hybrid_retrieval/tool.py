@@ -7,7 +7,8 @@ from langchain_core.tools import tool
 
 from agent.tools.hybrid_retrieval.bm25 import bm25_search
 from agent.tools.hybrid_retrieval.fusion import book_result, fallback_top, merge_chunks
-from agent.tools.hybrid_retrieval.kg import ExtractedEntity, extract_entities, kg_search
+from agent.tools.hybrid_retrieval.kg import ExtractedEntity, extract_entities
+from agent.tools.hybrid_retrieval.kg_templates import INTENTS, Intent, run_intent
 from agent.tools.hybrid_retrieval.reranker import rerank
 from agent.tools.hybrid_retrieval.semantic import semantic_search as semantic_leg
 
@@ -17,6 +18,7 @@ _LEG_LIMIT = 20  # số chunk lấy về từ mỗi nhánh (semantic / BM25) tr�
 _POOL = 20  # số chunk giữ lại sau RRF để đem rerank (hybrid_retrieval)
 _PASSAGE_CHARS = 3000  # cắt đoạn đưa vào reranker (giới hạn kích thước request / chi phí token)
 _MAX_TOP_K = 10
+_MAX_KG_TOP_K = 30
 
 
 def _dump(payload: dict[str, Any]) -> str:
@@ -27,11 +29,18 @@ def _clean(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{"rank": i, **{k: v for k, v in r.items() if not k.startswith("_") and v != ""}} for i, r in enumerate(results, start=1)]
 
 
-async def _book_response(query: str, payloads: list[dict[str, Any]], top_k: int, leg: str, empty_note: str) -> str:
+def _with_bm25_query(payload: dict[str, Any], query: str, bm25_query: str | None) -> dict[str, Any]:
+    """Chỉ ghi `bm25_query` khi nó khác câu hỏi gốc, để người thử thấy được query BM25 thật sự đã chạy."""
+    return {**payload, "bm25_query": bm25_query} if bm25_query and bm25_query != query else payload
+
+
+async def _book_response(
+    query: str, payloads: list[dict[str, Any]], top_k: int, leg: str, empty_note: str, bm25_query: str | None = None
+) -> str:
     """Rerank các đoạn sách của một nhánh theo câu hỏi; không rerank được thì giữ thứ tự của nhánh đó."""
     notes: list[str] = []
     if not payloads:
-        return _dump({"query": query, "evidence_found": False, "results": [], "notes": [empty_note]})
+        return _dump(_with_bm25_query({"query": query, "evidence_found": False, "results": [], "notes": [empty_note]}, query, bm25_query))
     candidates = [
         {**book_result(p), "_passage": str(p.get("context_text") or p.get("text", ""))[:_PASSAGE_CHARS]} for p in payloads
     ]
@@ -45,7 +54,11 @@ async def _book_response(query: str, payloads: list[dict[str, Any]], top_k: int,
         notes.append(f"Không rerank được (reranker không khả dụng) — giữ thứ tự của nhánh {leg}.")
         ranked_by = leg
     return _dump(
-        {"query": query, "evidence_found": True, "ranked_by": ranked_by, "results": _clean(candidates[:top_k]), "notes": notes}
+        _with_bm25_query(
+            {"query": query, "evidence_found": True, "ranked_by": ranked_by, "results": _clean(candidates[:top_k]), "notes": notes},
+            query,
+            bm25_query,
+        )
     )
 
 
@@ -57,13 +70,12 @@ def _unwrap(name: str, result: list[T] | BaseException, notes: list[str]) -> lis
     return result
 
 
-async def _bm25_payloads(query: str, entities: list[ExtractedEntity] | None = None) -> list[dict[str, Any]]:
-    if entities is None:
-        try:
-            entities = await extract_entities(query)
-        except Exception:  # noqa: BLE001  # LLM lỗi -> vẫn tìm từ khoá bằng query gốc
-            entities = []
-    return await bm25_search(_expand_query(query, entities), _LEG_LIMIT)
+async def _bm25_query(query: str) -> str:
+    try:
+        entities = await extract_entities(query)
+    except Exception:  # noqa: BLE001  # LLM lỗi -> vẫn tìm từ khoá bằng query gốc
+        entities = []
+    return _expand_query(query, entities)
 
 
 def _expand_query(query: str, entities: list[ExtractedEntity]) -> str:
@@ -79,16 +91,15 @@ def _expand_query(query: str, entities: list[ExtractedEntity]) -> str:
 
 @tool
 async def hybrid_retrieval(query: str, top_k: int = 5) -> str:
-    """Tra cứu tri thức da liễu từ SÁCH GIÁO KHOA đã số hoá và đồ thị tri thức (PrimeKG/DermO) trong MỘT lần gọi: tìm theo
-    ngữ nghĩa + từ khoá + đồ thị rồi xếp hạng lại theo độ liên quan tới câu hỏi. Là tool MẶC ĐỊNH cho yêu cầu chung chung hoặc
-    chưa rõ cần loại thông tin nào (mô tả bệnh, triệu chứng, phân biệt chẩn đoán, điều trị, chống chỉ định, yếu tố nguy cơ) —
-    kèm nguồn trích dẫn. Khi đã lập luận rõ cần đúng thông tin gì (vd khớp chính xác tên thuốc, hay chỉ cần quan hệ đồ thị) thì
-    cân nhắc `semantic_search` / `keyword_search` / `knowledge_graph_search` để lấy đúng thứ cần.
+    """Tra cứu tri thức da liễu từ SÁCH GIÁO KHOA đã số hoá trong MỘT lần gọi: tìm theo ngữ nghĩa + từ khoá rồi xếp hạng lại
+    theo độ liên quan tới câu hỏi. Là tool MẶC ĐỊNH cho yêu cầu chung chung hoặc chưa rõ cần loại thông tin nào (mô tả bệnh,
+    triệu chứng, phân biệt chẩn đoán, điều trị, chống chỉ định, yếu tố nguy cơ) — kèm nguồn trích dẫn. Khi đã lập luận rõ cần
+    đúng thông tin gì thì cân nhắc `semantic_search` / `keyword_search`; cần quan hệ bệnh–triệu chứng–thuốc từ đồ thị thì dùng
+    `knowledge_graph_query`.
 
-    Mỗi kết quả có `source`: "book" (đoạn sách, kèm `title`, `section`, `pages` để trích dẫn) hoặc "kg" (một quan hệ / bệnh
-    ứng viên từ đồ thị tri thức, chưa phải kết luận). `score` là độ liên quan 0..1 sau rerank (không phải xác suất chẩn
-    đoán); `ranked_by` cho biết có rerank được hay chỉ dùng thứ tự trộn. Phần `notes` nêu nhánh nào không dùng được — khi đó
-    nói rõ là chưa tra được nguồn đó thay vì suy đoán.
+    Mỗi kết quả có `source="book"` kèm `title`, `section`, `pages` để trích dẫn. `score` là độ liên quan 0..1 sau rerank (không
+    phải xác suất chẩn đoán); `ranked_by` cho biết có rerank được hay chỉ dùng thứ tự trộn. Phần `notes` nêu nhánh nào không
+    dùng được — khi đó nói rõ là chưa tra được nguồn đó thay vì suy đoán.
 
     Args:
         query: Câu hỏi hoặc mô tả cần tra, tiếng Việt hoặc Anh, nêu rõ bệnh / triệu chứng / thuốc. Mỗi lần gọi một chủ đề cụ
@@ -97,33 +108,36 @@ async def hybrid_retrieval(query: str, top_k: int = 5) -> str:
     """
     top_k = min(max(top_k, 1), _MAX_TOP_K)
     notes: list[str] = []
-    # trích thực thể một lần, dùng chung cho BM25 (mở rộng query) và KG
+    # trích thực thể một lần để mở rộng query BM25 (Việt–Anh)
     try:
         entities = await extract_entities(query)
     except Exception as exc:  # noqa: BLE001
         entities = []
-        notes.append(f"Không mở rộng được query Việt–Anh ({type(exc).__name__}) — BM25 dùng query gốc, KG bỏ qua.")
-    semantic_r, bm25_r, kg_r = await asyncio.gather(
-        semantic_leg(query, _LEG_LIMIT), _bm25_payloads(query, entities), kg_search(query, entities=entities), return_exceptions=True
+        notes.append(f"Không mở rộng được query Việt–Anh ({type(exc).__name__}) — BM25 dùng query gốc.")
+    bm25_query = _expand_query(query, entities)
+    semantic_r, bm25_r = await asyncio.gather(
+        semantic_leg(query, _LEG_LIMIT), bm25_search(bm25_query, _LEG_LIMIT), return_exceptions=True
     )
     semantic = _unwrap("semantic", semantic_r, notes)
     bm25 = _unwrap("bm25", bm25_r, notes)
-    kg = _unwrap("kg", kg_r, notes)
 
     # trộn 2 nhánh chunk theo RRF, khử trùng theo chunk_id
     chunks = merge_chunks(semantic, bm25, _POOL)
     candidates: list[dict[str, Any]] = [
         {**book_result(p), "_passage": str(p.get("context_text") or p.get("text", ""))[:_PASSAGE_CHARS]} for p in chunks
     ]
-    candidates += [{"source": "kg", "title": "PrimeKG / DermO", "text": fact, "_passage": fact} for fact in kg]
     if not candidates:
         return _dump(
-            {
-                "query": query,
-                "evidence_found": False,
-                "results": [],
-                "notes": [*notes, "KHÔNG có bằng chứng: không có đoạn sách nào khớp (chưa index sách, hoặc không có đoạn liên quan) và đồ thị không có dữ liệu."],
-            }
+            _with_bm25_query(
+                {
+                    "query": query,
+                    "evidence_found": False,
+                    "results": [],
+                    "notes": [*notes, "KHÔNG có bằng chứng: không có đoạn sách nào khớp (chưa index sách, hoặc không có đoạn liên quan)."],
+                },
+                query,
+                bm25_query,
+            )
         )
 
     scores = await rerank(query, [c["_passage"] for c in candidates])
@@ -137,11 +151,11 @@ async def hybrid_retrieval(query: str, top_k: int = 5) -> str:
         ranked = fallback_top(candidates, top_k)
         ranked_by = "rrf"
 
-    results = _clean(ranked)
-    evidence_found = any(r["source"] == "book" for r in results)
-    if not evidence_found:
-        notes.append("Chỉ có gợi ý từ đồ thị tri thức, KHÔNG có đoạn sách nào làm bằng chứng — không khẳng định bệnh dựa vào đó.")
-    return _dump({"query": query, "evidence_found": evidence_found, "ranked_by": ranked_by, "results": results, "notes": notes})
+    return _dump(
+        _with_bm25_query(
+            {"query": query, "evidence_found": True, "ranked_by": ranked_by, "results": _clean(ranked), "notes": notes}, query, bm25_query
+        )
+    )
 
 
 @tool
@@ -182,34 +196,49 @@ async def keyword_search(query: str, top_k: int = 5) -> str:
         top_k: Số kết quả trả về (1-10, mặc định 5).
     """
     top_k = min(max(top_k, 1), _MAX_TOP_K)
+    bm25_query = query
     try:
-        payloads = await _bm25_payloads(query)
+        bm25_query = await _bm25_query(query)
+        payloads = await bm25_search(bm25_query, _LEG_LIMIT)
     except Exception as exc:  # noqa: BLE001
         return _dump({"query": query, "evidence_found": False, "results": [], "notes": [f"keyword_search không dùng được: {type(exc).__name__}: {exc}"]})
     return await _book_response(
-        query, payloads, top_k, "bm25", "KHÔNG có đoạn sách nào chứa các từ khoá này (chưa index sách, hoặc không khớp)."
+        query, payloads, top_k, "bm25", "KHÔNG có đoạn sách nào chứa các từ khoá này (chưa index sách, hoặc không khớp).", bm25_query
     )
 
 
 @tool
-async def knowledge_graph_search(query: str, top_k: int = 8) -> str:
-    """Tra ĐỒ THỊ TRI THỨC PrimeKG / DermO: quan hệ bệnh–triệu chứng–thuốc (chỉ định, chống chỉ định) và BỆNH ỨNG VIÊN có cùng
-    triệu chứng. Hợp để gợi ý hướng khi mô tả chỉ có triệu chứng, hoặc để lấy quan hệ thuốc–bệnh. Kết quả CHỈ LÀ GỢI Ý
-    (`source="kg"`, điểm đồ thị là heuristic), KHÔNG phải bằng chứng lâm sàng và không phải chẩn đoán: muốn khẳng định phải đối
-    chiếu bằng `semantic_search` / `keyword_search`.
+async def knowledge_graph_query(intent: Intent, entities: list[str], top_k: int = 10) -> str:
+    """Tra ĐỒ THỊ TRI THỨC PrimeKG / DermO / hồ sơ BYT theo ĐÚNG MỤC ĐÍCH (`intent`) — mỗi intent chạy một truy vấn riêng trên đúng
+    nhóm quan hệ cần thiết, nên cho kết quả gọn và đúng chỗ hơn tìm chung. Kết quả CHỈ LÀ GỢI Ý (`source="kg"`, điểm đồ thị là
+    heuristic), KHÔNG phải bằng chứng lâm sàng và không phải chẩn đoán: muốn khẳng định phải đối chiếu bằng `hybrid_retrieval` /
+    `semantic_search` / `keyword_search`. Có thể gọi nhiều lần với intent khác nhau cho cùng một bệnh.
 
-    Tool tự trích thực thể y khoa từ câu hỏi (dịch sang tiếng Anh), nên nêu rõ tên bệnh / triệu chứng / thuốc. `notes` báo lỗi
-    (Neo4j chưa chạy...) → nói rõ là chưa tra được đồ thị.
+    `intent` (chọn một):
+    - `diseases_with_symptom`: có triệu chứng, chưa rõ bệnh → bệnh ứng viên xếp theo độ đặc hiệu. `entities` = các triệu chứng.
+    - `differential`: đã có 1–3 bệnh nghi ngờ → bệnh dễ nhầm + triệu chứng nên hỏi để phân biệt. `entities` = các bệnh.
+    - `disease_overview`: hồ sơ nhanh một bệnh (triệu chứng, vị trí, nguy cơ, cờ đỏ, bệnh liên quan). `entities` = bệnh.
+    - `symptoms_of_disease`: triệu chứng có / không có của một bệnh. `entities` = bệnh.
+    - `red_flags_risk`: cờ đỏ, yếu tố nguy cơ, vị trí thường gặp của bệnh (dùng khi cần kiểm tra dấu hiệu nguy hiểm).
+    - `treatments`: thuốc chỉ định / dùng ngoài chỉ định cho bệnh. `entities` = bệnh.
+    - `contraindications`: chống chỉ định. `entities` = thuốc hoặc bệnh.
+    - `drug_profile`: chỉ định, chống chỉ định, tác dụng phụ, tương tác của thuốc (≥2 thuốc → chỉ tương tác giữa chúng).
+
+    `entities`: tên bằng tiếng Anh y khoa chuẩn thì khớp tốt nhất (vd "psoriasis", "pruritus", "methotrexate"); tiếng Việt vẫn được
+    thử dịch. `notes` báo thực thể không có trong đồ thị / lỗi (Neo4j chưa chạy...) → nói rõ là chưa tra được thay vì suy đoán.
 
     Args:
-        query: Câu hỏi hoặc mô tả có tên bệnh / triệu chứng / thuốc, tiếng Việt hoặc Anh.
-        top_k: Số quan hệ / bệnh ứng viên trả về (1-10, mặc định 8).
+        intent: Mục đích tra cứu, một trong các giá trị ở trên.
+        entities: Tên bệnh / triệu chứng / thuốc (tối đa 6), loại phải khớp intent.
+        top_k: Số dòng dữ kiện trả về (1-30, mặc định 10).
     """
-    top_k = min(max(top_k, 1), _MAX_TOP_K)
+    top_k = min(max(top_k, 1), _MAX_KG_TOP_K)
+    query = f"{intent}: {', '.join(entities)}"
+    if intent not in INTENTS:
+        return _dump({"query": query, "results": [], "notes": [f"intent '{intent}' không hợp lệ — chọn một trong: {', '.join(INTENTS)}."]})
     try:
-        facts = await kg_search(query, limit=top_k)
+        facts, notes, resolved = await run_intent(intent, entities, top_k)
     except Exception as exc:  # noqa: BLE001
-        return _dump({"query": query, "results": [], "notes": [f"knowledge_graph_search không dùng được: {type(exc).__name__}: {exc}"]})
-    notes = [] if facts else ["Đồ thị không có dữ liệu cho câu hỏi này (không trích được thực thể hoặc đồ thị không có quan hệ)."]
-    results = _clean([{"source": "kg", "title": "PrimeKG / DermO", "text": fact} for fact in facts])
-    return _dump({"query": query, "results": results, "notes": notes})
+        return _dump({"query": query, "results": [], "notes": [f"knowledge_graph_query không dùng được: {type(exc).__name__}: {exc}"]})
+    results = _clean([{"source": "kg", "title": "PrimeKG / DermO", **f} for f in facts])
+    return _dump({"query": query, "intent": intent, **resolved, "results": results, "notes": notes})

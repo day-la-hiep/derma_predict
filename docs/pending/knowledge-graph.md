@@ -1,6 +1,6 @@
 # [Pending] Cải thiện nhánh Knowledge Graph
 
-Nhánh KG của `hybrid_retrieval` / `knowledge_graph_search` (`core/agent/tools/hybrid_retrieval/kg.py`,
+Tool `knowledge_graph_query` (`core/agent/tools/hybrid_retrieval/kg_templates.py`,
 `core/app/services/knowledge_graph_service.py`) chạy được nhưng còn đơn giản. Tài liệu này ghi các điểm chưa làm để
 chọn việc khi còn thời gian; không phải cam kết.
 

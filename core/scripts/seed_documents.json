@@ -63,8 +63,6 @@
           "model": "",
           "enabled": true
         },
-        "title": "Fitzpatrick's Color Atlas and Synopsis of Clinical Dermatology, 8th Edition",
-        "book_id": "fitzpatrick-s-color-atlas-and-synopsis-of-clinic",
         "chunking": {
           "breadcrumb": true,
           "max_tokens": 400,

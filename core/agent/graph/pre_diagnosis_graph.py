@@ -29,7 +29,7 @@ from agent.tools.ask_user import ask_user
 from agent.tools.hybrid_retrieval import (
     hybrid_retrieval,
     keyword_search,
-    knowledge_graph_search,
+    knowledge_graph_query,
     semantic_search,
 )
 from agent.tools.reasoning import record_reasoning
@@ -46,7 +46,7 @@ ALL_TOOLS = [
     hybrid_retrieval,
     semantic_search,
     keyword_search,
-    knowledge_graph_search,
+    knowledge_graph_query,
     classify_skin_image,
     search_trusted_web,
     fetch_trusted_page,

@@ -23,9 +23,9 @@ EVIDENCE_FEEDBACK_PREFIX = "[Hệ thống kiểm soát bằng chứng — không
 MAX_EVIDENCE_RETRIES = 2
 
 # Tool tra cứu có thể cho bằng chứng; `search_trusted_web` / `fetch_trusted_page` thành công luôn mở đầu bằng khối đánh dấu này.
-# `knowledge_graph_search` tính là đã tra cứu nhưng không bao giờ cho bằng chứng (kết quả `source="kg"` chỉ là gợi ý).
-_RETRIEVAL_TOOLS = {"hybrid_retrieval", "semantic_search", "keyword_search", "knowledge_graph_search", "search_trusted_web", "fetch_trusted_page"}
-_JSON_RESULT_TOOLS = {"hybrid_retrieval", "semantic_search", "keyword_search", "knowledge_graph_search"}
+# `knowledge_graph_query` tính là đã tra cứu nhưng không bao giờ cho bằng chứng (kết quả `source="kg"` chỉ là gợi ý).
+_RETRIEVAL_TOOLS = {"hybrid_retrieval", "semantic_search", "keyword_search", "knowledge_graph_query", "search_trusted_web", "fetch_trusted_page"}
+_JSON_RESULT_TOOLS = {"hybrid_retrieval", "semantic_search", "keyword_search", "knowledge_graph_query"}
 _WEB_MARKER = "[DỮ LIỆU NGOÀI TỪ WEB"
 
 # Dữ kiện "user" phải trùng ít nhất chừng này từ khoá với lời người dùng (kể cả câu trả lời `ask_user`) — đủ rộng cho cách diễn

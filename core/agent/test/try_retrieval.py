@@ -2,6 +2,7 @@
 
     cd core && uv run python -m agent.test.try_retrieval "vảy nến mảng khuỷu tay"                # cả 4 tool
     cd core && uv run python -m agent.test.try_retrieval "methotrexate" -t keyword -t kg -k 3    # chọn tool, top_k
+    cd core && uv run python -m agent.test.try_retrieval "psoriasis" -t kg -i treatments         # kg theo intent; nhiều thực thể: "a, b"
     cd core && uv run python -m agent.test.try_retrieval "psoriasis" -t hybrid --raw             # JSON nguyên văn
     cd core && uv run python -m agent.test.try_retrieval --stats                                 # kho đang có gì
 
@@ -13,17 +14,19 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # `core/` — chạy được cả dạng `python agent/test/try_retrieval.py`
 
-from agent.tools.hybrid_retrieval import hybrid_retrieval, keyword_search, knowledge_graph_search, semantic_search  # noqa: E402
+from agent.tools.hybrid_retrieval import hybrid_retrieval, keyword_search, knowledge_graph_query, semantic_search  # noqa: E402
+from agent.tools.hybrid_retrieval.kg_templates import INTENTS  # noqa: E402
 from app.api.deps import get_knowledge_base_service  # noqa: E402
 
 TOOLS = {
     "hybrid": hybrid_retrieval,
     "semantic": semantic_search,
     "keyword": keyword_search,
-    "kg": knowledge_graph_search,
+    "kg": knowledge_graph_query,
 }
 
 
@@ -34,8 +37,15 @@ def _show(name: str, raw: str, seconds: float, full: bool) -> None:
     for r in results:
         text = str(r.get("text", "")).replace("\n", " ")
         where = f"{r.get('title', '')} | {r.get('section', '')} | {r.get('pages', '')}" if r["source"] == "book" else r.get("title", "")
-        print(f"  #{r['rank']} [{r['source']}] score={r.get('score', '-')}  {where}")
+        relation = f"  {r['relation']}" if r.get("relation") else ""
+        print(f"  #{r['rank']} [{r['source']}] score={r.get('score', '-')}  {where}{relation}")
         print(f"      {text if full else text[:220] + ('…' if len(text) > 220 else '')}")
+    if data.get("bm25_query"):
+        print(f"  ~ query BM25 sau mở rộng: {data['bm25_query']}")
+    if data.get("matched_nodes") is not None:
+        print(f"  ~ nút đồ thị khớp: {', '.join(data['matched_nodes']) or '(không có)'}")
+    if data.get("llm_translated"):
+        print(f"  ~ LLM dịch tên thực thể: {', '.join(data['llm_translated'])}")
     for note in data.get("notes", []):
         print(f"  ! {note}")
 
@@ -53,6 +63,7 @@ async def main() -> None:
     parser.add_argument("query", nargs="?", help="câu hỏi / từ khoá cần tra")
     parser.add_argument("-t", "--tool", action="append", choices=[*TOOLS], help="tool cần gọi (lặp lại được); mặc định: cả 4")
     parser.add_argument("-k", "--top-k", type=int, default=5)
+    parser.add_argument("-i", "--intent", default="diseases_with_symptom", choices=INTENTS, help="intent của tool kg (query = tên thực thể, cách nhau dấu phẩy)")
     parser.add_argument("--full", action="store_true", help="in đủ nội dung đoạn, không cắt 220 ký tự")
     parser.add_argument("--raw", action="store_true", help="in JSON nguyên văn tool trả về cho model")
     parser.add_argument("--stats", action="store_true", help="liệt kê số chunk theo sách trong Qdrant rồi thoát")
@@ -66,7 +77,11 @@ async def main() -> None:
 
     for name in args.tool or list(TOOLS):
         start = time.perf_counter()
-        raw: str = await TOOLS[name].ainvoke({"query": args.query, "top_k": args.top_k})
+        if name == "kg":
+            payload: dict[str, Any] = {"intent": args.intent, "entities": [e.strip() for e in args.query.split(",") if e.strip()], "top_k": args.top_k}
+        else:
+            payload = {"query": args.query, "top_k": args.top_k}
+        raw: str = await TOOLS[name].ainvoke(payload)
         seconds = time.perf_counter() - start
         if args.raw:
             print(f"\n=== {name}  ({seconds:.2f}s)\n{raw}")

@@ -3,12 +3,14 @@
     cd core && uv run python -m agent.test.cli              # menu chọn chức năng
     cd core && uv run python -m agent.test.cli reasoning    # vào thẳng một chức năng (key trong features.py)
 
-Menu: gõ số hoặc key để vào chức năng, `q` thoát. Trong chức năng: gõ số để chạy preset, gõ chữ để chạy câu của bạn. Lệnh bắt đầu bằng `/`:
+Ctrl+L hoặc `/clear` xoá màn hình; `/log on|off` bật/tắt log NODE/LLM/TOOL. Menu: gõ số hoặc key để vào chức năng, `q` thoát. Trong chức năng: gõ số để chạy preset, gõ chữ để chạy câu của bạn. Lệnh bắt đầu bằng `/`:
 `/set <tên> <giá trị>` đổi cài đặt, `/s` xem cài đặt, `/l` liệt kê preset, `/h` trợ giúp, `/b` về menu, `/q` thoát. Ctrl+C: đang chạy thì dừng lượt
 đó, đang ở prompt chức năng thì về menu, đang ở menu thì thoát. Dùng chung một event loop nên client Qdrant / Neo4j và model local được giữ giữa
 các lần chạy (lần đầu chậm vì tải model). Muốn thêm chức năng: xem `agent/test/features.py`."""
+
 import asyncio
 from collections.abc import Iterable
+import logging
 import sys
 import time
 import uuid
@@ -24,19 +26,30 @@ try:
 except ImportError:
     pass
 
+from rich.align import Align  # noqa: E402
 from rich.console import Console  # noqa: E402
 from rich.panel import Panel  # noqa: E402
 from rich.table import Table  # noqa: E402
 
-from prompt_toolkit.completion import CompleteEvent, Completer, Completion  # noqa: E402
+from prompt_toolkit.completion import CompleteEvent, Completer, Completion, PathCompleter  # noqa: E402
 from prompt_toolkit.document import Document  # noqa: E402
 
 from app.config.log import request_id_var, setup_logging  # noqa: E402
+from app.config.settings import settings  # noqa: E402
 from agent.test import ui  # noqa: E402
 from agent.test.features import FEATURES, Feature, Preset, Setting  # noqa: E402
 
+# Log là trạng thái chung của cả phiên nhưng hiện trong bảng cài đặt của mọi chức năng (đồng bộ lại ở `_feature_screen`).
+for _feature in FEATURES:
+    _feature.settings.append(
+        Setting("log", True, "bật log NODE/LLM/TOOL (dùng chung mọi chức năng)")
+    )
+
 console = Console(highlight=False)
-_TRUE, _FALSE = {"on", "true", "1", "yes", "y"}, {"off", "false", "0", "no", "n"}
+_TRUE, _FALSE = (
+    {"on", "true", "1", "yes", "y"},
+    {"off", "false", "0", "no", "n"},
+)
 
 
 class Quit(Exception):
@@ -61,10 +74,20 @@ class SlashCompleter(Completer):
         cmds = [("set", "đổi cài đặt")] if f.settings else []
         cmds += [("preset", "chọn preset để chạy")] if f.presets else []
         cmds += [(name, desc) for name, (desc, _) in f.commands.items()]
-        cmds += [("s", "xem cài đặt"), ("l", "liệt kê preset"), ("h", "trợ giúp"), ("b", "về menu"), ("q", "thoát")]
+        cmds += [
+            ("s", "xem cài đặt"),
+            ("l", "liệt kê preset"),
+            ("clear", "xoá màn hình"),
+            ("log", "bật/tắt log NODE/LLM/TOOL"),
+            ("h", "trợ giúp"),
+            ("b", "về menu"),
+            ("q", "thoát"),
+        ]
         return cmds
 
-    def get_completions(self, document: Document, complete_event: CompleteEvent) -> Iterable[Completion]:
+    def get_completions(
+        self, document: Document, complete_event: CompleteEvent
+    ) -> Iterable[Completion]:
         text = document.text_before_cursor
         if not text.startswith("/"):
             return
@@ -72,25 +95,82 @@ class SlashCompleter(Completer):
         if not sep:  # đang gõ tên lệnh
             for name, desc in self._commands():
                 if name.startswith(head):
-                    yield Completion(name, start_position=-len(head), display=f"/{name}", display_meta=desc)
+                    yield Completion(
+                        name,
+                        start_position=-len(head),
+                        display=f"/{name}",
+                        display_meta=desc,
+                    )
             return
-        if head == "preset":
+        if head == "attach":  # gợi ý đường dẫn file theo token đang gõ
+            word = rest.rpartition(" ")[2]
+            yield from PathCompleter(expanduser=True).get_completions(Document(word), complete_event)
+            return
+        if head == "log":
+            for v in ("on", "off"):
+                if v.startswith(rest):
+                    yield Completion(
+                        v,
+                        start_position=-len(rest),
+                        display=v,
+                        display_meta="đang bật"
+                        if _log_enabled() == (v == "on")
+                        else "",
+                    )
+        elif head == "preset":
             for i, p in enumerate(self.feature.presets, 1):
                 if str(i).startswith(rest):
-                    yield Completion(str(i), start_position=-len(rest), display=str(i), display_meta=p.label[:70])
+                    yield Completion(
+                        str(i),
+                        start_position=-len(rest),
+                        display=str(i),
+                        display_meta=p.label[:70],
+                    )
         elif head == "set":
             name, sep2, value = rest.partition(" ")
             if not sep2:  # đang gõ tên cài đặt
                 for s in self.feature.settings:
                     if s.name.startswith(name):
-                        yield Completion(s.name, start_position=-len(name), display=s.name, display_meta=f"{s.help} [hiện: {_fmt(self.cfg[s.name])}]")
+                        yield Completion(
+                            s.name,
+                            start_position=-len(name),
+                            display=s.name,
+                            display_meta=f"{s.help} [hiện: {_fmt(self.cfg[s.name])}]",
+                        )
                 return
-            setting = next((s for s in self.feature.settings if s.name == name), None)
+            setting = next(
+                (s for s in self.feature.settings if s.name == name), None
+            )
             if setting is None:
                 return
             for v in _value_choices(setting, self.cfg):
                 if v.startswith(value):
-                    yield Completion(v, start_position=-len(value), display=v, display_meta="giá trị hiện tại" if v == _fmt(self.cfg[name]) else "")
+                    yield Completion(
+                        v,
+                        start_position=-len(value),
+                        display=v,
+                        display_meta="giá trị hiện tại"
+                        if v == _fmt(self.cfg[name])
+                        else "",
+                    )
+
+
+def _log_enabled() -> bool:
+    return logging.getLogger().level <= logging.INFO
+
+
+def _apply_log(on: bool) -> None:
+    logging.getLogger().setLevel(
+        settings.LOG_LEVEL.upper() if on else logging.WARNING
+    )  # tắt vẫn hiện WARNING/ERROR
+
+
+def _set_log(arg: str) -> None:
+    if arg and arg.lower() not in _TRUE | _FALSE:
+        console.print("[red]Chỉ nhận on/off[/]")
+        return
+    _apply_log(arg.lower() in _TRUE if arg else not _log_enabled())
+    console.print(f"log: [yellow]{'on' if _log_enabled() else 'off'}[/]")
 
 
 def _value_choices(setting: Setting, cfg: dict[str, Any]) -> list[str]:
@@ -99,7 +179,9 @@ def _value_choices(setting: Setting, cfg: dict[str, Any]) -> list[str]:
     if setting.choices:
         return list(setting.choices)
     current = _fmt(cfg[setting.name])
-    return [] if current == "(trống)" else [current]  # int/str tự do: chỉ gợi ý giá trị hiện tại
+    return (
+        [] if current == "(trống)" else [current]
+    )  # int/str tự do: chỉ gợi ý giá trị hiện tại
 
 
 def _parse(setting: Setting, raw: str) -> Any:
@@ -124,11 +206,16 @@ def _fmt(value: Any) -> str:
 
 
 def _menu_options() -> list[tuple[str, str]]:
-    return [*((f.key, f"{f.title} — {f.help[:70]}") for f in FEATURES), ("q", "Thoát")]
+    return [
+        *((f.key, f"{f.title} — {f.help[:70]}") for f in FEATURES),
+        ("q", "Thoát"),
+    ]
 
 
 def _presets(feature: Feature) -> Table:
-    table = Table(title="Preset", title_justify="left", header_style="bold cyan")
+    table = Table(
+        title="Preset", title_justify="left", header_style="bold cyan"
+    )
     table.add_column("#", justify="right")
     table.add_column("nội dung")
     for i, p in enumerate(feature.presets, 1):
@@ -137,7 +224,11 @@ def _presets(feature: Feature) -> Table:
 
 
 def _settings_table(feature: Feature, cfg: dict[str, Any]) -> Table:
-    table = Table(title="Cài đặt (đổi bằng /set <tên> <giá trị>)", title_justify="left", header_style="bold cyan")
+    table = Table(
+        title="Cài đặt (đổi bằng /set <tên> <giá trị>)",
+        title_justify="left",
+        header_style="bold cyan",
+    )
     table.add_column("tên", style="green")
     table.add_column("giá trị", style="yellow")
     table.add_column("ý nghĩa", style="dim")
@@ -147,17 +238,50 @@ def _settings_table(feature: Feature, cfg: dict[str, Any]) -> Table:
 
 
 def _help(feature: Feature | None = None) -> None:
-    extra = "".join(f"\n[green]/{name}[/]  {desc}" for name, (desc, _) in (feature.commands if feature else {}).items())
-    console.print(Panel(
-        "số → chạy preset · chữ → chạy câu của bạn\n"
-        "[green]/set <tên> <giá trị>[/]  đổi cài đặt     [green]/s[/]  xem cài đặt     [green]/l[/]  liệt kê preset\n"
-        "[green]/b[/]  về menu     [green]/q[/]  thoát     [green]Ctrl+C[/]  dừng lượt đang chạy / về menu / thoát" + extra,
-        title="Trợ giúp", title_align="left"))
+    extra = "".join(
+        f"\n[green]/{name}[/]  {desc}"
+        for name, (desc, _) in (feature.commands if feature else {}).items()
+    )
+    console.print(
+        Panel(
+            "số → chạy preset · chữ → chạy câu của bạn\n"
+            "[green]/set <tên> <giá trị>[/]  đổi cài đặt     [green]/s[/]  xem cài đặt     [green]/l[/]  liệt kê preset\n"
+            "[green]/clear[/]  xoá màn hình     [green]/log on|off[/]  bật/tắt log     [green]/b[/]  về menu     [green]/q[/]  thoát     [green]Ctrl+C[/]  dừng lượt đang chạy / về menu / thoát"
+            + extra,
+            title="Trợ giúp",
+            title_align="left",
+        )
+    )
 
 
-async def _execute(feature: Feature, text: str, cfg: dict[str, Any], preset: Preset | None, loop: asyncio.AbstractEventLoop) -> None:
-    request_id_var.set(uuid.uuid4().hex[:8])  # gắn mã lượt vào mọi dòng log (NODE/LLM/TOOL) của lần chạy này
-    console.rule(f"[bold]{feature.title}[/]  [dim]{text[:80]}[/]")
+async def _execute(
+    feature: Feature,
+    text: str,
+    cfg: dict[str, Any],
+    preset: Preset | None,
+    loop: asyncio.AbstractEventLoop,
+) -> None:
+    request_id_var.set(
+        uuid.uuid4().hex[:8]
+    )  # gắn mã lượt vào mọi dòng log (NODE/LLM/TOOL) của lần chạy này
+    if feature.needs_input:
+        width = console.width
+        console.print(
+            Align.right(
+                Panel(
+                    text,
+                    title="bạn",
+                    title_align="right",
+                    border_style="cyan",
+                    width=min(max(len(text) + 4, 24), int(width * 0.75)),
+                )
+            )
+        )
+    console.rule(
+        f"[bold green]{'agent' if feature.needs_input else feature.title}[/]",
+        align="left",
+        style="green",
+    )
     start = time.perf_counter()
     task = loop.create_task(feature.run(text, cfg, preset))
     try:
@@ -176,7 +300,9 @@ def _run_interruptible(loop: asyncio.AbstractEventLoop, coro: Any) -> None:
         loop.run_until_complete(task)
     except KeyboardInterrupt:
         task.cancel()
-        loop.run_until_complete(asyncio.gather(task, return_exceptions=True))  # `_execute` tự in "(đã dừng)"
+        loop.run_until_complete(
+            asyncio.gather(task, return_exceptions=True)
+        )  # `_execute` tự in "(đã dừng)"
 
 
 def _handle_command(feature: Feature, cfg: dict[str, Any], line: str) -> bool:
@@ -187,61 +313,125 @@ def _handle_command(feature: Feature, cfg: dict[str, Any], line: str) -> bool:
         return True
     if cmd == "q":
         raise Quit
-    if cmd == "h":
+    if cmd in ("clear", "cls"):
+        console.clear()
+    elif cmd == "log":
+        _set_log(arg)
+    elif cmd == "h":
         _help(feature)
     elif cmd == "l":
-        console.print(_presets(feature) if feature.presets else "[dim](chức năng này không có preset)[/]")
+        console.print(
+            _presets(feature)
+            if feature.presets
+            else "[dim](chức năng này không có preset)[/]"
+        )
     elif cmd == "s":
-        console.print(_settings_table(feature, cfg) if feature.settings else "[dim](chức năng này không có cài đặt)[/]")
+        console.print(
+            _settings_table(feature, cfg)
+            if feature.settings
+            else "[dim](chức năng này không có cài đặt)[/]"
+        )
     elif cmd == "set":
         name, _, value = arg.partition(" ")
-        if not name and feature.settings:  # `/set` trơ trọi -> chọn bằng phím mũi tên thay vì phải nhớ tên
-            name = ui.pick("Chọn cài đặt:", [(s.name, f"{s.name} = {_fmt(cfg[s.name])}  —  {s.help}") for s in feature.settings])
+        if (
+            not name and feature.settings
+        ):  # `/set` trơ trọi -> chọn bằng phím mũi tên thay vì phải nhớ tên
+            name = ui.pick(
+                "Chọn cài đặt:",
+                [
+                    (s.name, f"{s.name} = {_fmt(cfg[s.name])}  —  {s.help}")
+                    for s in feature.settings
+                ],
+            )
             picked = next(s for s in feature.settings if s.name == name)
             options = _value_choices(picked, cfg)
             if isinstance(picked.default, bool) or picked.choices:
-                value = ui.pick(f"{name}:", [(o, o) for o in options], default=_fmt(cfg[name]))
+                value = ui.pick(
+                    f"{name}:",
+                    [(o, o) for o in options],
+                    default=_fmt(cfg[name]),
+                )
             else:
-                value = ui.ask(f"{name} [{_fmt(cfg[name])}]> ") or _fmt(cfg[name])
+                value = ui.ask(f"{name} [{_fmt(cfg[name])}]> ") or _fmt(
+                    cfg[name]
+                )
         setting = next((s for s in feature.settings if s.name == name), None)
         if setting is None:
-            console.print(f"[red]Không có cài đặt '{name}'.[/] Có: {', '.join(s.name for s in feature.settings) or '-'}")
+            console.print(
+                f"[red]Không có cài đặt '{name}'.[/] Có: {', '.join(s.name for s in feature.settings) or '-'}"
+            )
         else:
             try:
                 cfg[name] = _parse(setting, value.strip())
-                console.print(f"[green]{name}[/] = [yellow]{_fmt(cfg[name])}[/]")
+                if name == "log":
+                    _apply_log(cfg[name])
+                console.print(
+                    f"[green]{name}[/] = [yellow]{_fmt(cfg[name])}[/]"
+                )
             except ValueError as exc:
                 console.print(f"[red]Giá trị không hợp lệ:[/] {exc}")
     elif cmd in feature.commands:
-        feature.commands[cmd][1]()
+        feature.commands[cmd][1](arg)
     else:
         console.print(f"[red]Lệnh không có:[/] /{cmd} — gõ /h để xem trợ giúp")
     return False
 
 
 def _feature_screen(feature: Feature, loop: asyncio.AbstractEventLoop) -> None:
-    cfg = {s.name: s.default for s in feature.settings}  # cài đặt giữ lại trong suốt phiên, mỗi chức năng một bộ
-    console.print(Panel(feature.help, title=f"[bold]{feature.title}[/]", title_align="left"))
+    cfg = {
+        s.name: s.default for s in feature.settings
+    }  # cài đặt giữ lại trong suốt phiên, mỗi chức năng một bộ
+    cfg["log"] = _log_enabled()
+    console.print(
+        Panel(
+            feature.help, title=f"[bold]{feature.title}[/]", title_align="left"
+        )
+    )
     if feature.presets:
         console.print(_presets(feature))
     if feature.settings:
         console.print(_settings_table(feature, cfg))
-    console.print("[dim]số = preset · chữ = câu của bạn · /h trợ giúp · /b về menu[/]" if feature.needs_input else "[dim]Enter để chạy · /b về menu[/]")
+    console.print(
+        "[dim]số = preset · chữ = câu của bạn · /h trợ giúp · /b về menu[/]"
+        if feature.needs_input
+        else "[dim]Enter để chạy · /b về menu[/]"
+    )
     while True:
         console.print()
+        cfg["log"] = (
+            _log_enabled()
+        )  # có thể đã đổi bằng /log hoặc ở chức năng khác
         try:
             line = _ask(f"{feature.key}> ", SlashCompleter(feature, cfg))
         except KeyboardInterrupt:
             console.print()
             return
-        if line.split(" ")[0] == "/preset" and feature.presets:  # `/preset` -> chọn trong danh sách; `/preset 2` -> chạy luôn preset 2
+        if (
+            line.split(" ")[0] == "/preset" and feature.presets
+        ):  # `/preset` -> chọn trong danh sách; `/preset 2` -> chạy luôn preset 2
             arg = line.partition(" ")[2].strip()
-            line = arg if arg.isdigit() else str(ui.pick("Chọn preset:", [(str(i), p.label[:100]) for i, p in enumerate(feature.presets, 1)]))
+            line = (
+                arg
+                if arg.isdigit()
+                else str(
+                    ui.pick(
+                        "Chọn preset:",
+                        [
+                            (str(i), p.label[:100])
+                            for i, p in enumerate(feature.presets, 1)
+                        ],
+                    )
+                )
+            )
         if line.startswith("/"):
             if _handle_command(feature, cfg, line):
                 return
             continue
-        preset = feature.presets[int(line) - 1] if line.isdigit() and 1 <= int(line) <= len(feature.presets) else None
+        preset = (
+            feature.presets[int(line) - 1]
+            if line.isdigit() and 1 <= int(line) <= len(feature.presets)
+            else None
+        )
         if preset is None and not line and feature.needs_input:
             continue
         text = preset.text if preset else line
@@ -256,12 +446,16 @@ def _pick_feature(token: str) -> Feature | None:
 
 
 def main() -> None:
-    setup_logging("cli")  # hiện log trace của graph (NODE/LLM/TOOL, `agent/tracing.py`); chỉnh mức bằng LOG_LEVEL trong .env
+    setup_logging(
+        "cli"
+    )  # hiện log trace của graph (NODE/LLM/TOOL, `agent/tracing.py`); chỉnh mức bằng LOG_LEVEL trong .env
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     direct = _pick_feature(sys.argv[1]) if len(sys.argv) > 1 else None
     if len(sys.argv) > 1 and direct is None:
-        console.print(f"[red]Không có chức năng '{sys.argv[1]}'.[/] Có: {', '.join(f.key for f in FEATURES)}")
+        console.print(
+            f"[red]Không có chức năng '{sys.argv[1]}'.[/] Có: {', '.join(f.key for f in FEATURES)}"
+        )
         return
     try:
         if direct:
@@ -269,7 +463,12 @@ def main() -> None:
         while True:
             console.print()
             try:
-                token = str(ui.pick("Chọn chức năng (↑/↓ + Enter, Ctrl+C thoát):", _menu_options()))
+                token = str(
+                    ui.pick(
+                        "Chọn chức năng (↑/↓ + Enter, Ctrl+C thoát):",
+                        _menu_options(),
+                    )
+                )
             except KeyboardInterrupt:
                 console.print()
                 break

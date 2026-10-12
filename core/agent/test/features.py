@@ -3,11 +3,15 @@ rồi đăng ký bằng `FEATURES.append(Feature(...))` ở cuối file; khung C
 
 `run` nhận: `text` — câu người dùng gõ (hoặc nội dung preset), `cfg` — giá trị hiện tại của các `Setting`, `preset` — `Preset` đang chọn (None
 nếu gõ tự do). Module nặng (model, Qdrant, Neo4j) import MUỘN trong `run` để mở menu nhanh."""
+import asyncio
 import json
+import shlex
 import sys
+import uuid
 from collections import Counter
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from agent.test.quick import REASON, RETRIEVE
@@ -37,7 +41,27 @@ class Feature:
     settings: list[Setting] = field(default_factory=list)
     presets: list[Preset] = field(default_factory=list)
     needs_input: bool = True  # False: chức năng không cần câu hỏi (vd thống kê), Enter trống là chạy
-    commands: dict[str, tuple[str, Callable[[], None]]] = field(default_factory=dict)  # lệnh /riêng của chức năng: tên -> (mô tả, hàm)
+    commands: dict[str, tuple[str, Callable[[str], None]]] = field(default_factory=dict)  # lệnh /riêng của chức năng: tên -> (mô tả, hàm nhận phần đối số sau tên lệnh)
+
+
+# Chép tay từ `kg_templates.INTENTS`: import module đó kéo cả Neo4j/embedding (~3s) làm chậm lúc mở menu.
+_KG_INTENTS = [
+    "diseases_with_symptom", "differential", "disease_overview", "symptoms_of_disease",
+    "red_flags_risk", "treatments", "contraindications", "drug_profile",
+]
+
+
+def _kg(intent: str, entities: str) -> Preset:
+    return Preset(f"[kg · {intent}] {entities}", entities, {"tools": "kg", "intent": intent})
+
+
+def _model_setting() -> Setting:
+    from app.config.settings import settings
+
+    ids = list(settings.AGENT_MODEL_CHOICES)
+    # Mặc định giữ đúng model đang chạy (`AGENT_MODEL` trong .env) nếu nó nằm trong danh sách, để chọn thủ công mới là đổi hành vi.
+    current = next((i for i, m in settings.AGENT_MODEL_CHOICES.items() if m == settings.AGENT_MODEL), settings.AGENT_DEFAULT_MODEL_ID)
+    return Setting("model", current, "model trong AGENT_MODEL_CHOICES (/set model để chọn)", ids)
 
 
 async def _run_main(module: Any, argv: list[str]) -> None:
@@ -55,6 +79,7 @@ async def _retrieval(text: str, cfg: dict[str, Any], preset: Preset | None) -> N
     tools = [t.strip() for t in str(cfg["tools"]).split(",") if t.strip() and t.strip() != "all"]
     argv = ["try_retrieval", text, "-k", str(cfg["top_k"]), *(a for t in tools for a in ("-t", t))]
     argv += [flag for flag, on in (("--full", cfg["full"]), ("--raw", cfg["raw"])) if on]
+    argv += ["--intent", str(cfg["intent"])]
     await _run_main(try_retrieval, argv)
 
 
@@ -75,9 +100,49 @@ async def _reasoning(text: str, cfg: dict[str, Any], preset: Preset | None) -> N
 _CHAT: dict[str, Any] = {"graph": None, "thread": "", "turns": 0}
 
 
-def _chat_reset() -> None:
+def _chat_reset(arg: str = "") -> None:
     _CHAT.update(graph=None, thread="", turns=0)
     print("Đã mở hội thoại mới.")
+
+
+_IMAGE_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+_PENDING_IMAGES: list[Path] = []  # ảnh chờ gửi kèm lượt chat kế tiếp
+
+
+def _attach(arg: str) -> None:
+    from app.services.file_store_service import MAX_UPLOAD_BYTES
+
+    # shlex để kéo-thả file vào terminal (đường dẫn có dấu nháy / dấu cách) vẫn đúng
+    for raw in shlex.split(arg):
+        path = Path(raw).expanduser()
+        if path.suffix.lower() not in _IMAGE_TYPES or not path.is_file():
+            print(f"Bỏ qua {raw}: không phải file ảnh .jpg/.png/.webp tồn tại.")
+        elif path.stat().st_size > MAX_UPLOAD_BYTES:
+            print(f"Bỏ qua {raw}: vượt {MAX_UPLOAD_BYTES // (1024 * 1024)}MB.")
+        else:
+            _PENDING_IMAGES.append(path)
+    print("Ảnh chờ gửi ở lượt sau: " + (", ".join(p.name for p in _PENDING_IMAGES) or "(không có)"))
+
+
+def _detach(arg: str) -> None:
+    _PENDING_IMAGES.clear()
+    print("Đã bỏ các ảnh đang chờ.")
+
+
+async def _upload_pending() -> list[Any]:
+    """Đẩy ảnh chờ lên MinIO (cùng kho với upload của Core) để `classify_skin_image` đọc được theo object key."""
+    from agent.dto.schemas import TurnAttachment
+    from app.api.deps import get_file_store_service
+
+    store = get_file_store_service()
+    attachments: list[Any] = []
+    for path in _PENDING_IMAGES:
+        content_type = _IMAGE_TYPES[path.suffix.lower()]
+        key = f"{uuid.uuid4().hex}{path.suffix.lower()}"
+        await asyncio.to_thread(store.put_bytes, key, path.read_bytes(), content_type)
+        attachments.append(TurnAttachment(file_name=path.name, content_type=content_type, storage_key=key))
+    _PENDING_IMAGES.clear()
+    return attachments
 
 
 def _ask_user(question: str, options: list[str]) -> str:
@@ -100,18 +165,20 @@ async def _chat(text: str, cfg: dict[str, Any], preset: Preset | None) -> None:
     if _CHAT["graph"] is None:
         settings.AGENT_TRIAGE_ENABLED = bool(cfg["triage"])  # phải đặt TRƯỚC khi dựng graph; đổi /set triage có hiệu lực từ hội thoại mới
         from agent.graph.chat_graph import build_agent_graph
-        import uuid
 
         _CHAT.update(graph=build_agent_graph(), thread=f"chat-{uuid.uuid4()}", turns=0)
     model = str(cfg["model"])
     if model and ":" not in model:
         model = settings.AGENT_MODEL_CHOICES[model]
+    attachments = await _upload_pending()
+    if attachments:
+        print("[đính kèm] " + ", ".join(a.file_name for a in attachments))
     _CHAT["turns"] += 1
     print(f"[lượt {_CHAT['turns']} · thread {_CHAT['thread'][-8:]}]")
     printer = try_reasoning.LivePrinter(bool(cfg["raw"]))
     try:
         result = await try_reasoning._run(
-            text, model, [], printer.step, printer.token, graph=_CHAT["graph"], thread_id=_CHAT["thread"], ask=_ask_user
+            text, model, [], printer.step, printer.token, graph=_CHAT["graph"], thread_id=_CHAT["thread"], ask=_ask_user, attachments=attachments
         )
     except BaseException:
         # Bị ngắt giữa chừng (Ctrl+C) có thể để lại `tool_calls` chưa có kết quả trong checkpoint -> lượt sau LLM từ chối cứng; mở hội thoại mới cho an toàn.
@@ -167,10 +234,21 @@ FEATURES: list[Feature] = [
         settings=[
             Setting("tools", "all", "tool cần gọi, cách nhau dấu phẩy: hybrid,semantic,keyword,kg hoặc all"),
             Setting("top_k", 5, "số kết quả mỗi tool"),
+            Setting("intent", "diseases_with_symptom", "intent của kg (cần `kg` trong tools; câu hỏi = tên thực thể, cách nhau dấu phẩy)", _KG_INTENTS),
             Setting("full", False, "in đủ nội dung đoạn"),
             Setting("raw", False, "in JSON nguyên văn tool trả về"),
         ],
-        presets=[Preset(q, q) for q in RETRIEVE],
+        presets=[
+            *(Preset(q, q) for q in RETRIEVE),
+            _kg("diseases_with_symptom", "pruritus, scaling"),
+            _kg("differential", "psoriasis, atopic dermatitis"),
+            _kg("disease_overview", "psoriasis"),
+            _kg("symptoms_of_disease", "psoriasis"),
+            _kg("red_flags_risk", "melanoma"),
+            _kg("treatments", "psoriasis"),
+            _kg("contraindications", "methotrexate"),
+            _kg("drug_profile", "methotrexate, cyclosporine"),
+        ],
     ),
     Feature(
         key="reasoning",
@@ -179,7 +257,7 @@ FEATURES: list[Feature] = [
         run=_reasoning,
         settings=[
             Setting("triage", False, "bật bước lọc intent (tắt = ép vào graph tiền chẩn đoán)"),
-            Setting("model", "", "id ngắn trong AGENT_MODEL_CHOICES hoặc provider:model; rỗng = mặc định"),
+            _model_setting(),
             Setting("answers", "", "câu trả lời cho ask_user, cách nhau dấu |"),
             Setting("repeat", 1, "số lần chạy lại để đánh giá độ ổn định"),
             Setting("raw", False, "in đủ kết quả tool, không cắt"),
@@ -193,11 +271,15 @@ FEATURES: list[Feature] = [
         run=_chat,
         settings=[
             Setting("triage", True, "bật bước lọc intent (đổi có hiệu lực từ hội thoại mới)"),
-            Setting("model", "", "id ngắn trong AGENT_MODEL_CHOICES hoặc provider:model; rỗng = mặc định"),
+            _model_setting(),
             Setting("raw", False, "in đủ kết quả tool, không cắt"),
         ],
         presets=[Preset(t, t) for t in ("Chào bạn", "Da tôi bị ngứa và nổi mẩn", "Tôi bị nổi mảng đỏ có vảy trắng ở khuỷu tay khoảng 2 tuần")],
-        commands={"new": ("bắt đầu hội thoại mới (quên các lượt trước)", _chat_reset)},
+        commands={
+            "new": ("bắt đầu hội thoại mới (quên các lượt trước)", _chat_reset),
+            "attach": ("đính kèm ảnh da vào lượt chat kế tiếp: /attach <đường dẫn ảnh>...", _attach),
+            "detach": ("bỏ các ảnh đang chờ gửi", _detach),
+        },
     ),
     Feature(
         key="kb_stats",

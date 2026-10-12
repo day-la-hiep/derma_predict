@@ -54,16 +54,23 @@ async def _run(
     graph: Any = None,
     thread_id: str | None = None,
     ask: Callable[[str, list[str]], str] | None = None,
+    attachments: list[Any] | None = None,
 ) -> dict[str, Any]:
     """`on_step` được gọi NGAY khi mỗi bước xong (để CLI in dần thay vì đợi hết lượt), `on_token` với từng đoạn chữ model đang sinh.
     Chat nhiều lượt: truyền cùng `graph` (đã có checkpointer) + `thread_id` cho mọi lượt; `ask(câu hỏi, lựa chọn)` trả lời `ask_user`
-    thay cho `answers` (người dùng gõ tay)."""
+    thay cho `answers` (người dùng gõ tay). `attachments`: `TurnAttachment` đã nằm trên MinIO, gắn vào tin nhắn y như `agent/turn.py`."""
     from agent.graph.chat_graph import build_agent_graph, config_for  # import muộn: `--no-triage` phải đặt settings trước khi dựng graph
 
     graph = graph or build_agent_graph()
-    ctx = AgentContext(user_id="try-user", conversation_id="", message_id="try", model=model)
+    ctx = AgentContext(user_id="try-user", conversation_id="", message_id="try", model=model, image_keys=[a.storage_key for a in attachments or []])
     cfg = config_for(thread_id or f"try-{uuid.uuid4()}")
-    input_: object = {"messages": [HumanMessage(content=question)]}
+    content = question
+    if attachments:
+        from agent.dto.schemas import TurnRequest
+        from agent.turn import _human_message_content
+
+        content = _human_message_content(TurnRequest(type="turn", conversation_id="", message_id="try", content=question, attached_files=attachments))
+    input_: object = {"messages": [HumanMessage(content=content)]}
     messages: list[AnyMessage] = []
     steps: list[dict[str, Any]] = []
     error: str | None = None
