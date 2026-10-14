@@ -231,24 +231,36 @@ export const doctorApi = {
     if (USE_MOCK) {
       return MOCK_MESSAGES[conversationId] ?? [];
     }
-    const raw = await unwrap<
-      Array<{
-        id: string;
-        conversation_id?: string;
-        sender: "patient" | "ai" | "doctor";
-        content: string;
-        created_at?: string;
-        metadata?: {
-          attached_files?: Array<{ storage_key: string; file_name: string; content_type?: string | null; url?: string | null }> | null;
-        } | null;
-      }>
-    >(api.get(`/conversations/${encodeURIComponent(conversationId)}/messages`));
-    return raw.map((m) => ({
+    const raw = await unwrap<unknown[]>(
+      api.get(`/conversations/${encodeURIComponent(conversationId)}/messages`)
+    );
+    return raw.map((m) => doctorApi.adaptRoomMessage(m, conversationId));
+  },
+
+  /** Chuyển 1 `MessageOutput` (snake_case, từ REST hoặc event room) sang kiểu hiển thị của bác sĩ */
+  adaptRoomMessage(raw: unknown, fallbackConversationId: string): DoctorViewMessage {
+    const m = raw as {
+      id: string;
+      conversation_id?: string;
+      sender: "patient" | "ai" | "doctor";
+      content?: string;
+      created_at?: string;
+      metadata?: {
+        message_type?: string | null;
+        attached_files?: Array<{
+          storage_key: string;
+          file_name: string;
+          content_type?: string | null;
+          url?: string | null;
+        }> | null;
+      } | null;
+    };
+    return {
       id: m.id,
-      conversationId: m.conversation_id ?? conversationId,
+      conversationId: m.conversation_id ?? fallbackConversationId,
       sender: m.sender,
-      messageType: "text",
-      content: m.content,
+      messageType: m.metadata?.message_type ?? "text",
+      content: m.content ?? "",
       createdAt: m.created_at ?? new Date().toISOString(),
       attachments: m.metadata?.attached_files?.map((f) => ({
         id: f.storage_key,
@@ -256,19 +268,25 @@ export const doctorApi = {
         url: f.url ?? undefined,
         contentType: f.content_type ?? undefined,
       })),
-    }));
+    };
   },
 
   /** Bác sĩ nhận tiếp quản ca tư vấn */
-  async acceptSession(sessionId: string): Promise<void> {
-    if (USE_MOCK) return;
-    await api.post(`/doctor/consultations/${encodeURIComponent(sessionId)}/accept`);
+  async acceptSession(sessionId: string): Promise<ConsultationSession | null> {
+    if (USE_MOCK) return null;
+    const raw = await unwrap<Record<string, unknown>>(
+      api.post(`/doctor/consultations/${encodeURIComponent(sessionId)}/accept`)
+    );
+    return raw ? adaptSession(raw) : null;
   },
 
   /** Bác sĩ hoàn thành & đóng phiên tư vấn */
-  async resolveSession(sessionId: string): Promise<void> {
-    if (USE_MOCK) return;
-    await api.post(`/doctor/consultations/${encodeURIComponent(sessionId)}/resolve`);
+  async resolveSession(sessionId: string): Promise<ConsultationSession | null> {
+    if (USE_MOCK) return null;
+    const raw = await unwrap<Record<string, unknown>>(
+      api.post(`/doctor/consultations/${encodeURIComponent(sessionId)}/resolve`)
+    );
+    return raw ? adaptSession(raw) : null;
   },
 
   /** Bác sĩ gửi tin nhắn phản hồi tới bệnh nhân */

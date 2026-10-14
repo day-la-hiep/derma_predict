@@ -5,6 +5,7 @@ import { ArrowRight, Loader2 } from "lucide-react";
 import type { ChatMessage } from "../types";
 import { useChatStore } from "../store";
 import { MessageBubble } from "./MessageBubble";
+import { ConsultationDivider, isConsultationMarker } from "./ConsultationDivider";
 import { ReasoningSection } from "./ReasoningSection";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -108,6 +109,15 @@ export function MessageList({
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6 sm:px-8">
       {messages.map((message) => {
+        if (isConsultationMarker(message.messageType)) {
+          return (
+            <ConsultationDivider
+              key={message.id}
+              messageType={message.messageType}
+              content={message.content}
+            />
+          );
+        }
         if (message.role === "user") {
           return <MessageBubble key={message.id} message={message} />;
         }

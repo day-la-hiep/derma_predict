@@ -9,11 +9,13 @@ import { ReportPanel } from "./ReportPanel";
 
 export function DoctorConsultationPage() {
   const init = useDoctorStore((s) => s.init);
+  const dispose = useDoctorStore((s) => s.dispose);
   const preferredSessionId = useSearchParams().get("session");
 
   useEffect(() => {
-    init(preferredSessionId);
-  }, [init, preferredSessionId]);
+    void init(preferredSessionId);
+    return dispose;
+  }, [init, dispose, preferredSessionId]);
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-background">

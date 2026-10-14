@@ -7,7 +7,7 @@ from typing import Any, NotRequired
 from langchain.agents import AgentState
 from pydantic import BaseModel, Field
 
-from app.config.constants import AGENT_EVENTS_CHANNEL
+from app.config.constants import CONVERSATION_ROOM_CHANNEL
 from app.api.deps import get_redis_client
 
 # Tên tool hiển thị cho người dùng khi FE render bước "đang tra cứu ..." (SSE
@@ -30,7 +30,7 @@ TOOL_DISPLAY_NAMES: dict[str, str] = {
 
 
 async def emit(conversation_id: str, payload: dict[str, Any]) -> None:
-    channel = AGENT_EVENTS_CHANNEL.format(conversation_id=conversation_id)
+    channel = CONVERSATION_ROOM_CHANNEL.format(conversation_id=conversation_id)
     await get_redis_client().publish(
         channel, json.dumps(payload, ensure_ascii=False, default=str)
     )

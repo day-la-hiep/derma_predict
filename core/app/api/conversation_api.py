@@ -1,12 +1,12 @@
 """Router Conversation + Message — REST (`docs/api-doc.md`) và SSE (`docs/async-api-doc.md`)."""
 
-from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import (
+    get_consultation_service,
     get_conversation_service,
     get_current_user,
     get_message_service,
@@ -14,8 +14,10 @@ from app.api.deps import (
     get_redis_client,
 )
 from app.config.settings import settings
-from app.config.constants import AGENT_EVENTS_CHANNEL, STREAM_DONE_SENTINEL
+from app.api.sse import pubsub_event_stream
+from app.config.constants import CONVERSATION_ROOM_CHANNEL
 from app.dto.common import ApiResponse
+from app.exception.errors import ForbiddenError
 from app.dto.request.conversation import CreateConversationInput, UpdateConversationModelInput
 from app.dto.request.message import MessageAnswerDto, SendMessageInput
 from app.dto.response.conversation import ConversationOutput, ModelOption
@@ -23,6 +25,7 @@ from app.dto.response.message import MessageOutput, SendMessageResult
 from app.infra.rabbitmq_client import RabbitMQClient
 from app.models.user import User
 from app.infra.redis_client import RedisClient
+from app.services.consultation_service import ConsultationService
 from app.services.conversation_service import (
     ConversationNotFoundError,
     ConversationService,
@@ -43,6 +46,7 @@ ConversationServiceDep = Annotated[
 ]
 MessageServiceDep = Annotated[MessageService, Depends(get_message_service)]
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
+ConsultationServiceDep = Annotated[ConsultationService, Depends(get_consultation_service)]
 
 
 @router.get(
@@ -122,10 +126,14 @@ async def update_conversation_model(
     operation_id="listMessages",
 )
 async def list_messages(
-    conversation_id: str, service: MessageServiceDep
+    conversation_id: str,
+    service: MessageServiceDep,
+    current_user: CurrentUserDep,
+    consultations: ConsultationServiceDep,
 ) -> ApiResponse[list[MessageOutput]]:
-    """`docs/api-doc.md` mục 1.3 — sắp theo `createdAt` tăng dần."""
-    messages = await service.list_messages(conversation_id)
+    """`docs/api-doc.md` mục 1.3 — sắp theo `createdAt` tăng dần; bác sĩ chỉ thấy tới hết phiên gần nhất của mình."""
+    access = await consultations.room_access(conversation_id, current_user.id)
+    messages = await service.list_messages(conversation_id, access.until)
     return ApiResponse(data=messages)
 
 
@@ -177,32 +185,35 @@ async def answer_question(
     return ApiResponse(data=message)
 
 
-async def _sse_event_stream(redis: RedisClient, rabbitmq: RabbitMQClient, conversation_id: str) -> AsyncIterator[str]:
-    """Forward nguyên văn từng message từ Redis Pub/Sub ra SSE"""
-    channel = AGENT_EVENTS_CHANNEL.format(conversation_id=conversation_id)
-    pubsub = redis.pubsub()
-    await pubsub.subscribe(channel)
-    try:
-        await flush_pending_turn(conversation_id, redis, rabbitmq)
-        async for message in pubsub.listen():
-            if message["type"] != "message":
-                continue
-            data = message["data"]
-            yield f"data: {data}\n\n"
-            if data == STREAM_DONE_SENTINEL:
-                break
-    finally:
-        await pubsub.unsubscribe(channel)
-        await pubsub.aclose()
+def _session_resolved(event: dict[str, object]) -> bool:
+    return event.get("type") == "consultation.updated" and event.get("status") == "resolved"
 
 
 @router.get("/conversations/{conversation_id}/stream", include_in_schema=False)
 async def stream_conversation(
     conversation_id: str,
+    current_user: CurrentUserDep,
+    consultations: ConsultationServiceDep,
     redis: Annotated[RedisClient, Depends(get_redis_client)],
     rabbitmq: Annotated[RabbitMQClient, Depends(get_rabbitmq_client)],
 ) -> StreamingResponse:
-    """`docs/async-api-doc.md` mục 1"""
+    """Room của hội thoại: SSE dài hạn cho bệnh nhân, bác sĩ và agent (`docs/async-api-doc.md` mục 1)"""
+    access = await consultations.room_access(conversation_id, current_user.id)
+    if access.closed:
+        raise ForbiddenError("Phiên tư vấn của bạn với hội thoại này đã kết thúc.")
+    channel = CONVERSATION_ROOM_CHANNEL.format(conversation_id=conversation_id)
+
+    async def flush() -> None:
+        await flush_pending_turn(conversation_id, redis, rabbitmq)
+
     return StreamingResponse(
-        _sse_event_stream(redis, rabbitmq, conversation_id), media_type="text/event-stream"
+        # phiên kết thúc thì bác sĩ không được nhận thêm gì: đóng stream ngay sau event kết thúc đó
+        pubsub_event_stream(
+            redis,
+            channel,
+            flush,
+            stop_after=_session_resolved if access.is_doctor else None,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

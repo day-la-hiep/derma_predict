@@ -13,7 +13,7 @@ from agent.context.agent_context import AgentContext
 from agent.context.builder import build_context
 from app.api.deps import get_rabbitmq_client, get_redis_client
 from app.config.constants import (
-    AGENT_EVENTS_CHANNEL,
+    CONVERSATION_ROOM_CHANNEL,
     AGENT_RESPONSE_QUEUE,
     STREAM_DONE_SENTINEL,
 )
@@ -140,7 +140,7 @@ async def _finish_with_question(
 
 
 async def _drive(req: TurnRequest, input_: object) -> None:
-    channel = AGENT_EVENTS_CHANNEL.format(conversation_id=req.conversation_id)
+    channel = CONVERSATION_ROOM_CHANNEL.format(conversation_id=req.conversation_id)
     context = await build_context(req)
     base: dict[str, Any] = {
         "conversation_id": req.conversation_id,

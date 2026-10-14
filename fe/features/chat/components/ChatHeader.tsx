@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Menu, ShieldCheck, Sparkles, Stethoscope } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -15,15 +15,10 @@ export function ChatHeader({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const streaming = useChatStore((s) =>
     activeId ? s.hasActiveStream(activeId) : false
   );
-  const syncDoctorMessages = useChatStore((s) => s.syncDoctorMessages);
+  const consultation = useChatStore((s) =>
+    activeId ? s.consultationByConversation[activeId] : undefined
+  );
   const conversation = conversations.find((c) => c.id === activeId);
-
-  // tin bác sĩ không đi qua SSE của agent nên poll nhẹ khi đang xem hội thoại
-  useEffect(() => {
-    if (!activeId || streaming) return;
-    const timer = setInterval(() => void syncDoctorMessages(activeId), 5000);
-    return () => clearInterval(timer);
-  }, [activeId, streaming, syncDoctorMessages]);
   const [requestingDoctor, setRequestingDoctor] = useState(false);
 
   const handleRequestDoctor = async () => {
@@ -56,7 +51,17 @@ export function ChatHeader({ onOpenSidebar }: { onOpenSidebar: () => void }) {
             {conversation?.title || "Cuộc trò chuyện mới"}
           </h1>
           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-            {streaming ? (
+            {consultation === "active" ? (
+              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
+                <Stethoscope className="size-3" />
+                <span>Bác sĩ đang tư vấn</span>
+              </span>
+            ) : consultation === "pending" ? (
+              <span className="flex items-center gap-1.5 text-sky-600 dark:text-sky-400 font-medium">
+                <Stethoscope className="size-3" />
+                <span>Đang chờ bác sĩ nhận ca</span>
+              </span>
+            ) : streaming ? (
               <span className="flex items-center gap-1.5 text-brand font-medium">
                 <Sparkles className="size-3 animate-spin text-brand" />
                 <span>Đang phân tích</span>

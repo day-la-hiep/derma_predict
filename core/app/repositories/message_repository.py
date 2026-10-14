@@ -17,6 +17,9 @@ class MessageRepository:
         await self._db.flush()
         return message
 
+    async def commit(self) -> None:
+        await self._db.commit()
+
     async def video_calls(self, messages: list[Message]) -> dict[str, VideoCall]:
         """Cuộc gọi video của các tin `video_call` trong 1 truy vấn (theo `video_call_id`)."""
         ids = [m.video_call_id for m in messages if m.video_call_id]

@@ -74,6 +74,8 @@ export interface ChatMessage {
   status: MessageStatus;
   choice?: MessageChoice;
   isOptionResponse?: boolean;
+  /** `consultation_*` = tin mốc đầu/cuối phiên bác sĩ, hiện thành đường chia thay vì bubble */
+  messageType?: string;
 }
 
 export interface Conversation {
@@ -177,6 +179,20 @@ export type FlatStreamEvent =
       conversationId: string;
       choice: MessageChoice;
     }
+  /** Tin của bệnh nhân/bác sĩ đã ghi DB (room). `message` là `ApiChatMessage` snake_case, chuyển bằng `toChatMessage`. */
+  | {
+      type: "message.created";
+      conversationId: string;
+      message: unknown;
+    }
+  /** Ca tư vấn của hội thoại đổi trạng thái (bác sĩ nhận / đóng ca). */
+  | {
+      type: "consultation.updated";
+      conversationId: string;
+      sessionId: string;
+      status: "pending" | "active" | "resolved";
+      doctorId: string | null;
+    }
   /** Kết quả 1 tool nghiệp vụ (không phải `ask_user`) vừa chạy xong — chỉ backend thật
    * gửi (`core/app/agent/graph.py::_emit_tool_result`), hiển thị như 1 bước trong
    * `ReasoningSection`. */
@@ -258,7 +274,8 @@ export type AnswerQuestionInput = MessageAnswer & { conversationId: string };
  * assistant rồi lắng nghe SSE theo id đó (không cần chờ `message.started`). */
 export interface SendMessageResult {
   userMessage: ChatMessage;
-  assistantMessage: ChatMessage;
+  /** null khi bác sĩ đang phụ trách ca: AI không tạo turn */
+  assistantMessage: ChatMessage | null;
 }
 
 export interface ChatService {
@@ -279,4 +296,8 @@ export interface ChatService {
   /** Upload 1 file lên backend TRƯỚC khi gửi tin nhắn — trả về `FileAttachment` với
    * `id` = object key thật (backend dùng để đọc lại file cho Agent) và `url` preview. */
   uploadAttachment(file: File): Promise<FileAttachment>;
+  /** Mở room (SSE dài hạn) của hội thoại; bản mock không có. */
+  openRoom?(conversationId: string): void;
+  /** Gọi khi room nối lại sau khi đứt — nơi refetch tin nhắn bị lỡ. */
+  onRoomReconnect?(listener: (conversationId: string) => void): () => void;
 }
