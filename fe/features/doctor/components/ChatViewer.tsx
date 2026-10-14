@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bot, User, Stethoscope, Info, CornerDownLeft } from "lucide-react";
+import { Bot, User, Stethoscope, Info, CornerDownLeft, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDoctorStore } from "../store";
 import type { DoctorViewMessage } from "../types";
 import { Hint } from "@/components/ui/hint";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { STATUS_CONFIG } from "../constants";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownMessage } from "@/features/chat/components/MarkdownMessage";
 import { PatientProfileSheet } from "./PatientProfileSheet";
+import { ReportPanel } from "./ReportPanel";
 
 const SENDER_CONFIG = {
   patient: {
@@ -149,11 +152,23 @@ export function ChatViewer() {
           {activeSession?.patient?.fullName ?? activeSession?.conversationTitle ?? "Hội thoại"}
         </h3>
         {activeSession && (
-          <div className="flex shrink-0 items-center gap-3">
-            <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mr-1">
               <span className={cn("size-2 rounded-full", STATUS_CONFIG[activeSession.status].dotClass, activeSession.status === "active" && "animate-pulse")} />
               {STATUS_CONFIG[activeSession.status].label}
             </span>
+            <div className="xl:hidden">
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1.5 border-brand/30 text-brand hover:bg-brand/10">
+                    <Brain className="size-3.5" /> Báo cáo AI
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-full p-0 sm:max-w-md">
+                  <ReportPanel />
+                </SheetContent>
+              </Sheet>
+            </div>
             <PatientProfileSheet session={activeSession} />
           </div>
         )}

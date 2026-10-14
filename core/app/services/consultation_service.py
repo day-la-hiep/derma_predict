@@ -32,11 +32,11 @@ from app.services.doctor_medical_record_service import to_patient_profile_dto
 logger = logging.getLogger(__name__)
 
 REPORT_SYSTEM_PROMPT = """Bạn là trợ lý y khoa chuyên sâu da liễu.
-Nhiệm vụ của bạn là đọc toàn bộ đoạn hội thoại giữa bệnh nhân và trợ lý AI, sau đó:
-1. Rút trích các DỮ KIỆN LÂM SÀNG (clinical facts) có cấu trúc.
-2. Soạn một BÁO CÁO TIỀN TƯ VẤN (Pre-consultation Report) súc tích, chuyên nghiệp cho Bác sĩ da liễu đọc trước khi nhận ca.
+Nhiệm vụ của bạn là phân tích các nguồn dữ liệu lâm sàng của bệnh nhân (dữ kiện lâm sàng đã biết, tóm tắt các lần khám trước, và đoạn hội thoại đợt khám hiện tại giữa bệnh nhân và trợ lý AI), sau đó:
+1. Rút trích các DỮ KIỆN LÂM SÀNG (clinical facts) mới hoặc cập nhật từ đoạn hội thoại hiện tại.
+2. Soạn một BÁO CÁO TIỀN TƯ VẤN (Pre-consultation Report) súc tích, chuyên nghiệp cho Bác sĩ da liễu đọc trước khi nhận ca, kết hợp tiền sử bệnh nhân và diễn biến đợt khám này.
 
-Mỗi tin trong hội thoại có số thứ tự dạng `[#3][PATIENT]: ...`.
+Mỗi tin trong đoạn hội thoại hiện tại có số thứ tự dạng `[#3][PATIENT]: ...`.
 
 BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON SAU (không kèm markdown code block hoặc text thừa):
 {
@@ -51,16 +51,17 @@ BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON SAU (không kèm markdown cod
   "summary": "Nội dung tóm tắt lâm sàng (định dạng Markdown)"
 }
 
-Yêu cầu cho phần `summary` (dùng Markdown đẹp):
-- ## Lý do khám & Bệnh sử: Tóm tắt triệu chứng chính, thời gian khởi phát.
-- ## Vị trí & Đặc điểm tổn thương: Mô tả hình thái, vị trí vùng da bị bệnh.
-- ## Đánh giá sơ bộ của AI: 1–3 bệnh nghi ngờ xếp theo độ phù hợp, độ tin cậy (Cao/Vừa/Thấp).
+Yêu cầu cho phần `summary` (dùng Markdown chuyên nghiệp):
+- ## Tiền sử & Cơ địa đã biết: Tóm tắt ngắn gọn dị ứng, bệnh nền, thuốc đã/đang dùng từ dữ kiện trước đây (nếu có).
+- ## Diễn biến các lần khám trước: Tóm tắt chẩn đoán hoặc diễn biến từ lần khám trước (nếu có).
+- ## Lý do khám & Bệnh sử đợt này: Tóm tắt triệu chứng chính, thời gian khởi phát ghi nhận từ hội thoại đợt này.
+- ## Vị trí & Đặc điểm tổn thương: Mô tả hình thái, vị trí vùng da bị bệnh đợt này.
+- ## Đánh giá sơ bộ của AI: 1–3 bệnh nghi ngờ xếp theo độ phù hợp, độ tin cậy (Cao/Vừa/Thấp), có đối chiếu với tiền sử/diễn biến cũ nếu liên quan.
 - ## Dấu hiệu cờ đỏ (Red Flags): Đã kiểm tra loại trừ hay nghi ngờ có cờ đỏ gì.
 - ## Đề xuất cho Bác sĩ tiếp quản: Gợi ý câu hỏi lâm sàng cần làm rõ hoặc cận lâm sàng nên chỉ định.
 - Lưu ý: Ghi rõ 'Kết luận AI chỉ mang tính chất tham khảo hỗ trợ tiền lâm sàng' ở cuối.
 
-Yêu cầu cho `source_messages`: số thứ tự các tin chứa bằng chứng cho fact đó (ưu tiên tin của bệnh nhân);
-không bịa số không có trong hội thoại.
+Yêu cầu cho `source_messages`: số thứ tự các tin trong đoạn hội thoại hiện tại chứa bằng chứng cho fact đó (ưu tiên tin của bệnh nhân); không bịa số không có trong hội thoại.
 """
 
 
@@ -216,7 +217,29 @@ class ConsultationService:
         )
         await self._repo.create_session(session)
 
-        # 3. Lấy lịch sử hội thoại để nạp vào LLM
+        # 3. Lấy dữ liệu đa nguồn: Dữ kiện lâm sàng đã biết, báo cáo lần khám trước, và hội thoại hiện tại
+        patient_profile_id = conv.patient_profile_id
+
+        # 3.1. Dữ kiện lâm sàng / tiền sử tích luỹ
+        past_facts_data = await self._repo.get_active_facts_with_provenance(patient_profile_id)
+        if past_facts_data:
+            past_facts_text = "\n".join(
+                f"- [{tpl.fact_type.upper()}] {tpl.label}: {fact.detail}"
+                for fact, tpl, _ in past_facts_data
+            )
+        else:
+            past_facts_text = "Chưa ghi nhận dữ kiện lâm sàng tiền sử nào trước đó."
+
+        # 3.2. Báo cáo lần khám gần nhất trước đó
+        latest_past_report = await self._repo.get_latest_past_report(
+            patient_profile_id, exclude_session_id=session.id
+        )
+        if latest_past_report and latest_past_report.summary:
+            past_report_text = latest_past_report.summary
+        else:
+            past_report_text = "Chưa có báo cáo khám trước đó (đây là lần đầu hoặc chưa có phiên tư vấn nào)."
+
+        # 3.3. Lịch sử hội thoại đợt khám hiện tại
         messages = [m for m in await self._msg_repo.list_by_conversation(conversation_id) if m.content]
         # đánh số để LLM chỉ ra tin nguồn của từng fact → ghi `clinical_provenances`
         chat_transcript = "\n".join(
@@ -228,14 +251,22 @@ class ConsultationService:
         facts_to_save: list[ClinicalFact] = []
         facts_dto: list[ClinicalFactOutput] = []
         summary_text = ""
-        patient_profile_id = conv.patient_profile_id
 
         try:
             llm = get_model()
             prompt = [
                 SystemMessage(content=REPORT_SYSTEM_PROMPT),
                 HumanMessage(
-                    content=f"Đoạn hội thoại giữa bệnh nhân và AI:\n\n{chat_transcript}\n\nHãy sinh báo cáo JSON:"
+                    content=(
+                        "DƯỚI ĐÂY LÀ CÁC NGUỒN DỮ LIỆU CỦA BỆNH NHÂN:\n\n"
+                        "=== 1. DỮ KIỆN LÂM SÀNG / TIỀN SỬ ĐÃ GHI NHẬN TỪ TRƯỚC ===\n"
+                        f"{past_facts_text}\n\n"
+                        "=== 2. TÓM TẮT LẦN KHÁM GẦN NHẤT TRƯỚC ĐÓ ===\n"
+                        f"{past_report_text}\n\n"
+                        "=== 3. ĐOẠN HỘI THOẠI ĐỢT KHÁM HIỆN TẠI ===\n"
+                        f"{chat_transcript}\n\n"
+                        "Hãy phân tích và sinh báo cáo JSON:"
+                    )
                 ),
             ]
             response = await llm.ainvoke(prompt)
@@ -292,6 +323,7 @@ class ConsultationService:
             summary_text = (
                 f"## Tóm tắt phiên tư vấn\n"
                 f"- **Lý do khám**: {reason}\n"
+                f"- **Tiền sử ghi nhận**: {past_facts_text if past_facts_data else 'Chưa có'}\n"
                 f"- **Ghi nhận**: Bệnh nhân yêu cầu bác sĩ tư vấn trực tiếp.\n"
                 f"- *Hệ thống đang đồng bộ dữ kiện lâm sàng.*"
             )
