@@ -58,7 +58,7 @@ cp core/.env.example core/.env
 | Biến | Giá trị |
 |---|---|
 | `OPENROUTER_API_KEY` | Key từ https://openrouter.ai/keys |
-| `AGENT_MODEL` | Mặc định `openai:google/gemma-4-26b-a4b-it` (bản **trả phí**, cần credit OpenRouter; bản `:free` bị chặn khi dùng tool-calling) |
+| `AGENT_MODEL` | Mặc định `openrouter:google/gemma-4-26b-a4b-it` (bản **trả phí**, cần credit OpenRouter; bản `:free` bị chặn khi dùng tool-calling) |
 
 Không cần sửa `DATABASE_URL`, `NEO4J_URL`, `MINIO_*`, … — compose tự ghi đè.
 Không cần `GOOGLE_API_KEY` (embedding và reranker gọi qua OpenRouter, dùng chung `OPENROUTER_API_KEY`).

@@ -52,8 +52,15 @@ ALL_TOOLS = [
     classify_skin_image,
     search_trusted_web,
     fetch_trusted_page,
-    *([analyze_skin_image_multimodal] if settings.MEDGEMMA_ENABLED else []),
 ]
+
+
+def build_tools() -> list[Any]:
+    # Đọc settings lúc dựng graph (không phải lúc import) để CLI/test đổi `AGENT_VISION_MODEL` rồi dựng lại.
+    return [
+        *ALL_TOOLS,
+        *([analyze_skin_image_multimodal] if settings.AGENT_VISION_MODEL else []),
+    ]
 
 
 def default_middleware() -> list[
@@ -97,7 +104,7 @@ def build_pre_diagnosis_graph(
     """`checkpointer` / `store` để None khi nối vào chat graph"""
     return create_agent(
         get_model(),
-        tools=ALL_TOOLS if tools is None else tools,
+        tools=build_tools() if tools is None else tools,
         system_prompt=DIAGNOSIS_PROMPT
         if system_prompt is None
         else system_prompt,

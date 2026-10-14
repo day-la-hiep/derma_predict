@@ -1,10 +1,10 @@
-"""Tool mô tả tổn thương da từ ẢNH bằng MedGemma (multimodal)"""
+"""Tool mô tả tổn thương da từ ẢNH bằng model multimodal (`settings.AGENT_VISION_MODEL`)"""
 
 from typing import Any
 
 from langchain.tools import ToolRuntime, tool
 
-from agent.common.medgemma import MedGemmaError, describe_skin_image
+from agent.common.vision import VisionError, describe_skin_image
 from agent.context.agent_context import AgentContext
 from agent.tools.skin_image_classifier import _resolve_object_key  # pyright: ignore[reportPrivateUsage]
 from app.api.deps import get_file_store_service
@@ -14,7 +14,7 @@ from app.api.deps import get_file_store_service
 async def analyze_skin_image_multimodal(
     object_key: str, runtime: ToolRuntime[AgentContext, Any]
 ) -> str:
-    """Mô tả tổn thương da trong ảnh bằng mô hình đa phương thức y khoa (MedGemma): hình
+    """Mô tả tổn thương da trong ảnh bằng mô hình đa phương thức (vd MedGemma): hình
     thái, phân bố, vài giả thuyết kèm lý do và dấu hiệu cần lưu ý. Bổ sung cho
     `classify_skin_image` (CNN chỉ cho nhãn + % tin cậy, không giải thích).
 
@@ -35,12 +35,12 @@ async def analyze_skin_image_multimodal(
 
     try:
         description = await describe_skin_image(image_bytes)
-    except MedGemmaError as e:
+    except VisionError as e:
         # Lỗi mềm: agent vẫn còn kết quả CNN để làm việc tiếp.
         return f"Chưa mô tả được ảnh bằng mô hình đa phương thức ({e}). Dùng kết quả CNN."
 
     return (
-        "Mô tả ảnh (MedGemma, KHÔNG phải chẩn đoán y khoa):\n"
+        "Mô tả ảnh (mô hình đa phương thức, KHÔNG phải chẩn đoán y khoa):\n"
         + description
         + "\n\nChỉ là mô tả bổ sung cho kết quả CNN, chưa phải bằng chứng lâm sàng."
     )

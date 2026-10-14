@@ -64,6 +64,28 @@ def _model_setting() -> Setting:
     return Setting("model", current, "model trong AGENT_MODEL_CHOICES (/set model để chọn)", ids)
 
 
+def _role_model_settings() -> list[Setting]:
+    from app.config.settings import settings
+
+    note = "dạng provider:model, vd local:medgemma:4b; gõ off để để trống"
+    return [
+        Setting("triage_model", settings.AGENT_TRIAGE_MODEL, f"model cho bước triage ({note}); trống = dùng model hội thoại"),
+        Setting("vision_model", settings.AGENT_VISION_MODEL, f"model mô tả ảnh ({note}); trống = tắt tool multimodal, có hiệu lực từ hội thoại mới"),
+    ]
+
+
+def _apply_role_models(cfg: dict[str, Any]) -> None:
+    """Ghi model theo role vào `settings` TRƯỚC khi dựng graph (tool multimodal đăng ký lúc dựng, triage đọc lúc chạy)."""
+    from app.config.settings import settings
+
+    def value(key: str) -> str:
+        raw = str(cfg.get(key, "")).strip()
+        return "" if raw.lower() in ("off", "none", "-") else raw
+
+    settings.AGENT_TRIAGE_MODEL = value("triage_model")
+    settings.AGENT_VISION_MODEL = value("vision_model")
+
+
 async def _run_main(module: Any, argv: list[str]) -> None:
     """Các script `try_*` đọc `sys.argv` và có thể `sys.exit` sau mỗi lần chạy — ở đây chỉ cần quay lại prompt."""
     sys.argv = argv
@@ -86,6 +108,7 @@ async def _retrieval(text: str, cfg: dict[str, Any], preset: Preset | None) -> N
 async def _reasoning(text: str, cfg: dict[str, Any], preset: Preset | None) -> None:
     from agent.test import try_reasoning
 
+    _apply_role_models(cfg)
     answers = [a.strip() for a in str(preset.extra.get("answers") if preset and "answers" in preset.extra else cfg["answers"]).split("|") if a.strip()]
     argv = ["try_reasoning", text, "--repeat", str(cfg["repeat"]), *(a for ans in answers for a in ("--answer", ans))]
     if not cfg["triage"]:
@@ -162,6 +185,7 @@ async def _chat(text: str, cfg: dict[str, Any], preset: Preset | None) -> None:
     from agent.test import try_reasoning
     from app.config.settings import settings
 
+    _apply_role_models(cfg)
     if _CHAT["graph"] is None:
         settings.AGENT_TRIAGE_ENABLED = bool(cfg["triage"])  # phải đặt TRƯỚC khi dựng graph; đổi /set triage có hiệu lực từ hội thoại mới
         from agent.graph.chat_graph import build_agent_graph
@@ -228,9 +252,11 @@ async def _kg_seeds(text: str, cfg: dict[str, Any], preset: Preset | None) -> No
 async def _skin_image(text: str, cfg: dict[str, Any], preset: Preset | None) -> None:
     import time
 
-    from agent.common.medgemma import MedGemmaError, describe_skin_image
+    from agent.common.vision import VisionError, describe_skin_image
+    from app.config.settings import settings
     from agent.tools.skin_image_classifier import _format_predictions, get_predictor  # pyright: ignore[reportPrivateUsage]
 
+    settings.AGENT_VISION_MODEL = str(cfg["vision_model"]).strip()
     for raw in shlex.split(text):
         path = Path(raw).expanduser()
         if path.suffix.lower() not in _IMAGE_TYPES or not path.is_file():
@@ -242,14 +268,14 @@ async def _skin_image(text: str, cfg: dict[str, Any], preset: Preset | None) -> 
             start = time.perf_counter()
             results = await asyncio.to_thread(get_predictor().predict, data, 5)
             print(f"[CNN · {time.perf_counter() - start:.1f}s]\n{_format_predictions(results)}")
-        if cfg["medgemma"]:
+        if cfg["vision"]:
             start = time.perf_counter()
             try:
                 description = await describe_skin_image(data)
-            except MedGemmaError as e:
-                print(f"[MedGemma · lỗi] {e}")
+            except VisionError as e:
+                print(f"[Vision · lỗi] {e}")
             else:
-                print(f"[MedGemma · {time.perf_counter() - start:.1f}s]\n{description}")
+                print(f"[Vision · {settings.AGENT_VISION_MODEL} · {time.perf_counter() - start:.1f}s]\n{description}")
     print("\n(Kết quả AI chỉ là gợi ý, KHÔNG phải chẩn đoán y khoa.)")
 
 
@@ -286,6 +312,7 @@ FEATURES: list[Feature] = [
         settings=[
             Setting("triage", False, "bật bước lọc intent (tắt = ép vào graph tiền chẩn đoán)"),
             _model_setting(),
+            *_role_model_settings(),
             Setting("answers", "", "câu trả lời cho ask_user, cách nhau dấu |"),
             Setting("repeat", 1, "số lần chạy lại để đánh giá độ ổn định"),
             Setting("raw", False, "in đủ kết quả tool, không cắt"),
@@ -300,6 +327,7 @@ FEATURES: list[Feature] = [
         settings=[
             Setting("triage", True, "bật bước lọc intent (đổi có hiệu lực từ hội thoại mới)"),
             _model_setting(),
+            *_role_model_settings(),
             Setting("raw", False, "in đủ kết quả tool, không cắt"),
         ],
         presets=[Preset(t, t) for t in ("Chào bạn", "Da tôi bị ngứa và nổi mẩn", "Tôi bị nổi mảng đỏ có vảy trắng ở khuỷu tay khoảng 2 tuần")],
@@ -311,12 +339,13 @@ FEATURES: list[Feature] = [
     ),
     Feature(
         key="skin_image",
-        title="Phân tích ảnh da (CNN + MedGemma)",
-        help="Gọi thẳng CNN và MedGemma trên ảnh, in kết quả + thời gian, không qua LLM/MinIO. Gõ đường dẫn ảnh (nhiều ảnh cách nhau dấu cách). MedGemma dùng cấu hình MEDGEMMA_* trong .env (Ollama/Vertex).",
+        title="Phân tích ảnh da (CNN + model multimodal)",
+        help="Gọi thẳng CNN và model multimodal (AGENT_VISION_MODEL) trên ảnh, in kết quả + thời gian, không qua LLM chính/MinIO. Gõ đường dẫn ảnh (nhiều ảnh cách nhau dấu cách). /set vision_model để thử model khác, vd local:medgemma:4b.",
         run=_skin_image,
         settings=[
             Setting("cnn", True, "chạy CNN phân loại"),
-            Setting("medgemma", True, "chạy MedGemma mô tả"),
+            Setting("vision", True, "chạy model multimodal mô tả"),
+            _role_model_settings()[1],
         ],
     ),
     Feature(
