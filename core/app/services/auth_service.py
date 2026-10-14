@@ -10,7 +10,7 @@ from app.config.security import (
     hash_password,
     verify_password,
 )
-from app.dto.request.auth import LoginInput, RegisterInput
+from app.dto.request.auth import LoginInput, RegisterInput, UpdateAccountInput
 from app.dto.response.auth import TokenPairOutput, UserSummaryOutput
 from app.exception.errors import (
     AuthenticationError,
@@ -131,6 +131,28 @@ class AuthService:
         user = await self._user_repo.get_by_id(user_id)
         if user is None:
             raise AuthenticationError("Không tìm thấy tài khoản người dùng.")
+
+        role = await self._user_repo.get_role(user.id)
+        return UserSummaryOutput(
+            id=user.id,
+            username=user.username,
+            full_name=user.full_name,
+            dob=user.dob,
+            gender=Gender(user.gender),
+            role=role,
+        )
+
+    async def update_account(self, user_id: str, body: UpdateAccountInput) -> UserSummaryOutput:
+        """Cập nhật họ tên/ngày sinh/giới tính của tài khoản đang đăng nhập."""
+        user = await self._user_repo.get_by_id(user_id)
+        if user is None:
+            raise AuthenticationError("Không tìm thấy tài khoản người dùng.")
+
+        fields = body.model_dump(mode="json", exclude_unset=True, exclude_none=True)
+        # `mode="json"` chuyển `date` thành chuỗi ISO; cột `dob` cần `date` thật, không phải chuỗi
+        if body.dob is not None:
+            fields["dob"] = body.dob
+        user = await self._user_repo.update(user, fields)
 
         role = await self._user_repo.get_role(user.id)
         return UserSummaryOutput(

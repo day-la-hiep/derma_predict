@@ -1,4 +1,5 @@
 """Truy vấn DB cho `ConsultationSession`, `PreConsultationReport`, `ClinicalFact`."""
+from collections import defaultdict
 from datetime import UTC, datetime
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,8 +8,10 @@ from app.models.consultation_session import ConsultationSession
 from app.models.clinical import (
     ClinicalFact,
     ClinicalFactTemplate,
+    ClinicalProvenance,
     PreConsultationReport,
 )
+from app.models.message import Message
 
 
 class ConsultationRepository:
@@ -52,6 +55,14 @@ class ConsultationRepository:
         )
         result = await self._db.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def conversation_ids(self, session_ids: list[str]) -> dict[str, str]:
+        if not session_ids:
+            return {}
+        stmt = select(ConsultationSession.id, ConsultationSession.conversation_id).where(
+            ConsultationSession.id.in_(session_ids)
+        )
+        return {sid: cid for sid, cid in (await self._db.execute(stmt)).all()}
 
     async def get_report(self, session_id: str) -> PreConsultationReport | None:
         stmt = select(PreConsultationReport).where(
@@ -102,6 +113,35 @@ class ConsultationRepository:
             self._db.add(fact)
         await self._db.flush()
         return facts
+
+    async def add_provenances(self, pairs: list[tuple[str, str]]) -> None:
+        """(fact_id, message_id) — tin nhắn gốc mà fact được trích ra."""
+        self._db.add_all(ClinicalProvenance(fact_id=f, message_id=m) for f, m in dict.fromkeys(pairs))
+        await self._db.flush()
+
+    async def get_active_facts_with_provenance(
+        self, patient_profile_id: str
+    ) -> list[tuple[ClinicalFact, ClinicalFactTemplate, list[Message]]]:
+        """Fact đang hiệu lực của bệnh nhân + tin nhắn nguồn (cũ trước), để điền sẵn form chốt bệnh án."""
+        stmt = (
+            select(ClinicalFact, ClinicalFactTemplate)
+            .join(ClinicalFactTemplate, ClinicalFact.template_id == ClinicalFactTemplate.id)
+            .where(ClinicalFact.patient_profile_id == patient_profile_id, ClinicalFact.status == "active")
+            .order_by(ClinicalFact.created_at.asc())
+        )
+        rows = [(f, t) for f, t in (await self._db.execute(stmt)).all()]
+        if not rows:
+            return []
+        prov_stmt = (
+            select(ClinicalProvenance.fact_id, Message)
+            .join(Message, Message.id == ClinicalProvenance.message_id)
+            .where(ClinicalProvenance.fact_id.in_([f.id for f, _ in rows]))
+            .order_by(Message.created_at.asc())
+        )
+        by_fact: dict[str, list[Message]] = defaultdict(list)
+        for fact_id, message in (await self._db.execute(prov_stmt)).all():
+            by_fact[fact_id].append(message)
+        return [(f, t, by_fact.get(f.id, [])) for f, t in rows]
 
     async def accept_session(
         self, session: ConsultationSession, doctor_id: str

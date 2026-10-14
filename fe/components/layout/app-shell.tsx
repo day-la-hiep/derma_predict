@@ -1,14 +1,24 @@
 "use client";
 
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
-import { ArrowLeft, LogOut, type LucideIcon } from "lucide-react";
+import { ChevronDown, LogOut, Settings2, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useState } from "react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Hint } from "@/components/ui/hint";
+import { AccountSettingsDialog } from "@/features/auth/components/AccountSettingsDialog";
 import { logout } from "@/features/auth/logout";
+import { getInitials } from "@/features/user";
 import { cn } from "@/lib/utils";
-import { getAuthenticatedUser } from "@/services/client";
+import { AUTH_STATE_EVENT, getAuthenticatedUser } from "@/services/client";
 
 export interface ShellNavItem {
   href: string;
@@ -34,26 +44,62 @@ function isActive(pathname: string, href: string, exact?: boolean) {
 
 function Brand({ href, label, icon: Icon }: { href: string; label: string; icon: LucideIcon }) {
   return (
-    <Link href={href} className="flex items-center gap-2.5">
+    <Link href={href} className="flex shrink-0 items-center gap-2.5">
       <span className="flex size-8 items-center justify-center rounded-xl bg-brand/10 text-brand">
         <Icon className="size-4" />
       </span>
-      <span className="text-sm font-semibold tracking-tight text-foreground">
+      <span className="hidden text-sm font-semibold tracking-tight text-foreground sm:inline">
         Derma AI <span className="font-normal text-muted-foreground">· {label}</span>
       </span>
     </Link>
   );
 }
 
-function AccountBar() {
-  const account = getAuthenticatedUser();
+function AccountMenu() {
+  const [account, setAccount] = useState(() => getAuthenticatedUser());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    const sync = () => setAccount(getAuthenticatedUser());
+    window.addEventListener(AUTH_STATE_EVENT, sync);
+    return () => window.removeEventListener(AUTH_STATE_EVENT, sync);
+  }, []);
+
+  if (!account) return null;
+  const displayName = account.full_name || account.username;
+
   return (
-    <div className="flex items-center justify-between gap-2 border-t border-border px-2.5 pt-3">
-      <span className="truncate text-xs font-medium text-foreground">{account?.full_name || account?.username || "Tài khoản"}</span>
-      <Button size="sm" variant="ghost" onClick={() => void logout()} className="h-7 gap-1.5 px-2 text-[11px] text-muted-foreground hover:text-foreground">
-        <LogOut className="size-3.5" />
-        Đăng xuất
-      </Button>
+    <div className="flex shrink-0 items-center">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="flex items-center gap-2 rounded-xl px-2 py-1.5 transition-colors hover:bg-muted"
+          >
+            <Avatar className="size-7 shrink-0 rounded-full border border-border">
+              <AvatarFallback className="rounded-full bg-brand/15 text-xs font-semibold text-brand">
+                {getInitials(displayName)}
+              </AvatarFallback>
+            </Avatar>
+            <span className="hidden max-w-40 truncate text-xs font-medium text-foreground sm:inline">
+              {displayName}
+            </span>
+            <ChevronDown className="hidden size-3.5 shrink-0 text-muted-foreground sm:inline" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="bottom" align="end" className="w-52 rounded-xl border border-border p-1 shadow-xl">
+          <DropdownMenuItem onClick={() => setSettingsOpen(true)} className="cursor-pointer rounded-lg">
+            <Settings2 className="size-4" />
+            <span className="text-xs font-medium">Cài đặt</span>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator className="bg-border" />
+          <DropdownMenuItem variant="destructive" onClick={() => void logout()} className="cursor-pointer rounded-lg">
+            <LogOut className="size-4" />
+            <span className="text-xs font-medium">Đăng xuất</span>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <AccountSettingsDialog account={account} open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 }
@@ -67,75 +113,36 @@ export function AppShell({ brandLabel, brandIcon, navTitle, nav, fullBleed = fal
 
   return (
     <QueryClientProvider client={client}>
-      <div className={cn("flex bg-background", fullBleed ? "h-dvh overflow-hidden" : "min-h-screen")}>
-        <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col gap-6 border-r border-border bg-card/40 px-3 py-4 md:flex">
-          <div className="px-2">
-            <Brand href={home} label={brandLabel} icon={brandIcon} />
-          </div>
-          <nav className="flex flex-1 flex-col gap-1" aria-label={navTitle}>
-            <p className="px-2 pb-1 text-[11px] font-medium text-muted-foreground">{navTitle}</p>
+      <div className={cn("flex flex-col bg-background print:h-auto print:overflow-visible", fullBleed ? "h-dvh overflow-hidden" : "min-h-screen")}>
+        <header className="sticky top-0 z-30 flex h-14 shrink-0 print:hidden items-center gap-4 border-b border-border bg-card/60 px-4 backdrop-blur-md sm:px-6">
+          <Brand href={home} label={brandLabel} icon={brandIcon} />
+          <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" aria-label={navTitle}>
             {nav.map(({ href, label, hint, icon: Icon, exact }) => {
               const active = isActive(pathname, href, exact);
               return (
-                <Link
-                  key={href}
-                  href={href}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-xl px-2.5 py-2 transition-colors",
-                    active ? "bg-brand/10 text-brand" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  <span className="min-w-0">
-                    <span className="block truncate text-xs font-medium">{label}</span>
-                    <span className="block truncate text-[10px] opacity-70">{hint}</span>
-                  </span>
-                </Link>
+                <Hint key={href} side="bottom" content={hint}>
+                  <Link
+                    href={href}
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                      active ? "bg-brand/10 text-brand" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    <Icon className="size-3.5" />
+                    {label}
+                  </Link>
+                </Hint>
               );
             })}
           </nav>
-          <div className="space-y-1">
-            <Link
-              href="/chats"
-              className="flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <ArrowLeft className="size-3.5" /> Về trò chuyện
-            </Link>
-            <AccountBar />
-          </div>
-        </aside>
-
-        <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 border-b border-border/80 bg-background/85 backdrop-blur-md md:hidden">
-            <div className="flex h-14 items-center gap-3 px-4">
-              <Brand href={home} label={brandLabel} icon={brandIcon} />
-              <div className="flex-1" />
-              <button type="button" onClick={() => void logout()} className="text-xs font-medium text-muted-foreground hover:text-foreground">
-                Đăng xuất
-              </button>
-            </div>
-            <nav className="flex gap-1 overflow-x-auto px-3 pb-2" aria-label={navTitle}>
-              {nav.map(({ href, label, exact }) => (
-                <Link
-                  key={href}
-                  href={href}
-                  className={cn(
-                    "shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-medium",
-                    isActive(pathname, href, exact) ? "bg-brand/10 text-brand" : "text-muted-foreground"
-                  )}
-                >
-                  {label}
-                </Link>
-              ))}
-            </nav>
-          </header>
-          {fullBleed ? (
-            <main className="min-h-0 flex-1">{children}</main>
-          ) : (
-            <main className="mx-auto w-full max-w-[96rem] flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
-          )}
-        </div>
+          <AccountMenu />
+        </header>
+        {fullBleed ? (
+          <main className="min-h-0 flex-1 print:overflow-visible">{children}</main>
+        ) : (
+          <main className="mx-auto w-full max-w-[96rem] flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        )}
       </div>
     </QueryClientProvider>
   );

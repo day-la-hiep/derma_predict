@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, status
 
 from app.api.deps import get_auth_service, get_current_user
 from app.dto.common import ApiResponse
-from app.dto.request.auth import LoginInput, RefreshTokenInput, RegisterInput
+from app.dto.request.auth import LoginInput, RefreshTokenInput, RegisterInput, UpdateAccountInput
 from app.dto.response.auth import TokenPairOutput, UserSummaryOutput
 from app.models.user import User
 from app.services.auth_service import AuthService
@@ -89,4 +89,20 @@ async def get_current_account(
 ) -> ApiResponse[UserSummaryOutput]:
     """Lấy thông tin tài khoản của người dùng đang đăng nhập."""
     user_info = await service.get_current_account(current_user.id)
+    return ApiResponse(data=user_info)
+
+
+@router.patch(
+    "/me",
+    status_code=status.HTTP_200_OK,
+    response_model=ApiResponse[UserSummaryOutput],
+    operation_id="updateCurrentAccount",
+)
+async def update_current_account(
+    body: UpdateAccountInput,
+    current_user: CurrentUserDep,
+    service: AuthServiceDep,
+) -> ApiResponse[UserSummaryOutput]:
+    """Cập nhật họ tên/ngày sinh/giới tính của tài khoản đang đăng nhập."""
+    user_info = await service.update_account(current_user.id, body)
     return ApiResponse(data=user_info)

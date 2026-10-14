@@ -26,8 +26,8 @@ interface DoctorConsultationState {
   /** Filter theo status */
   statusFilter: ConsultationStatus | "all";
 
-  /** Khởi tạo — load danh sách phiên */
-  init: () => Promise<void>;
+  /** Khởi tạo — load danh sách phiên; `preferredSessionId` khi mở từ "Mở ca gốc" */
+  init: (preferredSessionId?: string | null) => Promise<void>;
   /** Chọn phiên tư vấn */
   selectSession: (sessionId: string) => Promise<void>;
   /** Đổi filter status */
@@ -36,6 +36,8 @@ interface DoctorConsultationState {
   acceptSession: (sessionId: string) => Promise<void>;
   /** Bác sĩ đóng ca */
   resolveSession: (sessionId: string) => Promise<void>;
+  /** Cập nhật trạng thái sau khi chốt bệnh án (server đã đóng ca trong cùng request) */
+  markSessionResolved: (sessionId: string) => void;
   /** Bác sĩ gửi tin nhắn phản hồi bệnh nhân */
   sendMessage: (content: string) => Promise<void>;
 }
@@ -49,17 +51,18 @@ export const useDoctorStore = create<DoctorConsultationState>((set, get) => ({
   actionLoading: false,
   statusFilter: "all",
 
-  async init() {
+  async init(preferredSessionId) {
     set({ loading: true });
     try {
       const sessions = await doctorApi.listSessions();
+      const first = sessions.find((s) => s.id === preferredSessionId) ?? sessions[0];
       set({
         sessions,
         loading: false,
-        activeSessionId: sessions[0]?.id ?? null,
+        activeSessionId: first?.id ?? null,
       });
-      if (sessions[0]) {
-        await get().selectSession(sessions[0].id);
+      if (first) {
+        await get().selectSession(first.id);
       }
     } catch (e) {
       set({ loading: false });
@@ -109,6 +112,16 @@ export const useDoctorStore = create<DoctorConsultationState>((set, get) => ({
       set({ actionLoading: false });
       toast.error(errorMessage(e));
     }
+  },
+
+  markSessionResolved(sessionId) {
+    set((s) => ({
+      sessions: s.sessions.map((sess) =>
+        sess.id === sessionId
+          ? { ...sess, status: "resolved" as ConsultationStatus, resolvedAt: new Date().toISOString() }
+          : sess
+      ),
+    }));
   },
 
   async resolveSession(sessionId) {

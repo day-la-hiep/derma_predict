@@ -7,11 +7,97 @@
 
 /* ────────── Patient Profile ────────── */
 
+export type ProfileRelationship = "self" | "child" | "parent" | "spouse" | "other";
+
 export interface PatientProfile {
   id: string;
   fullName: string;
   dob: string;
   gender: "male" | "female";
+  relationship: ProfileRelationship;
+  phone: string | null;
+  allergies: string;
+  medicalHistory: string;
+}
+
+/* ────────── Medical Record (bệnh án) ────────── */
+
+export type Urgency = "emergency" | "few_days" | "monitor";
+export type FactOrigin = "patient_reported" | "ai_inferred" | "doctor_observed" | "doctor_corrected";
+
+export interface SnapshotFile {
+  fileName: string;
+  contentType: string | null;
+  url: string | null;
+}
+
+export interface SnapshotMessage {
+  id: string;
+  sender: "patient" | "ai" | "doctor";
+  content: string;
+  createdAt: string | null;
+  files: SnapshotFile[];
+}
+
+export interface SnapshotFact {
+  factType: ClinicalFactType;
+  label: string;
+  detail: string;
+  origin: FactOrigin;
+  sources: SnapshotMessage[];
+}
+
+/** Bản chụp bất biến của phiếu bác sĩ đã chốt (cột `medical_records.snapshot`) */
+export interface MedicalRecordSnapshot {
+  patientProfile: Omit<PatientProfile, "id">;
+  assessment: { reasoning: string; urgency: Urgency; instructions: string[] };
+  clinicalFacts: SnapshotFact[];
+}
+
+export interface MedicalRecord {
+  id: string;
+  diagnosis: string;
+  notes: string;
+  isReferenceCase: boolean;
+  doctorName: string | null;
+  createdAt: string;
+  consultationSessionId: string | null;
+  conversationId: string | null;
+  /** null với bệnh án ghi trước khi có snapshot */
+  snapshot: MedicalRecordSnapshot | null;
+}
+
+/** Một dòng ở màn Lịch sử khám: bệnh án kèm hồ sơ bệnh nhân */
+export interface DoctorMedicalRecordItem extends MedicalRecord {
+  patient: PatientProfile;
+}
+
+/** Một dòng dữ kiện trong form chốt */
+export interface FactDraft {
+  key: string;
+  /** fact trích từ hội thoại mà dòng này dựa vào; null = bác sĩ tự ghi */
+  sourceFactId: string | null;
+  factType: ClinicalFactType;
+  label: string;
+  detail: string;
+  /** giá trị gốc để biết bác sĩ đã sửa hay chưa (tính origin hiển thị) */
+  original: { label: string; detail: string; factType: ClinicalFactType; origin: FactOrigin } | null;
+  sources: SnapshotMessage[];
+}
+
+export interface FinalizeDraft {
+  patient: PatientProfile;
+  facts: FactDraft[];
+}
+
+export interface FinalizeInput {
+  diagnosis: string;
+  notes: string;
+  isReferenceCase: boolean;
+  reasoning: string;
+  urgency: Urgency;
+  instructions: string[];
+  facts: FactDraft[];
 }
 
 /* ────────── Clinical Facts ────────── */
@@ -70,5 +156,5 @@ export interface DoctorViewMessage {
   content: string;
   messageType: string;
   createdAt: string;
-  attachments?: { id: string; name: string; url?: string }[];
+  attachments?: { id: string; name: string; url?: string; contentType?: string }[];
 }

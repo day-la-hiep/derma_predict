@@ -27,3 +27,11 @@ class RefreshTokenInput(BaseModel):
     """Thông tin gửi lên khi cần cấp mới access token từ refresh token."""
 
     refresh_token: str = Field(min_length=1, description="Refresh token JWT")
+
+
+class UpdateAccountInput(BaseModel):
+    """PATCH: chỉ field được gửi mới đổi (`model_dump(exclude_unset=True)`)."""
+
+    full_name: str | None = Field(default=None, min_length=1, max_length=255)
+    dob: date | None = None
+    gender: Gender | None = None

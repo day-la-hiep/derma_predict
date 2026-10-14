@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Brain, CheckCircle2, FileText, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDoctorStore } from "../store";
@@ -10,14 +11,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PatientInfoCard } from "./PatientInfoCard";
 import { ClinicalFactList } from "./ClinicalFactList";
 import { AiSummaryView } from "./AiSummaryView";
+import { FinalizeConsultationDialog } from "./FinalizeConsultationDialog";
 
 export function ReportPanel() {
   const activeSessionId = useDoctorStore((s) => s.activeSessionId);
   const sessions = useDoctorStore((s) => s.sessions);
   const acceptSession = useDoctorStore((s) => s.acceptSession);
-  const resolveSession = useDoctorStore((s) => s.resolveSession);
   const loading = useDoctorStore((s) => s.loading);
   const actionLoading = useDoctorStore((s) => s.actionLoading);
+  const [finalizing, setFinalizing] = useState(false);
 
   const session = sessions.find((s) => s.id === activeSessionId);
 
@@ -73,7 +75,7 @@ export function ReportPanel() {
           <Hint side="top" content={actionCfg.hint}>
             <Button
               disabled={actionLoading}
-              onClick={() => (actionCfg.action === "accept" ? acceptSession(session.id) : resolveSession(session.id))}
+              onClick={() => (actionCfg.action === "accept" ? acceptSession(session.id) : setFinalizing(true))}
               className={cn("h-10 w-full rounded-xl text-sm font-medium transition-all active:scale-[0.98]", actionCfg.buttonClass)}
             >
               {actionLoading ? <Loader2 className="size-4 animate-spin" /> : <ActionIcon className="size-4" />}
@@ -89,6 +91,7 @@ export function ReportPanel() {
           </Hint>
         )}
       </div>
+      <FinalizeConsultationDialog session={session} open={finalizing} onOpenChange={setFinalizing} />
     </div>
   );
 }

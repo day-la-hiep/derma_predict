@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useDoctorStore } from "../store";
 import { SessionList } from "./SessionList";
 import { ChatViewer } from "./ChatViewer";
@@ -8,10 +9,11 @@ import { ReportPanel } from "./ReportPanel";
 
 export function DoctorConsultationPage() {
   const init = useDoctorStore((s) => s.init);
+  const preferredSessionId = useSearchParams().get("session");
 
   useEffect(() => {
-    init();
-  }, [init]);
+    init(preferredSessionId);
+  }, [init, preferredSessionId]);
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-background">

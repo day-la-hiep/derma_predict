@@ -70,6 +70,18 @@ export function setAuthSession(
   window.dispatchEvent(new Event(AUTH_STATE_EVENT));
 }
 
+/** Cập nhật user đã lưu sau khi sửa thông tin tài khoản (không đổi token). */
+export function updateStoredUser(user: AuthenticatedUser): void {
+  try {
+    localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
+  } catch {
+    // Phiên hiện tại vẫn dùng được, chỉ không cache tên mới nếu localStorage bị chặn.
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AUTH_STATE_EVENT));
+  }
+}
+
 export function clearAuthSession(): void {
   try {
     localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);

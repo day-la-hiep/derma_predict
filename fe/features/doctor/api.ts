@@ -6,6 +6,8 @@
  * - unwrap response bọc qua `{ data: T }` của FastAPI.
  * - Chỉ dùng Mock Data khi NEXT_PUBLIC_USE_MOCK=true; lỗi thật (401/403/mạng) được ném ra để UI báo.
  */
+// adapter nhận payload thô (snake_case từ backend hoặc camelCase từ mock) nên cố ý để `any`
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from "axios";
 import { api } from "@/services/client";
 import type {
@@ -13,9 +15,18 @@ import type {
   ClinicalFactType,
   ConsultationSession,
   ConsultationStatus,
+  DoctorMedicalRecordItem,
   DoctorViewMessage,
+  FactOrigin,
+  FinalizeDraft,
+  FinalizeInput,
+  MedicalRecord,
+  MedicalRecordSnapshot,
   PatientProfile,
   PreConsultationReport,
+  ProfileRelationship,
+  SnapshotMessage,
+  Urgency,
 } from "./types";
 import { MOCK_SESSIONS, MOCK_MESSAGES } from "./mockData";
 
@@ -44,14 +55,22 @@ async function unwrap<T>(p: Promise<{ data: { data?: T } } | { data: T }>): Prom
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 
+function adaptPatient(raw: any): PatientProfile {
+  return {
+    id: raw?.id ?? "",
+    fullName: raw?.fullName ?? raw?.full_name ?? "Bệnh nhân",
+    dob: raw?.dob ?? "1995-01-01",
+    gender: raw?.gender === "female" ? "female" : "male",
+    relationship: (raw?.relationship ?? "self") as ProfileRelationship,
+    phone: raw?.phone ?? null,
+    allergies: raw?.allergies ?? "",
+    medicalHistory: raw?.medicalHistory ?? raw?.medical_history ?? "",
+  };
+}
+
 /** Chuyển đổi dữ liệu từ backend (snake_case) hoặc mock (camelCase) sang kiểu frontend chuẩn */
 export function adaptSession(raw: any): ConsultationSession {
-  const patient: PatientProfile = {
-    id: raw.patient?.id ?? "",
-    fullName: raw.patient?.fullName ?? raw.patient?.full_name ?? "Bệnh nhân",
-    dob: raw.patient?.dob ?? "1995-01-01",
-    gender: raw.patient?.gender === "female" ? "female" : "male",
-  };
+  const patient = adaptPatient(raw.patient);
 
   const rawFacts: any[] = raw.clinicalFacts ?? raw.clinical_facts ?? [];
   const clinicalFacts: ClinicalFact[] = rawFacts.map((f: any) => ({
@@ -87,6 +106,107 @@ export function adaptSession(raw: any): ConsultationSession {
   };
 }
 
+function adaptSnapshotMessage(raw: any): SnapshotMessage {
+  return {
+    id: raw?.id ?? "",
+    sender: raw?.sender ?? "patient",
+    content: raw?.content ?? "",
+    createdAt: raw?.created_at ?? null,
+    files: (raw?.files ?? []).map((f: any) => ({
+      fileName: f.file_name ?? "",
+      contentType: f.content_type ?? null,
+      url: f.url ?? null,
+    })),
+  };
+}
+
+function adaptSources(provenances: any[] | undefined): SnapshotMessage[] {
+  return (provenances ?? []).map((p) => adaptSnapshotMessage(p.message));
+}
+
+function adaptSnapshot(raw: any): MedicalRecordSnapshot | null {
+  if (!raw) return null;
+  const p = adaptPatient(raw.patient_profile);
+  return {
+    patientProfile: {
+      fullName: p.fullName,
+      dob: p.dob,
+      gender: p.gender,
+      relationship: p.relationship,
+      phone: p.phone,
+      allergies: p.allergies,
+      medicalHistory: p.medicalHistory,
+    },
+    assessment: {
+      reasoning: raw.assessment?.reasoning ?? "",
+      urgency: (raw.assessment?.urgency ?? "monitor") as Urgency,
+      instructions: raw.assessment?.instructions ?? [],
+    },
+    clinicalFacts: (raw.clinical_facts ?? []).map((f: any) => ({
+      factType: (f.fact_type ?? "other") as ClinicalFactType,
+      label: f.label ?? "",
+      detail: f.detail ?? "",
+      origin: (f.origin ?? "doctor_observed") as FactOrigin,
+      sources: adaptSources(f.provenances),
+    })),
+  };
+}
+
+function adaptMedicalRecord(raw: any): MedicalRecord {
+  return {
+    id: raw.id ?? "",
+    diagnosis: raw.diagnosis ?? "",
+    notes: raw.notes ?? "",
+    isReferenceCase: Boolean(raw.isReferenceCase ?? raw.is_reference_case),
+    doctorName: raw.doctorName ?? raw.doctor_name ?? null,
+    createdAt: raw.createdAt ?? raw.created_at ?? new Date().toISOString(),
+    consultationSessionId: raw.consultation_session_id ?? null,
+    conversationId: raw.conversation_id ?? null,
+    snapshot: adaptSnapshot(raw.snapshot),
+  };
+}
+
+function adaptMedicalRecordItem(raw: any): DoctorMedicalRecordItem {
+  return { ...adaptMedicalRecord(raw), patient: adaptPatient(raw.patient) };
+}
+
+function adaptDraft(raw: any): FinalizeDraft {
+  return {
+    patient: adaptPatient(raw.patient),
+    facts: (raw.facts ?? []).map((f: any) => {
+      const factType = (f.fact_type ?? "other") as ClinicalFactType;
+      return {
+        key: f.source_fact_id,
+        sourceFactId: f.source_fact_id,
+        factType,
+        label: f.label ?? "",
+        detail: f.detail ?? "",
+        original: { label: f.label ?? "", detail: f.detail ?? "", factType, origin: f.origin as FactOrigin },
+        sources: adaptSources(f.provenances),
+      };
+    }),
+  };
+}
+
+function toFinalizeBody(body: FinalizeInput) {
+  return {
+    diagnosis: body.diagnosis.trim(),
+    notes: body.notes.trim(),
+    is_reference_case: body.isReferenceCase,
+    reasoning: body.reasoning.trim(),
+    urgency: body.urgency,
+    instructions: body.instructions.map((i) => i.trim()).filter(Boolean),
+    facts: body.facts
+      .filter((f) => f.label.trim())
+      .map((f) => ({
+        source_fact_id: f.sourceFactId,
+        fact_type: f.factType,
+        label: f.label.trim(),
+        detail: f.detail.trim(),
+      })),
+  };
+}
+
 export const doctorApi = {
   /** Lấy danh sách phiên tư vấn */
   async listSessions(): Promise<ConsultationSession[]> {
@@ -119,7 +239,7 @@ export const doctorApi = {
         content: string;
         created_at?: string;
         metadata?: {
-          attached_files?: Array<{ id: string; name: string; url?: string }> | null;
+          attached_files?: Array<{ storage_key: string; file_name: string; content_type?: string | null; url?: string | null }> | null;
         } | null;
       }>
     >(api.get(`/conversations/${encodeURIComponent(conversationId)}/messages`));
@@ -130,7 +250,12 @@ export const doctorApi = {
       messageType: "text",
       content: m.content,
       createdAt: m.created_at ?? new Date().toISOString(),
-      attachments: m.metadata?.attached_files ?? undefined,
+      attachments: m.metadata?.attached_files?.map((f) => ({
+        id: f.storage_key,
+        name: f.file_name,
+        url: f.url ?? undefined,
+        contentType: f.content_type ?? undefined,
+      })),
     }));
   },
 
@@ -181,6 +306,62 @@ export const doctorApi = {
       content: res.content,
       createdAt: res.created_at ?? new Date().toISOString(),
     };
+  },
+
+  /** Lịch sử bệnh án của bệnh nhân thuộc phiên này (mọi lần khám) */
+  async listMedicalRecords(sessionId: string): Promise<MedicalRecord[]> {
+    if (USE_MOCK) return [];
+    const raw = await unwrap<any[]>(
+      api.get(`/doctor/consultations/${encodeURIComponent(sessionId)}/medical-records`)
+    );
+    return Array.isArray(raw) ? raw.map(adaptMedicalRecord) : [];
+  },
+
+  /** Dữ liệu điền sẵn form chốt: hồ sơ + dữ kiện đang hiệu lực kèm tin nguồn */
+  async getFinalizeDraft(sessionId: string): Promise<FinalizeDraft> {
+    const raw = await unwrap<any>(api.get(`/doctor/consultations/${encodeURIComponent(sessionId)}/finalize-draft`));
+    return adaptDraft(raw);
+  },
+
+  /** Chốt bệnh án cho ca đang tư vấn và đóng ca (một giao dịch) */
+  async finalizeSession(sessionId: string, body: FinalizeInput): Promise<MedicalRecord> {
+    const raw = await unwrap<any>(
+      api.post(`/doctor/consultations/${encodeURIComponent(sessionId)}/finalize`, toFinalizeBody(body))
+    );
+    return adaptMedicalRecord(raw);
+  },
+
+  /** Lịch sử khám: bệnh án do chính bác sĩ đang đăng nhập chốt */
+  async listMyMedicalRecords(q: string): Promise<DoctorMedicalRecordItem[]> {
+    if (USE_MOCK) return [];
+    const raw = await unwrap<any[]>(api.get("/doctor/medical-records", { params: q ? { q } : undefined }));
+    return Array.isArray(raw) ? raw.map(adaptMedicalRecordItem) : [];
+  },
+
+  /** Ghi bệnh án cho ca khám trực tiếp (chọn hồ sơ bệnh nhân, không qua ca tư vấn) */
+  async createMedicalRecordForProfile(
+    patientProfileId: string,
+    body: FinalizeInput
+  ): Promise<DoctorMedicalRecordItem> {
+    const raw = await unwrap<any>(
+      api.post("/doctor/medical-records", { patient_profile_id: patientProfileId, ...toFinalizeBody(body) })
+    );
+    return adaptMedicalRecordItem(raw);
+  },
+
+  async searchPatientProfiles(q: string): Promise<PatientProfile[]> {
+    if (USE_MOCK) return MOCK_SESSIONS.map((s) => s.patient);
+    const raw = await unwrap<any[]>(api.get("/doctor/patient-profiles", { params: q ? { q } : undefined }));
+    return Array.isArray(raw) ? raw.map(adaptPatient) : [];
+  },
+
+  /** Toàn bộ lịch sử khám của một bệnh nhân (mọi bác sĩ) */
+  async listProfileMedicalRecords(profileId: string): Promise<MedicalRecord[]> {
+    if (USE_MOCK) return [];
+    const raw = await unwrap<any[]>(
+      api.get(`/doctor/patient-profiles/${encodeURIComponent(profileId)}/medical-records`)
+    );
+    return Array.isArray(raw) ? raw.map(adaptMedicalRecord) : [];
   },
 
   /** Bệnh nhân gửi yêu cầu bác sĩ tư vấn & AI tự động bóc tách dữ kiện sinh báo cáo */
