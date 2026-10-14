@@ -48,6 +48,10 @@ FE                     Core                          Redis / RabbitMQ           
 │                    response_consumer upsert ◀─ agent_response_queue ◀──────── AgentResponseMessage
 ```
 
+Phạm vi xem của bác sĩ: từ đầu hội thoại tới hết phiên gần nhất của mình (tin mốc `consultation_resolved`).
+`GET /messages` cắt tại mốc đó, còn `/stream` từ chối bác sĩ có phiên đã kết thúc và tự đóng ngay sau
+`consultation.updated` (`status=resolved`). Chủ hội thoại không bị giới hạn.
+
 Room dùng chung cho 3 bên. Ngoài event của agent còn có `message.created` (tin bệnh nhân/bác sĩ đã ghi DB, kèm
 `message` dạng `MessageOutput`) và `consultation.updated` (`session_id`, `status`, `doctor_id`). Khi ca tư vấn
 đang `active`, `POST /messages` chỉ ghi tin + phát `message.created`, **không** tạo turn (response

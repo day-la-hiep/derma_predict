@@ -1,5 +1,6 @@
 """Nghiệp vụ Tư vấn & Báo cáo tiền tư vấn (Pre-consultation Report Generation)."""
 import json
+from dataclasses import dataclass
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -66,6 +67,13 @@ Yêu cầu cho phần `summary` (dùng Markdown đẹp):
 Yêu cầu cho `source_messages`: số thứ tự các tin chứa bằng chứng cho fact đó (ưu tiên tin của bệnh nhân);
 không bịa số không có trong hội thoại.
 """
+
+
+@dataclass(frozen=True)
+class RoomAccess:
+    is_doctor: bool
+    until: datetime | None  # tin sau mốc này bác sĩ không được thấy; None = tới hiện tại
+    closed: bool  # phiên của bác sĩ đã kết thúc: không nhận stream live nữa
 
 
 class ConsultationService:
@@ -180,16 +188,20 @@ class ConsultationService:
             {"type": "message.created", "message": out.model_dump(mode="json")},
         )
 
-    async def assert_can_join_room(self, conversation_id: str, user_id: str) -> None:
+    async def room_access(self, conversation_id: str, user_id: str) -> "RoomAccess":
+        """Ai được xem hội thoại và tới đâu: chủ hội thoại xem hết; bác sĩ xem từ đầu tới hết phiên gần nhất của mình."""
         conv = await self._conv_repo.get(conversation_id)
         if conv is None:
             raise NotFoundError("Không tìm thấy hội thoại.")
         if await self._conv_repo.owner_user_id(conv) == user_id:
-            return
+            return RoomAccess(is_doctor=False, until=None, closed=False)
         if await UserRepository(self._db).get_role(user_id) == "doctor":
             session = await self._repo.get_session_visible_to_doctor(conversation_id, user_id)
             if session is not None:
-                return
+                if session.status != "resolved":
+                    return RoomAccess(is_doctor=True, until=None, closed=False)
+                until = await self._repo.resolved_marker_time(session.id) or session.resolved_at
+                return RoomAccess(is_doctor=True, until=until, closed=True)
         raise ForbiddenError("Bạn không có quyền xem hội thoại này.")
 
     async def list_sessions(

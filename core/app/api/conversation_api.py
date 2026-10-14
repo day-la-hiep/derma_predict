@@ -17,6 +17,7 @@ from app.config.settings import settings
 from app.api.sse import pubsub_event_stream
 from app.config.constants import CONVERSATION_ROOM_CHANNEL
 from app.dto.common import ApiResponse
+from app.exception.errors import ForbiddenError
 from app.dto.request.conversation import CreateConversationInput, UpdateConversationModelInput
 from app.dto.request.message import MessageAnswerDto, SendMessageInput
 from app.dto.response.conversation import ConversationOutput, ModelOption
@@ -125,10 +126,14 @@ async def update_conversation_model(
     operation_id="listMessages",
 )
 async def list_messages(
-    conversation_id: str, service: MessageServiceDep
+    conversation_id: str,
+    service: MessageServiceDep,
+    current_user: CurrentUserDep,
+    consultations: ConsultationServiceDep,
 ) -> ApiResponse[list[MessageOutput]]:
-    """`docs/api-doc.md` mục 1.3 — sắp theo `createdAt` tăng dần."""
-    messages = await service.list_messages(conversation_id)
+    """`docs/api-doc.md` mục 1.3 — sắp theo `createdAt` tăng dần; bác sĩ chỉ thấy tới hết phiên gần nhất của mình."""
+    access = await consultations.room_access(conversation_id, current_user.id)
+    messages = await service.list_messages(conversation_id, access.until)
     return ApiResponse(data=messages)
 
 
@@ -180,6 +185,10 @@ async def answer_question(
     return ApiResponse(data=message)
 
 
+def _session_resolved(event: dict[str, object]) -> bool:
+    return event.get("type") == "consultation.updated" and event.get("status") == "resolved"
+
+
 @router.get("/conversations/{conversation_id}/stream", include_in_schema=False)
 async def stream_conversation(
     conversation_id: str,
@@ -189,14 +198,22 @@ async def stream_conversation(
     rabbitmq: Annotated[RabbitMQClient, Depends(get_rabbitmq_client)],
 ) -> StreamingResponse:
     """Room của hội thoại: SSE dài hạn cho bệnh nhân, bác sĩ và agent (`docs/async-api-doc.md` mục 1)"""
-    await consultations.assert_can_join_room(conversation_id, current_user.id)
+    access = await consultations.room_access(conversation_id, current_user.id)
+    if access.closed:
+        raise ForbiddenError("Phiên tư vấn của bạn với hội thoại này đã kết thúc.")
     channel = CONVERSATION_ROOM_CHANNEL.format(conversation_id=conversation_id)
 
     async def flush() -> None:
         await flush_pending_turn(conversation_id, redis, rabbitmq)
 
     return StreamingResponse(
-        pubsub_event_stream(redis, channel, flush),
+        # phiên kết thúc thì bác sĩ không được nhận thêm gì: đóng stream ngay sau event kết thúc đó
+        pubsub_event_stream(
+            redis,
+            channel,
+            flush,
+            stop_after=_session_resolved if access.is_doctor else None,
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

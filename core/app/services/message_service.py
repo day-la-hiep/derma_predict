@@ -1,5 +1,7 @@
 """Business logic cho Message"""
 
+from datetime import datetime
+
 from fastapi import UploadFile
 
 from agent.dto.schemas import TurnAttachment, TurnRequest
@@ -122,8 +124,10 @@ class MessageService:
         if conversation is not None and conversation.model != model_id:
             await self._conversations.update_model(conversation, model_id)
 
-    async def list_messages(self, conversation_id: str) -> list[MessageOutput]:
+    async def list_messages(self, conversation_id: str, until: datetime | None = None) -> list[MessageOutput]:
         messages = await self._messages.list_by_conversation(conversation_id)
+        if until is not None:
+            messages = [m for m in messages if m.created_at <= until]
         files = await self._files.for_messages([m.id for m in messages])
         calls = await self._messages.video_calls(messages)
         return [

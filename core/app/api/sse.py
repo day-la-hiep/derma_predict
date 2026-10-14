@@ -1,4 +1,5 @@
 """Stream Redis Pub/Sub ra SSE dài hạn (không đóng ở `[DONE]`)."""
+import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 from app.infra.redis_client import RedisClient
@@ -10,6 +11,7 @@ async def pubsub_event_stream(
     redis: RedisClient,
     channel: str,
     after_subscribe: Callable[[], Awaitable[None]] | None = None,
+    stop_after: Callable[[dict[str, object]], bool] | None = None,
 ) -> AsyncIterator[str]:
     pubsub = redis.pubsub()
     await pubsub.subscribe(channel)
@@ -24,6 +26,13 @@ async def pubsub_event_stream(
                 yield ": ping\n\n"
                 continue
             yield f"data: {message['data']}\n\n"
+            if stop_after is not None:
+                try:
+                    event = json.loads(message["data"])
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(event, dict) and stop_after(event):
+                    break
     finally:
         await pubsub.unsubscribe(channel)
         await pubsub.aclose()
