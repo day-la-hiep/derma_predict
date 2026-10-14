@@ -13,15 +13,18 @@ from app.config.constants import (
 from app.dto.common import FileDto
 from app.dto.request.message import MessageAnswerDto, SendMessageInput
 from app.dto.response.message import MessageMetadataDto, MessageOutput, SendMessageResult
+from app.config.constants import CONVERSATION_ROOM_CHANNEL
 from app.infra.rabbitmq_client import RabbitMQClient
 from app.infra.redis_client import RedisClient
 from app.models.file import File
 from app.models.message import Message
 from app.models.video_call import VideoCall
+from app.repositories.consultation_repository import ConsultationRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.file_repository import FileRepository
 from app.repositories.message_repository import MessageRepository
 from app.services.file_store_service import FileStoreService
+from app.services.room_events import publish_room
 
 
 class MessageNotFoundError(Exception):
@@ -44,12 +47,16 @@ class MessageService:
         file_repository: FileRepository,
         file_store: FileStoreService,
         redis: RedisClient,
+        rabbitmq: RabbitMQClient,
+        consultation_repository: ConsultationRepository,
     ) -> None:
         self._messages = message_repository
         self._conversations = conversation_repository
         self._files = file_repository
         self._file_store = file_store  # bucket ảnh đính kèm
         self._redis = redis
+        self._rabbitmq = rabbitmq
+        self._consultations = consultation_repository
 
     async def upload_attachment(self, upload: UploadFile) -> FileDto:
         stored = await self._file_store.save_upload(upload)
@@ -165,16 +172,41 @@ class MessageService:
         )
         return user_message, assistant_message
 
+    async def _announce_user_message(self, message: Message, files: list[File]) -> None:
+        # bác sĩ và tab khác của bệnh nhân không nhận được tin này qua POST, chỉ thấy qua room
+        out = self._to_output(message, files)
+        await publish_room(
+            self._redis,
+            message.conversation_id,
+            {"type": "message.created", "message": out.model_dump(mode="json")},
+        )
+
+    async def _kick_turn(self, conversation_id: str) -> None:
+        # Worker đọc lịch sử từ DB ngay khi nhận turn, nên phải commit trước (get_db chỉ commit sau khi response xong)
+        await self._messages.commit()
+        # Room đã có người nghe thì chạy turn ngay; chưa có thì để turn chờ — mở SSE sẽ flush (tránh mất event đầu luồng)
+        channel = CONVERSATION_ROOM_CHANNEL.format(conversation_id=conversation_id)
+        if await self._redis.subscriber_count(channel) > 0:
+            await flush_pending_turn(conversation_id, self._redis, self._rabbitmq)
+
     async def send_message(
         self, conversation_id: str, body: SendMessageInput
     ) -> SendMessageResult:
+        files = await self._resolve_attachments(body)
+
+        # bác sĩ đã nhận ca thì AI im lặng: tin chỉ ghi DB và báo cho bác sĩ qua room
+        session = await self._consultations.get_open_session_by_conversation(conversation_id)
+        if session is not None and session.status == "active":
+            user_message = await self._create_user_message(conversation_id, body.content, files)
+            await self._announce_user_message(user_message, files)
+            return SendMessageResult(user_message=self._to_output(user_message, files), assistant_message=None)
+
         active_turn_id = await self._redis.get(
             AGENT_ACTIVE_TURN_KEY.format(conversation_id=conversation_id)
         )
         if active_turn_id is not None:
             raise TurnInProgressError(active_turn_id)
 
-        files = await self._resolve_attachments(body)
         user_message, assistant_message = await self.start_new_turn(
             conversation_id=conversation_id,
             content=body.content,
@@ -182,6 +214,8 @@ class MessageService:
             corr_id=body.client_message_id,
             model_id=body.model_id,
         )
+        await self._announce_user_message(user_message, files)
+        await self._kick_turn(conversation_id)
         return SendMessageResult(
             user_message=self._to_output(user_message, files),
             assistant_message=self._to_output(assistant_message),
@@ -210,6 +244,7 @@ class MessageService:
                 answer=body.label or body.option_id,
             ),
         )
+        await self._kick_turn(conversation_id)
         return self._to_output(message)
 
     async def _defer_turn(self, conversation_id: str, req: TurnRequest) -> None:

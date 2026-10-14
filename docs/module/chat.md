@@ -29,33 +29,38 @@ Base `/api/v1`, response bọc `{"data": ...}`.
 | GET | `/conversations/{id}/messages` | lịch sử tin nhắn (kể cả assistant đang `question`) |
 | POST | `/conversations/{id}/messages` | gửi tin, mở turn mới (202); hội thoại còn turn đang chạy / chờ trả lời → 409 |
 | POST | `/conversations/{id}/questions/{question_id}/answer` | trả lời câu hỏi agent đang chờ (202) |
-| GET | `/conversations/{id}/stream` | SSE — forward nguyên văn event từ Redis |
+| GET | `/conversations/{id}/stream` | SSE dài hạn của "room" hội thoại (bệnh nhân, bác sĩ, agent) — forward nguyên văn event từ Redis, có heartbeat; chỉ chủ hội thoại hoặc bác sĩ liên quan được nghe |
+| GET | `/doctor/consultations/stream` | SSE cho bác sĩ: ca tư vấn mới / đổi trạng thái (`consultation.updated`) |
 | POST | `/uploads` | upload ảnh đính kèm → MinIO + bảng `files` |
 
 ## 3. Luồng một turn
 
 ```
 FE                     Core                          Redis / RabbitMQ                 Agent Worker
+│ GET /stream ─────▶ subscribe conversation:room:{conv}   (room, mở 1 lần khi vào hội thoại, không đóng ở [DONE])
 │ POST /messages ──▶ lưu user msg (done)
 │                    + assistant msg (queued)
 │                    lưu TurnRequest vào key ──▶ agent:pending_turn:{conv}
-│ ◀── 202 {user, assistant id}
-│ GET /stream ─────▶ subscribe agent:events:{conv}
-│                    GETDEL pending_turn ──────▶ agent_request_queue ─────────▶ consume, lock theo conv
-│                                                                               chạy agent_graph.astream()
-│ ◀══ SSE event ══ forward nguyên văn ◀──────── agent:events:{conv} ◀────────── message.* events
+│                    commit; room đã có người nghe → GETDEL pending_turn ─▶ agent_request_queue ─▶ consume, lock theo conv
+│ ◀── 202 {user, assistant id}                                                  chạy agent_graph.astream()
+│ ◀══ SSE event ══ forward nguyên văn ◀──────── conversation:room:{conv} ◀────────── message.* events
 │                                                                               turn xong / hỏi lại
 │                    response_consumer upsert ◀─ agent_response_queue ◀──────── AgentResponseMessage
-│ ◀══ [DONE] ═════ đóng SSE
 ```
+
+Room dùng chung cho 3 bên. Ngoài event của agent còn có `message.created` (tin bệnh nhân/bác sĩ đã ghi DB, kèm
+`message` dạng `MessageOutput`) và `consultation.updated` (`session_id`, `status`, `doctor_id`). Khi ca tư vấn
+đang `active`, `POST /messages` chỉ ghi tin + phát `message.created`, **không** tạo turn (response
+`assistant_message = null`); ca `pending` thì AI vẫn trả lời. Danh sách ca của bác sĩ nghe thêm kênh
+`doctor:inbox`. Pub/Sub không replay nên client refetch `GET /messages` mỗi khi room nối lại.
 
 Các điểm cần nhớ:
 
 1. **Core tạo sẵn row assistant** (`status="queued"`) và trả `id` ngay trong response `POST`, FE gắn vào
    bubble mà không cần chờ event.
-2. **Hoãn publish tới khi FE mở SSE**: turn được để trong Redis `agent:pending_turn:{conv}`; handler SSE
-   `subscribe` xong mới `GETDEL` và đẩy vào RabbitMQ. Lý do: Redis Pub/Sub không replay, publish sớm sẽ mất
-   event đầu luồng.
+2. **Hoãn publish tới khi có người nghe room**: turn được để trong Redis `agent:pending_turn:{conv}`; nếu room
+   đã có subscriber thì `POST` đẩy ngay vào RabbitMQ (sau khi commit DB), nếu chưa thì handler SSE
+   `subscribe` xong mới `GETDEL` và đẩy. Lý do: Redis Pub/Sub không replay, publish sớm sẽ mất event đầu luồng.
 3. **Core là pure forwarder** cho SSE — không biến đổi event. Event realtime có thể mất nếu FE rớt kết nối,
    nhưng kết quả cuối vẫn được ghi Postgres qua `agent_response_queue`.
 4. **Chỉ Core ghi Postgres**: Worker gửi `AgentResponseMessage`, `response_consumer.py` upsert row assistant

@@ -21,6 +21,7 @@ from app.infra.postgres_client import PostgresClient
 from app.infra.qdrant_client import QdrantVectorClient
 from app.infra.rabbitmq_client import RabbitMQClient
 from app.infra.redis_client import RedisClient
+from app.repositories.consultation_repository import ConsultationRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.file_repository import FileRepository
 from app.repositories.message_repository import MessageRepository
@@ -231,9 +232,17 @@ def get_message_service(
     ],
     file_repository: Annotated[FileRepository, Depends(get_file_repository)],
     redis: Annotated[RedisClient, Depends(get_redis_client)],
+    rabbitmq: Annotated[RabbitMQClient, Depends(get_rabbitmq_client)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MessageService:
     return MessageService(
-        message_repository, conversation_repository, file_repository, get_file_store_service(), redis
+        message_repository,
+        conversation_repository,
+        file_repository,
+        get_file_store_service(),
+        redis,
+        rabbitmq,
+        ConsultationRepository(db),
     )
 
 
@@ -254,8 +263,9 @@ from app.services.consultation_service import ConsultationService
 
 def get_consultation_service(
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[RedisClient, Depends(get_redis_client)],
 ) -> ConsultationService:
-    return ConsultationService(db)
+    return ConsultationService(db, redis)
 
 
 def get_user_repository(

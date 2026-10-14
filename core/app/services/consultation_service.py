@@ -15,19 +15,23 @@ from app.dto.consultation import (
     PatientProfileDto,
     PreConsultationReportOutput,
 )
-from app.dto.response.message import MessageOutput
-from app.exception.errors import ForbiddenError, NotFoundError
+from app.dto.response.message import MessageMetadataDto, MessageOutput
+from app.exception.errors import ConflictError, ForbiddenError, NotFoundError
+from app.infra.redis_client import RedisClient
 from app.models.clinical import (
     ClinicalFact,
     PreConsultationReport,
 )
 from app.models.consultation_session import ConsultationSession
 from app.models.message import Message
+from app.models.user import User
 from app.models.patient_profile import PatientProfile
 from app.repositories.consultation_repository import ConsultationRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.message_repository import MessageRepository
 from app.services.doctor_medical_record_service import to_patient_profile_dto
+from app.repositories.user_repository import UserRepository
+from app.services.room_events import publish_inbox, publish_room
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +69,9 @@ không bịa số không có trong hội thoại.
 
 
 class ConsultationService:
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(self, db: AsyncSession, redis: RedisClient) -> None:
         self._db = db
+        self._redis = redis
         self._repo = ConsultationRepository(db)
         self._conv_repo = ConversationRepository(db)
         self._msg_repo = MessageRepository(db)
@@ -116,6 +121,77 @@ class ConsultationService:
             raise ForbiddenError("Ca tư vấn này đang do bác sĩ khác phụ trách.")
         return session
 
+    async def _announce(self, output: ConsultationSessionOutput) -> None:
+        await publish_room(
+            self._redis,
+            output.conversation_id,
+            {
+                "type": "consultation.updated",
+                "session_id": output.id,
+                "status": output.status,
+                "doctor_id": output.doctor_id,
+            },
+        )
+        await publish_inbox(
+            self._redis,
+            {"type": "consultation.updated", "session": output.model_dump(mode="json")},
+        )
+
+    async def announce_finalized(self, session_id: str, doctor_id: str) -> None:
+        # chốt bệnh án đã đóng ca ở service khác, nên mốc "kết thúc" và event phải phát ở đây
+        session = await self._owned_session(session_id, doctor_id)
+        await self._post_marker(session, MessageType.CONSULTATION_RESOLVED, MessageSender.DOCTOR, doctor_id)
+        await self._announce(await self.get_session(session_id, doctor_id))
+
+    async def _post_marker(
+        self, session: ConsultationSession, message_type: MessageType, sender: MessageSender, actor_id: str
+    ) -> None:
+        """Tin mốc đầu/cuối phiên tư vấn: hiện thành đường chia trong luồng chat của cả 3 bên."""
+        user = await self._db.get(User, actor_id)
+        name = user.full_name if user else "Bác sĩ"
+        content = {
+            MessageType.CONSULTATION_REQUESTED: "Bạn đã gửi yêu cầu kết nối bác sĩ",
+            MessageType.CONSULTATION_ACCEPTED: f"Bác sĩ {name} đã tham gia cuộc trò chuyện",
+            MessageType.CONSULTATION_RESOLVED: f"Bác sĩ {name} đã kết thúc phiên tư vấn",
+        }[message_type]
+        msg = Message(
+            id=f"msg-{uuid.uuid4()}",
+            conversation_id=session.conversation_id,
+            sender=sender.value,
+            message_type=message_type.value,
+            consultation_session_id=session.id,
+            content=content,
+            status="done",
+            created_at=datetime.now(UTC),
+        )
+        await self._msg_repo.create(msg)
+        out = MessageOutput(
+            id=msg.id,
+            conversation_id=msg.conversation_id,
+            sender=sender,
+            content=content,
+            status="done",
+            metadata=MessageMetadataDto(message_type=message_type),
+            created_at=msg.created_at.isoformat(),
+        )
+        await publish_room(
+            self._redis,
+            msg.conversation_id,
+            {"type": "message.created", "message": out.model_dump(mode="json")},
+        )
+
+    async def assert_can_join_room(self, conversation_id: str, user_id: str) -> None:
+        conv = await self._conv_repo.get(conversation_id)
+        if conv is None:
+            raise NotFoundError("Không tìm thấy hội thoại.")
+        if await self._conv_repo.owner_user_id(conv) == user_id:
+            return
+        if await UserRepository(self._db).get_role(user_id) == "doctor":
+            session = await self._repo.get_session_visible_to_doctor(conversation_id, user_id)
+            if session is not None:
+                return
+        raise ForbiddenError("Bạn không có quyền xem hội thoại này.")
+
     async def list_sessions(
         self, status: str | None = None, doctor_id: str | None = None
     ) -> list[ConsultationSessionOutput]:
@@ -145,7 +221,7 @@ class ConsultationService:
 
     async def get_session(
         self, session_id: str, doctor_id: str
-    ) -> ConsultationSessionOutput | None:
+    ) -> ConsultationSessionOutput:
         session = await self._owned_session(session_id, doctor_id)
         conv = await self._conv_repo.get(session.conversation_id)
         title = conv.title if conv else "Hội thoại da liễu"
@@ -171,21 +247,26 @@ class ConsultationService:
         self, session_id: str, doctor_id: str
     ) -> ConsultationSessionOutput:
         session = await self._owned_session(session_id, doctor_id)
-        session = await self._repo.accept_session(session, doctor_id)
-        conv = await self._conv_repo.get(session.conversation_id)
-        report = await self._repo.get_report(session.id)
-        patient = await self._patient_dto(conv.patient_profile_id if conv else None)
-        return self._to_output(session, conv.title if conv else "Hội thoại", report, patient=patient)
+        if session.status == "resolved":
+            raise ConflictError("Ca tư vấn đã được đóng.")
+        if session.status == "pending":
+            session = await self._repo.accept_session(session, doctor_id)
+            await self._post_marker(session, MessageType.CONSULTATION_ACCEPTED, MessageSender.DOCTOR, doctor_id)
+        out = await self.get_session(session_id, doctor_id)
+        await self._announce(out)
+        return out
 
     async def resolve_session(
         self, session_id: str, doctor_id: str
     ) -> ConsultationSessionOutput:
         session = await self._owned_session(session_id, doctor_id)
-        session = await self._repo.resolve_session(session)
-        conv = await self._conv_repo.get(session.conversation_id)
-        report = await self._repo.get_report(session.id)
-        patient = await self._patient_dto(conv.patient_profile_id if conv else None)
-        return self._to_output(session, conv.title if conv else "Hội thoại", report, patient=patient)
+        if session.status != "active":
+            raise ConflictError("Chỉ đóng được ca đang tư vấn (bác sĩ cần nhận ca trước).")
+        await self._repo.resolve_session(session)
+        await self._post_marker(session, MessageType.CONSULTATION_RESOLVED, MessageSender.DOCTOR, doctor_id)
+        out = await self.get_session(session_id, doctor_id)
+        await self._announce(out)
+        return out
 
     async def request_consultation(
         self, conversation_id: str, user_id: str, reason: str = "Bệnh nhân yêu cầu bác sĩ tư vấn"
@@ -215,9 +296,14 @@ class ConsultationService:
             requested_at=datetime.now(UTC),
         )
         await self._repo.create_session(session)
+        await self._post_marker(session, MessageType.CONSULTATION_REQUESTED, MessageSender.PATIENT, user_id)
 
-        # 3. Lấy lịch sử hội thoại để nạp vào LLM
-        messages = [m for m in await self._msg_repo.list_by_conversation(conversation_id) if m.content]
+        # 3. Lấy lịch sử hội thoại để nạp vào LLM (bỏ tin mốc hệ thống, không phải lời của ai)
+        messages = [
+            m
+            for m in await self._msg_repo.list_by_conversation(conversation_id)
+            if m.content and not m.message_type.startswith("consultation_")
+        ]
         # đánh số để LLM chỉ ra tin nguồn của từng fact → ghi `clinical_provenances`
         chat_transcript = "\n".join(
             f"[#{i}][{m.sender.upper()}]: {m.content}" for i, m in enumerate(messages, start=1)
@@ -311,49 +397,36 @@ class ConsultationService:
         if provenance_pairs:
             await self._repo.add_provenances(provenance_pairs)
 
-        return self._to_output(session, conv_title, report, facts_dto, patient)
+        out = self._to_output(session, conv_title, report, facts_dto, patient)
+        await self._announce(out)
+        return out
 
     async def send_doctor_reply(
         self, session_id: str, content: str, doctor_id: str
     ) -> MessageOutput:
-        """Bác sĩ phản hồi bệnh nhân trong phiên tư vấn."""
         session = await self._owned_session(session_id, doctor_id)
+        if session.status == "resolved":
+            raise ConflictError("Ca tư vấn đã đóng, không thể gửi thêm tin nhắn.")
 
-        # Tự động tiếp nhận ca nếu chưa active
-        if session.status == "pending":
+        # Gửi tin cũng là nhận ca (UI báo trước điều này ở nút gửi)
+        accepted = session.status == "pending"
+        if accepted:
             await self._repo.accept_session(session, doctor_id)
+            await self._post_marker(session, MessageType.CONSULTATION_ACCEPTED, MessageSender.DOCTOR, doctor_id)
 
-        msg_id = f"msg-{uuid.uuid4()}"
-        now = datetime.now(UTC)
         msg = Message(
-            id=msg_id,
+            id=f"msg-{uuid.uuid4()}",
             conversation_id=session.conversation_id,
             sender=MessageSender.DOCTOR.value,
             message_type=MessageType.TEXT.value,
             content=content,
             status="done",
             extra={"doctorId": doctor_id},
-            created_at=now,
+            created_at=datetime.now(UTC),
         )
         await self._msg_repo.create(msg)
 
-        # Broadcast event qua Redis Pub/Sub để client SSE nhận được realtime
-        try:
-            from app.api.deps import get_redis_client
-            from app.config.constants import AGENT_EVENTS_CHANNEL
-            redis = get_redis_client()
-            channel = AGENT_EVENTS_CHANNEL.format(conversation_id=session.conversation_id)
-            event_payload = json.dumps({
-                "type": "message.done",
-                "messageId": msg_id,
-                "sender": MessageSender.DOCTOR.value,
-                "content": content,
-            })
-            await redis.publish(channel, event_payload)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Không thể publish event bác sĩ qua Redis: %s", exc)
-
-        return MessageOutput(
+        out = MessageOutput(
             id=msg.id,
             conversation_id=msg.conversation_id,
             sender=MessageSender.DOCTOR,
@@ -361,3 +434,11 @@ class ConsultationService:
             status="done",
             created_at=msg.created_at.isoformat(),
         )
+        await publish_room(
+            self._redis,
+            msg.conversation_id,
+            {"type": "message.created", "message": out.model_dump(mode="json")},
+        )
+        if accepted:
+            await self._announce(await self.get_session(session_id, doctor_id))
+        return out

@@ -56,6 +56,21 @@ class ConsultationRepository:
         result = await self._db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_session_visible_to_doctor(
+        self, conversation_id: str, doctor_id: str
+    ) -> ConsultationSession | None:
+        """Phiên mà bác sĩ được xem: đang chờ nhận hoặc do chính bác sĩ phụ trách."""
+        stmt = (
+            select(ConsultationSession)
+            .where(
+                ConsultationSession.conversation_id == conversation_id,
+                or_(ConsultationSession.status == "pending", ConsultationSession.doctor_id == doctor_id),
+            )
+            .limit(1)
+        )
+        result = await self._db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def conversation_ids(self, session_ids: list[str]) -> dict[str, str]:
         if not session_ids:
             return {}

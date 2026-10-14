@@ -1,4 +1,5 @@
-import { api, clearAccessToken, getAccessToken, getCurrentUserId } from "./client";
+import { api, getCurrentUserId } from "./client";
+import { subscribeSse } from "./sse";
 import { endpoints } from "./endpoints";
 import {
   toChatMessage,
@@ -23,8 +24,6 @@ import type {
 
 // Contract: core/app/api/conversation_api.py; chuyển sang kiểu UI ở `services/apiAdapters.ts`.
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
-
 const impl = {
   listeners: new Set<(event: ChatStreamEvent) => void>(),
 
@@ -34,7 +33,7 @@ const impl = {
   },
 
   disconnect() {
-    // không có socket để đóng
+    impl.closeAllRooms();
   },
 
   async getConversations() {
@@ -93,57 +92,32 @@ const impl = {
     return () => impl.listeners.delete(listener);
   },
 
-  /** Mở SSE tới khi nhận `[DONE]`; mở sau POST vẫn không mất event vì Core hoãn turn tới khi subscribe xong. */
-  async _openStream(conversationId: string) {
-    const token = getAccessToken();
-    const res = await fetch(
-      `${API_BASE}${endpoints.streamMessage(conversationId)}`,
-      {
-        method: "GET",
-        headers: {
-          Accept: "text/event-stream",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      }
-    );
+  rooms: new Map<string, () => void>(),
+  reconnectListeners: new Set<(conversationId: string) => void>(),
 
-    if (res.status === 401) {
-      clearAccessToken();
-      window.location.reload();
-      throw new Error("Access token không hợp lệ.");
-    }
-    if (!res.ok || !res.body) {
-      throw new Error(`SSE stream thất bại: ${res.status}`);
-    }
+  /** Mở room (SSE dài hạn) của hội thoại nếu chưa mở; Core flush turn đang chờ ngay khi subscribe xong. */
+  openRoom(conversationId: string) {
+    if (impl.rooms.has(conversationId)) return;
+    const close = subscribeSse(endpoints.streamMessage(conversationId), {
+      onData: (raw) => {
+        const event = toStreamEvent(raw);
+        impl.listeners.forEach((listener) => listener(event));
+      },
+      onOpen: (reconnected) => {
+        if (reconnected) impl.reconnectListeners.forEach((l) => l(conversationId));
+      },
+    });
+    impl.rooms.set(conversationId, close);
+  },
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
+  closeAllRooms() {
+    impl.rooms.forEach((close) => close());
+    impl.rooms.clear();
+  },
 
-    // đọc luồng, tách theo event SSE (cách nhau bởi dòng trống, data: ...)
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      let boundary: number;
-      while ((boundary = buffer.indexOf("\n\n")) !== -1) {
-        const rawEvent = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-
-        for (const line of rawEvent.split("\n")) {
-          if (!line.startsWith("data:")) continue;
-          const data = line.slice(5).trim();
-          if (!data || data === "[DONE]") continue;
-          try {
-            const event = toStreamEvent(JSON.parse(data) as Record<string, unknown>);
-            impl.listeners.forEach((listener) => listener(event));
-          } catch {
-            // bỏ qua frame không phải JSON
-          }
-        }
-      }
-    }
+  onRoomReconnect(listener: (conversationId: string) => void) {
+    impl.reconnectListeners.add(listener);
+    return () => impl.reconnectListeners.delete(listener);
   },
 
   async sendMessage(input: SendMessageInput): Promise<SendMessageResult> {
@@ -156,11 +130,8 @@ const impl = {
     );
     const result = toSendMessageResult(data.data);
 
-    // 2. Mở SSE -> Core flush turn cho Worker. Chạy nền (không await): store đã có id
-    //    để gắn bubble, event stream cập nhật dần.
-    void impl._openStream(input.conversationId).catch((err) => {
-      console.error("SSE stream lỗi", err);
-    });
+    // 2. Room đã mở thì Core chạy turn ngay trong POST; chưa mở thì mở ở đây để flush turn đang chờ.
+    impl.openRoom(input.conversationId);
 
     return result;
   },
@@ -175,9 +146,7 @@ const impl = {
         custom: input.custom,
       }
     );
-    void impl._openStream(input.conversationId).catch((err) => {
-      console.error("SSE stream lỗi", err);
-    });
+    impl.openRoom(input.conversationId);
   },
 
   async improvePrompt(prompt: string) {

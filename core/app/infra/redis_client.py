@@ -44,6 +44,10 @@ class RedisClient:
         """Publish message tới 1 channel, trả về số subscriber đã nhận."""
         return await self.client.publish(channel, message)  # type: ignore[no-any-return]
 
+    async def subscriber_count(self, channel: str) -> int:
+        counts = await self.client.pubsub_numsub(channel)
+        return int(counts[0][1]) if counts else 0
+
     def pubsub(self) -> PubSub:
         """PubSub thô cho caller cần tự điều khiển subscribe -> việc khác -> listen (vd SSE: subscribe xong mới flush turn)."""
         return self.client.pubsub()
@@ -61,7 +65,7 @@ class RedisClient:
             await pubsub.aclose()
 
     async def psubscribe(self, *patterns: str) -> AsyncIterator[dict[str, object]]:
-        """Lắng nghe theo pattern (vd 'agent:events:*'), yield từng message nhận được."""
+        """Lắng nghe theo pattern (vd 'conversation:room:*'), yield từng message nhận được."""
         pubsub = self.client.pubsub()
         await pubsub.psubscribe(*patterns)
         try:

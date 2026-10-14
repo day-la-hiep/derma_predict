@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { chatService } from "@/services";
+import { toChatMessage, type ApiChatMessage } from "@/services/apiAdapters";
 import { getCurrentUserId } from "@/services/client";
 import { getActiveProfileId } from "@/features/patient-profile/store";
 import { MODEL_OPTIONS } from "./constants";
@@ -43,6 +44,8 @@ interface ChatState {
   messagesByConversation: Record<string, ChatMessage[]>;
   /** số luồng AI đang chạy theo từng hội thoại -> cho phép gửi song song */
   activeStreams: Record<string, number>;
+  /** trạng thái ca tư vấn bác sĩ của từng hội thoại (chỉ biết sau khi có event hoặc lúc gửi tin) */
+  consultationByConversation: Record<string, "pending" | "active" | "resolved">;
   /** Quản lý trạng thái khung nhập (draft text, skill, files) theo từng conversationId */
   inputsByConversation: Record<string, ConversationInputState>;
   connected: boolean;
@@ -56,8 +59,8 @@ interface ChatState {
   startNewChat: () => void;
   selectConversation: (id: string) => Promise<void>;
   setModel: (modelId: string) => void;
-  /** Kéo tin bác sĩ mới về (bác sĩ trả lời ngoài luồng SSE của agent) */
-  syncDoctorMessages: (conversationId: string) => Promise<void>;
+  /** Kéo về các tin còn thiếu sau khi room nối lại (Pub/Sub không replay) */
+  syncMissingMessages: (conversationId: string) => Promise<void>;
   /** Lấy input state hiện tại của hội thoại */
   getInputState: (convId?: string | null) => ConversationInputState;
   /** Cập nhật input state cho hội thoại */
@@ -394,6 +397,31 @@ export const useChatStore = create<ChatState>((set, get) => {
         }));
         break;
       }
+      case "message.created": {
+        const incoming = toChatMessage(event.message as ApiChatMessage);
+        // tin của chính bệnh nhân đã có sẵn ở FE (optimistic) — chỉ lấy tin bác sĩ và tin mốc phiên từ room
+        if (incoming.role !== "doctor" && !incoming.messageType?.startsWith("consultation_")) break;
+        set((state) => {
+          const list = state.messagesByConversation[event.conversationId];
+          if (!list || list.some((m) => m.id === incoming.id)) return state;
+          return {
+            messagesByConversation: {
+              ...state.messagesByConversation,
+              [event.conversationId]: [...list, incoming],
+            },
+          };
+        });
+        break;
+      }
+      case "consultation.updated": {
+        set((state) => ({
+          consultationByConversation: {
+            ...state.consultationByConversation,
+            [event.conversationId]: event.status,
+          },
+        }));
+        break;
+      }
       case "document.started": {
         patchMessage(event.messageId, (m) => ({
           ...m,
@@ -429,6 +457,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     activeId: null,
     messagesByConversation: {},
     activeStreams: {},
+    consultationByConversation: {},
     inputsByConversation: {},
     connected: false,
     loadingConversations: false,
@@ -468,6 +497,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
 
       chatService.onEvent(handleEvent);
+      chatService.onRoomReconnect?.((id) => void get().syncMissingMessages(id));
 
       try {
         const conversations = await chatService.getConversations();
@@ -493,6 +523,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     async selectConversation(id) {
       const state = get();
+      chatService.openRoom?.(id);
       if (state.messagesByConversation[id]) {
         set({ activeId: id });
         return;
@@ -514,13 +545,15 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({ selectedModelId: modelId });
     },
 
-    async syncDoctorMessages(conversationId) {
+    async syncMissingMessages(conversationId) {
+      // đang có turn chạy thì bubble optimistic chưa có id thật, sync lúc này sẽ nhân đôi tin
+      if (get().hasActiveStream(conversationId)) return;
       try {
         const remote = await chatService.getMessages(conversationId);
         set((s) => {
           const local = s.messagesByConversation[conversationId] ?? [];
           const known = new Set(local.map((m) => m.id));
-          const fresh = remote.filter((m) => m.role === "doctor" && !known.has(m.id));
+          const fresh = remote.filter((m) => !known.has(m.id));
           if (fresh.length === 0) return s;
           return {
             messagesByConversation: {
@@ -530,7 +563,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           };
         });
       } catch {
-        // poll nền, lỗi mạng tạm thời thì lần sau thử lại
+        // lỗi mạng tạm thời, lần nối lại kế tiếp sẽ thử lại
       }
     },
 
@@ -642,22 +675,38 @@ export const useChatStore = create<ChatState>((set, get) => {
       ).then((result) => {
         // Thay id optimistic bằng id thật để event SSE (keyed theo messageId) khớp; mock trả `void` thì bỏ qua.
         if (!result) return;
+        const assistant = result.assistantMessage;
         set((state) => {
           const list = state.messagesByConversation[activeId] ?? [];
-          const next = list.map((m) => {
-            if (m.id === userMessage.id) {
-              return { ...m, id: result.userMessage.id, status: result.userMessage.status };
-            }
-            if (m.id === assistantMessage.id) {
-              return { ...m, id: result.assistantMessage.id, status: result.assistantMessage.status };
-            }
-            return m;
-          });
+          // không có assistant = bác sĩ đang phụ trách ca: bỏ bubble chờ AI và trả lượt stream
+          const next = list
+            .filter((m) => assistant || m.id !== assistantMessage.id)
+            .map((m) => {
+              if (m.id === userMessage.id) {
+                return { ...m, id: result.userMessage.id, status: result.userMessage.status };
+              }
+              if (assistant && m.id === assistantMessage.id) {
+                return { ...m, id: assistant.id, status: assistant.status };
+              }
+              return m;
+            });
           return {
             messagesByConversation: {
               ...state.messagesByConversation,
               [activeId]: next,
             },
+            ...(assistant
+              ? {}
+              : {
+                  activeStreams: {
+                    ...state.activeStreams,
+                    [activeId]: Math.max(0, (state.activeStreams[activeId] ?? 0) - 1),
+                  },
+                  consultationByConversation: {
+                    ...state.consultationByConversation,
+                    [activeId]: "active" as const,
+                  },
+                }),
           };
         });
       }).catch(() => {
