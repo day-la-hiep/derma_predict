@@ -423,7 +423,8 @@ def _feature_screen(feature: Feature, loop: asyncio.AbstractEventLoop) -> None:
                     )
                 )
             )
-        if line.startswith("/"):
+        # Tên lệnh không chứa "/", nên token đầu có thêm "/" là đường dẫn tuyệt đối (vd ảnh cho `skin_image`), không phải lệnh.
+        if line.startswith("/") and "/" not in line.split(" ")[0][1:]:
             if _handle_command(feature, cfg, line):
                 return
             continue

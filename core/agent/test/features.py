@@ -225,6 +225,34 @@ async def _kg_seeds(text: str, cfg: dict[str, Any], preset: Preset | None) -> No
         print(f"Không khớp: {unmatched}")
 
 
+async def _skin_image(text: str, cfg: dict[str, Any], preset: Preset | None) -> None:
+    import time
+
+    from agent.common.medgemma import MedGemmaError, describe_skin_image
+    from agent.tools.skin_image_classifier import _format_predictions, get_predictor  # pyright: ignore[reportPrivateUsage]
+
+    for raw in shlex.split(text):
+        path = Path(raw).expanduser()
+        if path.suffix.lower() not in _IMAGE_TYPES or not path.is_file():
+            print(f"Bỏ qua {raw}: không phải file ảnh .jpg/.png/.webp tồn tại.")
+            continue
+        data = path.read_bytes()
+        print(f"\n=== {path.name}")
+        if cfg["cnn"]:
+            start = time.perf_counter()
+            results = await asyncio.to_thread(get_predictor().predict, data, 5)
+            print(f"[CNN · {time.perf_counter() - start:.1f}s]\n{_format_predictions(results)}")
+        if cfg["medgemma"]:
+            start = time.perf_counter()
+            try:
+                description = await describe_skin_image(data)
+            except MedGemmaError as e:
+                print(f"[MedGemma · lỗi] {e}")
+            else:
+                print(f"[MedGemma · {time.perf_counter() - start:.1f}s]\n{description}")
+    print("\n(Kết quả AI chỉ là gợi ý, KHÔNG phải chẩn đoán y khoa.)")
+
+
 FEATURES: list[Feature] = [
     Feature(
         key="retrieval",
@@ -280,6 +308,16 @@ FEATURES: list[Feature] = [
             "attach": ("đính kèm ảnh da vào lượt chat kế tiếp: /attach <đường dẫn ảnh>...", _attach),
             "detach": ("bỏ các ảnh đang chờ gửi", _detach),
         },
+    ),
+    Feature(
+        key="skin_image",
+        title="Phân tích ảnh da (CNN + MedGemma)",
+        help="Gọi thẳng CNN và MedGemma trên ảnh, in kết quả + thời gian, không qua LLM/MinIO. Gõ đường dẫn ảnh (nhiều ảnh cách nhau dấu cách). MedGemma dùng cấu hình MEDGEMMA_* trong .env (Ollama/Vertex).",
+        run=_skin_image,
+        settings=[
+            Setting("cnn", True, "chạy CNN phân loại"),
+            Setting("medgemma", True, "chạy MedGemma mô tả"),
+        ],
     ),
     Feature(
         key="kb_stats",

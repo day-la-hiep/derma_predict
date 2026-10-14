@@ -206,6 +206,19 @@ class Settings(BaseSettings):
         / "AdaptiveCNN_SkinDisease_v5_best.pth"
     )
 
+    # ----- MedGemma multimodal (agent/tools/skin_image_multimodal.py) -----
+    # Tắt mặc định vì bật thì ảnh bệnh nhân được gửi sang Google; tắt thì agent chỉ dùng CNN.
+    MEDGEMMA_ENABLED: bool = False
+    MEDGEMMA_PROJECT: str = ""
+    MEDGEMMA_LOCATION: str = ""
+    MEDGEMMA_ENDPOINT_ID: str = ""
+    # Ghi đè URL chat/completions đầy đủ (vd dedicated endpoint); rỗng thì dựng từ 3 field trên.
+    MEDGEMMA_BASE_URL: str = ""
+    # False khi trỏ MEDGEMMA_BASE_URL sang server local (Ollama/vLLM) không cần token Google.
+    MEDGEMMA_USE_GOOGLE_AUTH: bool = True
+    MEDGEMMA_MODEL: str = "google/medgemma-4b-it"
+    MEDGEMMA_TIMEOUT: float = 60.0
+
 
 @lru_cache
 def get_settings() -> Settings:

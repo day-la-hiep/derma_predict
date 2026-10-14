@@ -34,6 +34,8 @@ from agent.tools.hybrid_retrieval import (
 )
 from agent.tools.reasoning import record_reasoning
 from agent.tools.skin_image_classifier import classify_skin_image
+from agent.tools.skin_image_multimodal import analyze_skin_image_multimodal
+from app.config.settings import settings
 from agent.tools.web_search import fetch_trusted_page, search_trusted_web
 from agent.common.llm import get_model
 from agent.tools.memory import save_memory
@@ -50,6 +52,7 @@ ALL_TOOLS = [
     classify_skin_image,
     search_trusted_web,
     fetch_trusted_page,
+    *([analyze_skin_image_multimodal] if settings.MEDGEMMA_ENABLED else []),
 ]
 
 

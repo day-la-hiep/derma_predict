@@ -3,6 +3,7 @@
 /data
 # secrets compose prod (mẫu: .env.prod.example)
 /.env
+/cli_input
 .vscode
 reference
 .env
