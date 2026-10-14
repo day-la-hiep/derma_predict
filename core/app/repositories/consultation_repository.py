@@ -5,6 +5,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.consultation_session import ConsultationSession
+from app.models.conversation import Conversation
 from app.models.clinical import (
     ClinicalFact,
     ClinicalFactTemplate,
@@ -93,6 +94,25 @@ class ConsultationRepository:
             PreConsultationReport.consultation_session_id == session_id
         )
         result = await self._db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_latest_past_report(
+        self, patient_profile_id: str, exclude_session_id: str | None = None
+    ) -> PreConsultationReport | None:
+        """Lấy báo cáo tiền tư vấn của ca khám gần nhất trước đó của bệnh nhân."""
+        stmt = (
+            select(PreConsultationReport)
+            .join(
+                ConsultationSession,
+                PreConsultationReport.consultation_session_id == ConsultationSession.id,
+            )
+            .join(Conversation, ConsultationSession.conversation_id == Conversation.id)
+            .where(Conversation.patient_profile_id == patient_profile_id)
+            .order_by(ConsultationSession.requested_at.desc())
+        )
+        if exclude_session_id:
+            stmt = stmt.where(ConsultationSession.id != exclude_session_id)
+        result = await self._db.execute(stmt.limit(1))
         return result.scalar_one_or_none()
 
     async def create_report(
