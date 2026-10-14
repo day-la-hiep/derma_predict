@@ -1,5 +1,7 @@
 """Truy vấn DB cho `User` (`app/models/user.py`) và kiểm tra vai trò người dùng."""
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +28,12 @@ class UserRepository:
         self._db.add(user)
         await self._db.flush()
         await self._db.refresh(user)
+        return user
+
+    async def update(self, user: User, fields: dict[str, Any]) -> User:
+        for name, value in fields.items():
+            setattr(user, name, value)
+        await self._db.flush()
         return user
 
     async def get_role(self, user_id: str) -> str:

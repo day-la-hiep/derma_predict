@@ -5,7 +5,7 @@
 - `conversation`   — Conversation, Message
 - `consultation`   — ConsultationSession, VideoCall, PreConsultationReport
 - `clinical`       — ClinicalFactTemplate, ClinicalFact
-- `medical_record` — MedicalRecord, PatientImage
+- `medical_record` — MedicalRecord (+ snapshot phiếu đã chốt), PatientImage
 - `document`       — Document và pipeline ingest
 
 Các context tham chiếu vòng nhau (Conversation ↔ ConsultationSession ↔ ClinicalFact, PatientProfile ↔ MedicalRecord), nên
@@ -22,14 +22,24 @@ from app.dto.base.document import (
     DocumentStageOverride,
 )
 from app.dto.base.identity import Admin, Doctor, PatientProfile, User
-from app.dto.base.medical_record import MedicalRecord, PatientImage
+from app.dto.base.medical_record import (
+    Assessment,
+    MedicalRecord,
+    MedicalRecordSnapshot,
+    PatientImage,
+    SnapshotClinicalFact,
+    SnapshotMessage,
+    SnapshotPatientProfile,
+    SnapshotProvenance,
+)
 from app.dto.base.shared import File
 
 __all__ = [
-    "Admin", "ClinicalFact", "ClinicalFactTemplate", "ClinicalProvenance", "ConsultationSession",
+    "Admin", "Assessment", "ClinicalFact", "ClinicalFactTemplate", "ClinicalProvenance", "ConsultationSession",
     "Conversation", "Doctor", "Document", "DocumentChunk", "DocumentFigure", "File",
-    "MedicalRecord", "Message", "MessageMetadata", "NewDocument", "PatientImage", "PatientProfile",
-    "PreConsultationReport", "DocumentStage", "DocumentStageOverride", "User", "VideoCall",
+    "MedicalRecord", "MedicalRecordSnapshot", "Message", "MessageMetadata", "NewDocument", "PatientImage",
+    "PatientProfile", "PreConsultationReport", "DocumentStage", "DocumentStageOverride", "SnapshotClinicalFact",
+    "SnapshotMessage", "SnapshotPatientProfile", "SnapshotProvenance", "User", "VideoCall",
 ]
 
 _types_namespace = {name: globals()[name] for name in __all__}

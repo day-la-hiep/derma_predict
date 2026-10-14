@@ -34,6 +34,7 @@ from app.services.knowledge_base_service import KnowledgeBaseService
 from app.services.knowledge_graph_service import KnowledgeGraphService
 from app.services.message_service import MessageService
 from app.services.patient_profile_service import PatientProfileService
+from app.services.doctor_medical_record_service import DoctorMedicalRecordService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
 
 T = TypeVar("T")
@@ -201,6 +202,12 @@ def get_patient_profile_service(
     ],
 ) -> PatientProfileService:
     return PatientProfileService(patient_profile_repository, medical_record_repository)
+
+
+def get_doctor_medical_record_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> DoctorMedicalRecordService:
+    return DoctorMedicalRecordService(db, get_file_store_service())
 
 
 def get_message_repository(

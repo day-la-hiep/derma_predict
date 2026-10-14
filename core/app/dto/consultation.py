@@ -7,6 +7,10 @@ class PatientProfileDto(BaseModel):
     full_name: str
     dob: str
     gender: str
+    relationship: str = "self"
+    phone: str | None = None
+    allergies: str = ""
+    medical_history: str = ""
 
 
 class ClinicalFactOutput(BaseModel):

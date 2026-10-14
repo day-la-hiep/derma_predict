@@ -1,7 +1,7 @@
 """Truy vấn DB cho `PatientProfile` (`app/models/patient_profile.py`)."""
 from typing import Any
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation import Conversation
@@ -31,6 +31,18 @@ class PatientProfileRepository:
         """Lọc theo chủ tài khoản: hồ sơ của người khác coi như không tồn tại."""
         stmt = select(PatientProfile).where(PatientProfile.id == profile_id, PatientProfile.user_id == user_id)
         return (await self._db.execute(stmt)).scalar_one_or_none()
+
+    async def get(self, profile_id: str) -> PatientProfile | None:
+        return await self._db.get(PatientProfile, profile_id)
+
+    async def search(self, q: str, limit: int = 20) -> list[PatientProfile]:
+        """Bác sĩ tìm hồ sơ theo tên/SĐT; q rỗng trả các hồ sơ mới nhất để có gợi ý ngay khi mở ô chọn."""
+        stmt = select(PatientProfile)
+        if q:
+            pattern = f"%{q}%"
+            stmt = stmt.where(or_(PatientProfile.full_name.ilike(pattern), PatientProfile.phone.ilike(pattern)))
+        stmt = stmt.order_by(PatientProfile.created_at.desc()).limit(limit)
+        return list((await self._db.execute(stmt)).scalars().all())
 
     async def create(self, profile: PatientProfile) -> PatientProfile:
         """Tạo mới một hồ sơ bệnh nhân (flush để sinh id/giá trị mặc định)."""

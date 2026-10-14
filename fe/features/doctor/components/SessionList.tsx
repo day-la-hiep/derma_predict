@@ -1,7 +1,6 @@
 "use client";
 
 import { Inbox } from "lucide-react";
-import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { FILTER_OPTIONS, STATUS_CONFIG } from "../constants";
@@ -25,40 +24,28 @@ function SessionRow({ session, active, onSelect }: { session: ConsultationSessio
   const facts = session.clinicalFacts?.length ?? 0;
 
   return (
-    <Hint
-      side="right"
-      content={
-        <div className="space-y-1">
-          <p className="font-medium">{session.patient?.fullName ?? "Bệnh nhân"}</p>
-          <p className="text-muted-foreground">{session.reason || "Chưa ghi lý do"}</p>
-          <p className="text-muted-foreground">{cfg.hint}</p>
-          {facts > 0 && <p className="text-muted-foreground">{facts} dữ kiện lâm sàng AI đã trích xuất</p>}
-        </div>
-      }
+    <button
+      type="button"
+      onClick={() => onSelect(session.id)}
+      aria-current={active ? "true" : undefined}
+      className={cn(
+        "group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
+        active ? "bg-brand/10" : "hover:bg-muted/60"
+      )}
     >
-      <button
-        type="button"
-        onClick={() => onSelect(session.id)}
-        aria-current={active ? "true" : undefined}
-        className={cn(
-          "group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
-          active ? "bg-brand/10" : "hover:bg-muted/60"
-        )}
-      >
-        <span className={cn("size-2 shrink-0 rounded-full", cfg.dotClass, session.status === "pending" && "animate-pulse")} />
-        <span className="min-w-0 flex-1">
-          <span className={cn("block truncate text-sm", active ? "font-semibold text-brand" : "font-medium text-foreground")}>
-            {session.patient?.fullName ?? "Bệnh nhân"}
-          </span>
-          <span className="block truncate text-[11px] text-muted-foreground">
-            {gender}, {calculateAge(session.patient?.dob)}t · {formatRelativeTime(session.requestedAt)}
-          </span>
+      <span className={cn("size-2 shrink-0 rounded-full", cfg.dotClass, session.status === "pending" && "animate-pulse")} />
+      <span className="min-w-0 flex-1">
+        <span className={cn("block truncate text-sm", active ? "font-semibold text-brand" : "font-medium text-foreground")}>
+          {session.patient?.fullName ?? "Bệnh nhân"}
         </span>
-        {facts > 0 && (
-          <span className="shrink-0 rounded-full bg-brand/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-brand">{facts}</span>
-        )}
-      </button>
-    </Hint>
+        <span className="block truncate text-[11px] text-muted-foreground">
+          {gender}, {calculateAge(session.patient?.dob)}t · {formatRelativeTime(session.requestedAt)}
+        </span>
+      </span>
+      {facts > 0 && (
+        <span className="shrink-0 rounded-full bg-brand/10 px-1.5 py-0.5 font-mono text-[10px] font-medium text-brand">{facts}</span>
+      )}
+    </button>
   );
 }
 
@@ -83,22 +70,20 @@ export function SessionList() {
         <div className="grid grid-cols-4 gap-0.5 rounded-xl bg-muted p-0.5" role="tablist" aria-label="Lọc ca tư vấn">
           {FILTER_OPTIONS.map((opt) => {
             const on = statusFilter === opt.value;
-            const full = opt.value === "all" ? "Tất cả ca tư vấn" : STATUS_CONFIG[opt.value].hint;
             return (
-              <Hint key={opt.value} content={`${full} (${count(opt.value)})`}>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={on}
-                  onClick={() => setStatusFilter(opt.value)}
-                  className={cn(
-                    "rounded-[10px] px-1 py-1 text-[11px] font-medium transition-all",
-                    on ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {opt.label}
-                </button>
-              </Hint>
+              <button
+                key={opt.value}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => setStatusFilter(opt.value)}
+                className={cn(
+                  "rounded-[10px] px-1 py-1 text-[11px] font-medium transition-all",
+                  on ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {opt.label} <span className="text-muted-foreground/70">{count(opt.value)}</span>
+              </button>
             );
           })}
         </div>

@@ -9,6 +9,7 @@ import { Hint } from "@/components/ui/hint";
 import { STATUS_CONFIG } from "../constants";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownMessage } from "@/features/chat/components/MarkdownMessage";
+import { PatientProfileSheet } from "./PatientProfileSheet";
 
 const SENDER_CONFIG = {
   patient: {
@@ -46,7 +47,7 @@ function formatTime(iso: string): string {
   });
 }
 
-function ChatBubble({ message }: { message: DoctorViewMessage }) {
+export function ChatBubble({ message }: { message: DoctorViewMessage }) {
   const cfg = SENDER_CONFIG[message.sender];
   const Icon = cfg.icon;
 
@@ -144,18 +145,17 @@ export function ChatViewer() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
-        <Hint side="bottom" content={`${activeSession?.conversationTitle ?? "Cuộc hội thoại"} · ${messages.length} tin nhắn giữa AI, bệnh nhân và bác sĩ`}>
-          <h3 className="min-w-0 truncate font-serif text-lg font-bold tracking-tight text-foreground">
-            {activeSession?.patient?.fullName ?? activeSession?.conversationTitle ?? "Hội thoại"}
-          </h3>
-        </Hint>
+        <h3 className="min-w-0 truncate font-serif text-lg font-bold tracking-tight text-foreground">
+          {activeSession?.patient?.fullName ?? activeSession?.conversationTitle ?? "Hội thoại"}
+        </h3>
         {activeSession && (
-          <Hint side="bottom" content={STATUS_CONFIG[activeSession.status].hint}>
-            <span className="flex shrink-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <span className={cn("size-2 rounded-full", STATUS_CONFIG[activeSession.status].dotClass, activeSession.status === "active" && "animate-pulse")} />
               {STATUS_CONFIG[activeSession.status].label}
             </span>
-          </Hint>
+            <PatientProfileSheet session={activeSession} />
+          </div>
         )}
       </div>
 

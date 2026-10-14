@@ -1,7 +1,10 @@
 """MedicalRecord / PatientImage"""
 from datetime import UTC, datetime
 
+from typing import Any
+
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, false, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -17,6 +20,12 @@ class MedicalRecord(Base):
     diagnosis: Mapped[str] = mapped_column(Text)
     notes: Mapped[str] = mapped_column(Text, default="", server_default="")
     is_reference_case: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # ca tư vấn sinh ra phiếu; NULL = khám trực tiếp. Xoá ca thì phiếu vẫn giữ (snapshot đã chép đủ nội dung)
+    consultation_session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("consultation_sessions.id", ondelete="SET NULL"), index=True, default=None
+    )
+    # `MedicalRecordSnapshot` của dto/base; NULL với bệnh án ghi trước khi có snapshot
+    snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 

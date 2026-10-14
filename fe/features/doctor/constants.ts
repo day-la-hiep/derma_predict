@@ -12,7 +12,7 @@ import {
   HandHelping,
   type LucideIcon,
 } from "lucide-react";
-import type { ClinicalFactType, ConsultationStatus } from "./types";
+import type { ClinicalFactType, ConsultationStatus, FactOrigin, Urgency } from "./types";
 
 /** Cấu hình hiển thị theo loại Dữ kiện lâm sàng (bám sát bảng clinical_fact_templates trong DB) */
 export interface FactTypeConfig {
@@ -133,7 +133,7 @@ export const STATUS_ACTION_CONFIG: Record<ConsultationStatus, StatusActionConfig
   },
   active: {
     label: "Đóng ca",
-    hint: "Đóng phiên tư vấn: kết thúc ca và chuyển sang chế độ chỉ xem.",
+    hint: "Đóng phiên tư vấn: mở form chốt bệnh án (điền sẵn dữ kiện của ca), chốt xong ca chuyển sang chế độ chỉ xem.",
     icon: CheckCircle2,
     buttonClass:
       "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:shadow-lg",
@@ -154,4 +154,61 @@ export const FILTER_OPTIONS: { value: ConsultationStatus | "all"; label: string 
   { value: "pending", label: "Chờ" },
   { value: "active", label: "Đang" },
   { value: "resolved", label: "Xong" },
+];
+
+/** Mức khẩn cấp bác sĩ chốt cho phiếu bệnh án */
+export const URGENCY_CONFIG: Record<Urgency, { label: string; hint: string; badgeClass: string }> = {
+  emergency: {
+    label: "Khẩn",
+    hint: "Cần khám trực tiếp ngay.",
+    badgeClass: "border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/50 dark:text-red-400",
+  },
+  few_days: {
+    label: "Vài ngày",
+    hint: "Nên khám trực tiếp trong vài ngày tới.",
+    badgeClass:
+      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/50 dark:text-amber-400",
+  },
+  monitor: {
+    label: "Theo dõi",
+    hint: "Theo dõi tại nhà, tái khám khi có thay đổi.",
+    badgeClass: "border-border bg-muted text-muted-foreground",
+  },
+};
+
+export const URGENCY_ORDER: Urgency[] = ["emergency", "few_days", "monitor"];
+
+/** Nguồn gốc dữ kiện trong phiếu đã chốt */
+export const FACT_ORIGIN_CONFIG: Record<FactOrigin, { label: string; hint: string; badgeClass: string }> = {
+  patient_reported: {
+    label: "Bệnh nhân khai",
+    hint: "Bệnh nhân tự kể trong hội thoại.",
+    badgeClass: "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/50 dark:text-blue-400",
+  },
+  ai_inferred: {
+    label: "AI suy ra",
+    hint: "AI suy ra (vd từ ảnh) — chỉ là giả thuyết, không phải chẩn đoán y khoa.",
+    badgeClass:
+      "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/50 dark:text-indigo-400",
+  },
+  doctor_observed: {
+    label: "Bác sĩ ghi nhận",
+    hint: "Bác sĩ ghi nhận khi khám, không có tin nhắn gốc.",
+    badgeClass:
+      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/50 dark:text-emerald-400",
+  },
+  doctor_corrected: {
+    label: "Bác sĩ sửa",
+    hint: "Bác sĩ sửa lại dữ kiện có sẵn; nguồn là tin gốc của dữ kiện ban đầu.",
+    badgeClass:
+      "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900/60 dark:bg-violet-950/50 dark:text-violet-400",
+  },
+};
+
+/** Lọc theo thời gian ở màn Lịch sử khám (ngày; null = tất cả) */
+export const TIME_FILTERS: { days: number | null; label: string }[] = [
+  { days: 7, label: "7 ngày" },
+  { days: 30, label: "30 ngày" },
+  { days: 90, label: "90 ngày" },
+  { days: null, label: "Tất cả" },
 ];

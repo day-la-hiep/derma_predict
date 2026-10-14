@@ -27,6 +27,7 @@ from app.models.patient_profile import PatientProfile
 from app.repositories.consultation_repository import ConsultationRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.message_repository import MessageRepository
+from app.services.doctor_medical_record_service import to_patient_profile_dto
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +36,16 @@ Nhiệm vụ của bạn là đọc toàn bộ đoạn hội thoại giữa bệ
 1. Rút trích các DỮ KIỆN LÂM SÀNG (clinical facts) có cấu trúc.
 2. Soạn một BÁO CÁO TIỀN TƯ VẤN (Pre-consultation Report) súc tích, chuyên nghiệp cho Bác sĩ da liễu đọc trước khi nhận ca.
 
+Mỗi tin trong hội thoại có số thứ tự dạng `[#3][PATIENT]: ...`.
+
 BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON SAU (không kèm markdown code block hoặc text thừa):
 {
   "facts": [
     {
       "template_label": "Tên chuẩn của triệu chứng/tổn thương/thuốc",
       "fact_type": "symptom | lesion | history | medication | allergy | image_finding | other",
-      "detail": "Mô tả chi tiết cụ thể của bệnh nhân"
+      "detail": "Mô tả chi tiết cụ thể của bệnh nhân",
+      "source_messages": [3]
     }
   ],
   "summary": "Nội dung tóm tắt lâm sàng (định dạng Markdown)"
@@ -54,6 +58,9 @@ Yêu cầu cho phần `summary` (dùng Markdown đẹp):
 - ## Dấu hiệu cờ đỏ (Red Flags): Đã kiểm tra loại trừ hay nghi ngờ có cờ đỏ gì.
 - ## Đề xuất cho Bác sĩ tiếp quản: Gợi ý câu hỏi lâm sàng cần làm rõ hoặc cận lâm sàng nên chỉ định.
 - Lưu ý: Ghi rõ 'Kết luận AI chỉ mang tính chất tham khảo hỗ trợ tiền lâm sàng' ở cuối.
+
+Yêu cầu cho `source_messages`: số thứ tự các tin chứa bằng chứng cho fact đó (ưu tiên tin của bệnh nhân);
+không bịa số không có trong hội thoại.
 """
 
 
@@ -99,11 +106,7 @@ class ConsultationService:
 
     async def _patient_dto(self, patient_profile_id: str | None) -> PatientProfileDto | None:
         profile = await self._db.get(PatientProfile, patient_profile_id) if patient_profile_id else None
-        if profile is None:
-            return None
-        return PatientProfileDto(
-            id=profile.id, full_name=profile.full_name, dob=profile.dob.isoformat(), gender=profile.gender
-        )
+        return to_patient_profile_dto(profile) if profile else None
 
     async def _owned_session(self, session_id: str, doctor_id: str) -> ConsultationSession:
         session = await self._repo.get_session(session_id)
@@ -214,10 +217,12 @@ class ConsultationService:
         await self._repo.create_session(session)
 
         # 3. Lấy lịch sử hội thoại để nạp vào LLM
-        messages = await self._msg_repo.list_by_conversation(conversation_id)
+        messages = [m for m in await self._msg_repo.list_by_conversation(conversation_id) if m.content]
+        # đánh số để LLM chỉ ra tin nguồn của từng fact → ghi `clinical_provenances`
         chat_transcript = "\n".join(
-            f"[{m.sender.upper()}]: {m.content}" for m in messages if m.content
+            f"[#{i}][{m.sender.upper()}]: {m.content}" for i, m in enumerate(messages, start=1)
         )
+        provenance_pairs: list[tuple[str, str]] = []
 
         # 4. Gọi LLM sinh báo cáo & bóc tách dữ kiện lâm sàng
         facts_to_save: list[ClinicalFact] = []
@@ -259,6 +264,9 @@ class ConsultationService:
                 tpl = await self._repo.get_or_create_template(f_type, f_label)
                 fact_id = f"cf-{uuid.uuid4()}"
                 now = datetime.now(UTC)
+                for idx in rf.get("source_messages") or []:
+                    if isinstance(idx, int) and 1 <= idx <= len(messages):
+                        provenance_pairs.append((fact_id, messages[idx - 1].id))
                 facts_to_save.append(
                     ClinicalFact(
                         id=fact_id,
@@ -298,6 +306,10 @@ class ConsultationService:
         await self._repo.create_report(report)
         if facts_to_save:
             await self._repo.add_clinical_facts(facts_to_save)
+        saved_ids = {f.id for f in facts_to_save}
+        provenance_pairs = [p for p in provenance_pairs if p[0] in saved_ids]
+        if provenance_pairs:
+            await self._repo.add_provenances(provenance_pairs)
 
         return self._to_output(session, conv_title, report, facts_dto, patient)
 
