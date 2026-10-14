@@ -1,14 +1,18 @@
 """API endpoints cho Bác sĩ & Báo cáo tư vấn."""
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import (
     get_consultation_service,
     get_current_user,
     get_doctor_medical_record_service,
+    get_redis_client,
     require_role,
 )
+from app.api.sse import pubsub_event_stream
+from app.config.constants import DOCTOR_INBOX_CHANNEL
 from app.dto.common import ApiResponse
 from app.dto.consultation import (
     ConsultationSessionOutput,
@@ -23,6 +27,7 @@ from app.dto.response.medical_record import (
     FinalizeDraftOutput,
 )
 from app.dto.response.message import MessageOutput
+from app.infra.redis_client import RedisClient
 from app.models.user import User
 from app.services.consultation_service import ConsultationService
 from app.services.doctor_medical_record_service import DoctorMedicalRecordService
@@ -54,6 +59,19 @@ async def list_consultations(
     return ApiResponse(data=sessions)
 
 
+@router.get("/doctor/consultations/stream", include_in_schema=False)
+async def stream_consultations(
+    doctor: DoctorDep,
+    redis: Annotated[RedisClient, Depends(get_redis_client)],
+) -> StreamingResponse:
+    """Ca mới / đổi trạng thái theo thời gian thực cho danh sách ca của bác sĩ."""
+    return StreamingResponse(
+        pubsub_event_stream(redis, DOCTOR_INBOX_CHANNEL),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.get(
     "/doctor/consultations/{session_id}",
     response_model=ApiResponse[ConsultationSessionOutput],
@@ -66,11 +84,6 @@ async def get_consultation(
 ) -> ApiResponse[ConsultationSessionOutput]:
     """Lấy chi tiết một phiên tư vấn (kèm dữ kiện lâm sàng và báo cáo AI kết luận)."""
     session = await service.get_session(session_id, doctor.id)
-    if not session:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Không tìm thấy phiên tư vấn id={session_id}",
-        )
     return ApiResponse(data=session)
 
 
@@ -85,11 +98,8 @@ async def accept_consultation(
     doctor: DoctorDep,
 ) -> ApiResponse[ConsultationSessionOutput]:
     """Bác sĩ tiếp quản ca tư vấn (chuyển status sang active)."""
-    try:
-        session = await service.accept_session(session_id, doctor.id)
-        return ApiResponse(data=session)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    session = await service.accept_session(session_id, doctor.id)
+    return ApiResponse(data=session)
 
 
 @router.post(
@@ -103,11 +113,8 @@ async def resolve_consultation(
     doctor: DoctorDep,
 ) -> ApiResponse[ConsultationSessionOutput]:
     """Bác sĩ đóng phiên tư vấn (chuyển status sang resolved)."""
-    try:
-        session = await service.resolve_session(session_id, doctor.id)
-        return ApiResponse(data=session)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    session = await service.resolve_session(session_id, doctor.id)
+    return ApiResponse(data=session)
 
 
 @router.get(
@@ -148,10 +155,14 @@ async def finalize_consultation(
     session_id: str,
     body: FinalizeMedicalRecordInput,
     service: MedicalRecordServiceDep,
+    consultations: ConsultationServiceDep,
     doctor: DoctorDep,
 ) -> ApiResponse[DoctorMedicalRecordOutput]:
     """Bác sĩ chốt bệnh án cho ca đang tư vấn và đóng ca."""
-    return ApiResponse(data=await service.finalize_session(session_id, doctor.id, doctor.full_name, body))
+    record = await service.finalize_session(session_id, doctor.id, doctor.full_name, body)
+    # chốt bệnh án đóng ca trong service riêng, nên phải báo room + inbox ở đây
+    await consultations.announce_finalized(session_id, doctor.id)
+    return ApiResponse(data=record)
 
 
 @router.get(
@@ -241,8 +252,5 @@ async def reply_consultation(
     doctor: DoctorDep,
 ) -> ApiResponse[MessageOutput]:
     """Bác sĩ gửi tin nhắn phản hồi tới bệnh nhân trong phiên tư vấn."""
-    try:
-        msg = await service.send_doctor_reply(session_id, body.content, doctor.id)
-        return ApiResponse(data=msg)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    msg = await service.send_doctor_reply(session_id, body.content, doctor.id)
+    return ApiResponse(data=msg)

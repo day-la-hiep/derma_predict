@@ -87,6 +87,7 @@ export interface ApiMessageMetadata {
   attached_files?: ApiFileAttachment[] | null;
   choice?: ApiMessageChoice | null;
   is_option_response?: boolean | null;
+  message_type?: string | null;
 }
 
 export interface ApiChatMessage {
@@ -104,7 +105,8 @@ export interface ApiChatMessage {
  * `POST /conversations/{id}/messages`. */
 export interface ApiSendMessageResult {
   user_message: ApiChatMessage;
-  assistant_message: ApiChatMessage;
+  /** null khi bác sĩ đang phụ trách ca: AI không tạo turn */
+  assistant_message: ApiChatMessage | null;
 }
 
 /** Khớp `SendMessageInput` (`core/app/dto/request/message.py`) verbatim — không có
@@ -157,6 +159,7 @@ export function toChatMessage(a: ApiChatMessage): ChatMessage {
     reasoning,
     choice: meta?.choice ? toMessageChoice(meta.choice) : undefined,
     isOptionResponse: meta?.is_option_response ?? undefined,
+    messageType: meta?.message_type ?? undefined,
     attachments:
       role === "user" && meta?.attached_files ? meta.attached_files.map(toFileAttachment) : undefined,
   };
@@ -165,7 +168,7 @@ export function toChatMessage(a: ApiChatMessage): ChatMessage {
 export function toSendMessageResult(a: ApiSendMessageResult): SendMessageResult {
   return {
     userMessage: toChatMessage(a.user_message),
-    assistantMessage: toChatMessage(a.assistant_message),
+    assistantMessage: a.assistant_message ? toChatMessage(a.assistant_message) : null,
   };
 }
 
@@ -193,6 +196,8 @@ const STREAM_EVENT_KEYS: Record<string, string> = {
   step_id: "stepId",
   step_type: "stepType",
   document_id: "documentId",
+  session_id: "sessionId",
+  doctor_id: "doctorId",
 };
 
 /** Event SSE từ Core (snake_case, `agent/turn.py`, `agent/middleware/*.py`) -> `ChatStreamEvent` của UI. */

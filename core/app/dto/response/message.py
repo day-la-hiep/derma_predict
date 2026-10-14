@@ -50,4 +50,4 @@ class SendMessageResult(BaseModel):
     """Response cho `POST /conversations/{id}/messages`"""
 
     user_message: MessageOutput
-    assistant_message: MessageOutput
+    assistant_message: MessageOutput | None = None  # None khi bác sĩ đang phụ trách ca: AI không tạo turn

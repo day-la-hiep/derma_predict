@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bot, User, Stethoscope, Info, CornerDownLeft } from "lucide-react";
+import { Bot, User, Stethoscope, CornerDownLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDoctorStore } from "../store";
 import type { DoctorViewMessage } from "../types";
@@ -9,6 +9,7 @@ import { Hint } from "@/components/ui/hint";
 import { STATUS_CONFIG } from "../constants";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownMessage } from "@/features/chat/components/MarkdownMessage";
+import { ConsultationDivider } from "@/features/chat/components/ConsultationDivider";
 import { PatientProfileSheet } from "./PatientProfileSheet";
 
 const SENDER_CONFIG = {
@@ -57,14 +58,7 @@ export function ChatBubble({ message }: { message: DoctorViewMessage }) {
     message.messageType === "consultation_resolved";
 
   if (isSystemMessage) {
-    return (
-      <div className="flex justify-center py-2">
-        <div className="flex items-center gap-2 rounded-full border border-border bg-muted/50 px-4 py-1.5 text-[11px] text-muted-foreground">
-          <Info className="size-3" />
-          <span>{message.content}</span>
-        </div>
-      </div>
-    );
+    return <ConsultationDivider messageType={message.messageType} content={message.content} />;
   }
 
   return (

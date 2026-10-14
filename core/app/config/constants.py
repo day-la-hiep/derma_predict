@@ -6,9 +6,11 @@ AGENT_RESPONSE_QUEUE = "agent_response_queue"  # Agent -> Backend (kết quả �
 DOCUMENT_INGEST_QUEUE = "document_ingest_queue"  # Backend -> Ingest worker (chạy 1 bước pipeline tài liệu)
 
 # ----- Redis Pub/Sub -----
-AGENT_EVENTS_CHANNEL = "agent:events:{conversation_id}"  # Agent -> SSE client (stream realtime)
+# "Room" của hội thoại: agent, bệnh nhân và bác sĩ cùng publish vào đây, mỗi bên giữ 1 SSE dài hạn tới channel này
+CONVERSATION_ROOM_CHANNEL = "conversation:room:{conversation_id}"
+DOCTOR_INBOX_CHANNEL = "doctor:inbox"  # Core -> SSE danh sách ca của bác sĩ (ca mới / đổi trạng thái)
 DOCUMENT_INGEST_CANCEL_CHANNEL = "document:ingest:cancel"  # Backend -> Ingest worker (bấm Dừng bước đang chạy)
-STREAM_DONE_SENTINEL = "[DONE]"  # đánh dấu kết thúc 1 stream SSE
+STREAM_DONE_SENTINEL = "[DONE]"  # hết 1 turn; stream room dài hạn nên client bỏ qua, không đóng kết nối
 
 # ----- Redis key (không phải Pub/Sub) -----
 # Giá trị = messageId của turn đang chạy (kể cả đang chờ trả lời `ask_user`) — còn key thì

@@ -14,10 +14,11 @@ details); this skill covers the flow, where things go, and the agent side, which
 ## The flow of one chat turn
 
 ```
-POST /conversations[/{id}/messages]   Core saves user msg + queued assistant msg, stores the
-        │                             TurnRequest in Redis  agent:pending_turn:{conv}  (NOT sent yet)
-GET  /conversations/{id}/stream       Core subscribes to Redis channel agent:events:{conv}, THEN
-        │                             GETDELs the pending turn and publishes it → agent_request_queue
+GET  /conversations/{id}/stream       long-lived SSE "room" (patient, doctor, agent share the channel
+        │                             conversation:room:{conv}); on subscribe Core flushes any pending turn
+POST /conversations[/{id}/messages]   Core saves user msg + queued assistant msg, stores the TurnRequest
+        │                             in Redis agent:pending_turn:{conv}, commits, and — if the room already
+        │                             has a subscriber — GETDELs it → agent_request_queue right away
         ▼                             (deferring avoids losing early events: Pub/Sub has no replay)
 agent worker  (agent/turn.py)  runs agent_graph.astream(); publishes message.started/thinking/
         │                             delta/tool_result/question/done to the Redis channel → SSE → FE
@@ -25,6 +26,10 @@ agent worker  (agent/turn.py)  runs agent_graph.astream(); publishes message.sta
 agent_response_queue                  AgentResponseMessage → Core's consumer is the ONLY writer of the
                                       final assistant row (incl. reasoning steps in Message.extra)
 ```
+
+While a consultation session is `active` the doctor owns the chat: `send_message` only persists the
+patient message and publishes `message.created` to the room (no turn). Doctor replies and session
+changes go through `app/services/room_events.py` (`publish_room`, `publish_inbox` → `doctor:inbox`).
 
 `ask_user` uses LangGraph `interrupt()`: the worker emits `message.question`, the turn pauses;
 `POST .../questions/{id}/answer` queues a `TurnRequest(type="resume")` and the graph continues via
