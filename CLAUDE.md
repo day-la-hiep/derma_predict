@@ -25,7 +25,7 @@ Cấu trúc thư mục:
 fe/        Next.js App Router: /chats (chat), /doctor/documents (pipeline admin)
 core/      FastAPI (app/), agent LangGraph (agent/), pipeline (pipeline/document_ingest/),
            migrations Alembic (migrations/), dữ liệu nạp (data_ingest/)
-docs/      tài liệu kiến trúc + hướng dẫn chung
+docs/      tài liệu kiến trúc + hướng dẫn chung; docs/notice/ = các lưu ý dễ bỏ sót (xem mục 8)
 docker-compose.yml   hạ tầng dev (Postgres, Redis, RabbitMQ, Qdrant, Neo4j, MinIO)
 ```
 
@@ -153,5 +153,10 @@ Quy tắc dùng chung:
 - Trả lời ngắn gọn, bằng tiếng Việt. Thuật ngữ kỹ thuật giữ nguyên tiếng Anh.
 - Thay đổi nhỏ, rõ ràng: sửa đúng chỗ cần sửa, không refactor kèm theo.
 - Trước khi báo "xong": chạy pyright + test liên quan. Với thay đổi UI, nói rõ nếu chưa test trên trình duyệt.
+- **Ghi lưu ý vào `docs/notice/`**: khi làm việc phát sinh điểm dễ bỏ sót (hành vi không hiển nhiên, quy tắc
+  phân quyền/phạm vi, giới hạn, rủi ro, việc chưa làm có chủ ý), chọn lọc và ghi vào một file theo chủ đề trong
+  `docs/notice/` (mẫu: `doctor-chat-access.md`: quy tắc, lý do, điểm cần lưu ý). Chỉ ghi điều thật sự dễ gây hiểu
+  nhầm, không ghi chuyện hiển nhiên; file đã có thì cập nhật, không tạo trùng. Không tự sửa CLAUDE.md/skill chỉ để
+  mô tả thay đổi, trừ khi được yêu cầu.
 - Không tự commit, không push, không chạy lệnh huỷ dữ liệu (`docker compose down -v`, xoá bucket, `DROP`)
   nếu chưa được hỏi.
