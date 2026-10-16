@@ -97,10 +97,11 @@ class Settings(BaseSettings):
     # ----- Agent (LangChain / LangGraph) -----
     # Cú pháp "provider:model" cho langchain.chat_models.init_chat_model.
     # - "google_genai:..." cần package "langchain[google-genai]" + GOOGLE_API_KEY.
-    # - "openai:..." dùng cho OpenRouter (API tương thích OpenAI, xem
-    #   `agent/llm.py::get_model` — set thêm base_url=OPENROUTER_BASE_URL,
+    # - "openrouter:..." dùng OpenRouter (API tương thích OpenAI, xem
+    #   `agent/common/llm.py::get_model` — base_url=OPENROUTER_BASE_URL,
     #   api_key=OPENROUTER_API_KEY) — cần package "langchain-openai" (đã khai trong
-    #   pyproject.toml). Model hiện dùng: Gemma 4 26B A4B (MoE, 4B active/26B total)
+    #   pyproject.toml). "openai:..." là OpenAI thật (OPENAI_API_KEY), "google_genai:..." là Gemini,
+    #   "local:..." là Ollama/vLLM. Model hiện dùng: Gemma 4 26B A4B (MoE, 4B active/26B total)
     #   bản TRẢ PHÍ qua OpenRouter (`google/gemma-4-26b-a4b-it`, KHÔNG có hậu tố
     #   `:free`) — tính phí theo token, cần credit trong tài khoản OpenRouter.
     #   ĐÃ TEST: bản `:free` cùng model (và `qwen/qwen3.8-27b:free`) bị OpenRouter/
@@ -111,7 +112,7 @@ class Settings(BaseSettings):
     # Mức log toàn hệ thống (Core + Worker): DEBUG/INFO/WARNING/ERROR — xem `app/config/log.py`.
     LOG_LEVEL: str = "INFO"
 
-    AGENT_MODEL: str = "openai:google/gemma-4-26b-a4b-it"
+    AGENT_MODEL: str = "openrouter:google/gemma-4-26b-a4b-it"
     AGENT_TEMPERATURE: float = 0.3
     # id ngắn hiển thị FE (dropdown chọn model/conversation, `app/dto/request/conversation.py`) ->
     # chuỗi "provider:model" thật cho `init_chat_model` (`agent/llm.py`). Đổi id
@@ -121,7 +122,7 @@ class Settings(BaseSettings):
     AGENT_MODEL_CHOICES: dict[str, str] = {
         "deepseek-v4-pro": "deepseek:deepseek-v4-pro",
         "deepseek-v4-flash": "deepseek:deepseek-flash",
-        "gemma4-26b": "openai:google/gemma-4-26b-a4b-it",
+        "gemma4-26b": "openrouter:google/gemma-4-26b-a4b-it",
     }
     # id mặc định cho conversation mới không truyền `model` — khớp `AGENT_MODEL` ở trên.
     AGENT_DEFAULT_MODEL_ID: str = "gemma4-26b"
@@ -142,9 +143,12 @@ class Settings(BaseSettings):
     # xem `agent/llm.py`); OpenRouter/model khác không hỗ trợ tham số này.
     AGENT_THINKING_LEVEL: str = "medium"
 
-    # ----- OpenRouter (dùng khi AGENT_MODEL provider = "openai", xem trên) -----
+    # ----- OpenRouter (dùng khi model có tiền tố "openrouter:", xem trên) -----
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     OPENROUTER_API_KEY: str = ""
+
+    # ----- OpenAI trực tiếp (provider "openai", vd "openai:gpt-5-mini"; khác "openrouter:") -----
+    OPENAI_API_KEY: str = ""
 
     # ----- DeepSeek API trực tiếp (dùng khi AGENT_MODEL provider = "deepseek", vd
     # "deepseek:deepseek-v4-flash" — xem agent/llm.py) -----
@@ -152,6 +156,13 @@ class Settings(BaseSettings):
     # OPENROUTER_API_KEY — 2 endpoint khác nhau (api.deepseek.com vs openrouter.ai),
     # key không tương thích chéo.
     DEEPSEEK_API_KEY: str = ""
+
+    # ----- Server local tương thích OpenAI (Ollama/vLLM; provider "local", vd "local:medgemma:4b") -----
+    # Ollama mặc định ở :11434/v1; vLLM thường :8000/v1. Server local không kiểm API key nhưng client OpenAI bắt buộc có giá trị.
+    LOCAL_LLM_BASE_URL: str = "http://localhost:11434/v1"
+    LOCAL_LLM_API_KEY: str = "local"
+    # Máy yếu chạy một phần trên CPU nên lượt đầu (nạp model) có thể rất chậm.
+    LOCAL_LLM_TIMEOUT: float = 300.0
 
     # ----- LangSmith (trace mọi lệnh gọi LLM/tool trong `agent_graph`, xem
     # https://smith.langchain.com) -----
@@ -205,6 +216,13 @@ class Settings(BaseSettings):
         / "model_output"
         / "AdaptiveCNN_SkinDisease_v5_best.pth"
     )
+
+    # ----- Model mô tả ảnh (multimodal) cho tool `analyze_skin_image_multimodal` -----
+    # Cùng dạng "provider:model" với AGENT_MODEL/AGENT_TRIAGE_MODEL và đi qua cùng `agent/common/llm.py::get_model`
+    # (vd "local:medgemma:4b", "openrouter:<model có vision>", "google_genai:gemini-..."). Rỗng = tool tắt,
+    # agent chỉ dùng CNN. Bật thì ảnh bệnh nhân được gửi tới provider đó (local thì không rời máy).
+    AGENT_VISION_MODEL: str = ""
+    AGENT_VISION_TIMEOUT: float = 120.0
 
 
 @lru_cache

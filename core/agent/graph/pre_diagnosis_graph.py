@@ -34,6 +34,8 @@ from agent.tools.hybrid_retrieval import (
 )
 from agent.tools.reasoning import record_reasoning
 from agent.tools.skin_image_classifier import classify_skin_image
+from agent.tools.skin_image_multimodal import analyze_skin_image_multimodal
+from app.config.settings import settings
 from agent.tools.web_search import fetch_trusted_page, search_trusted_web
 from agent.common.llm import get_model
 from agent.tools.memory import save_memory
@@ -51,6 +53,14 @@ ALL_TOOLS = [
     search_trusted_web,
     fetch_trusted_page,
 ]
+
+
+def build_tools() -> list[Any]:
+    # Đọc settings lúc dựng graph (không phải lúc import) để CLI/test đổi `AGENT_VISION_MODEL` rồi dựng lại.
+    return [
+        *ALL_TOOLS,
+        *([analyze_skin_image_multimodal] if settings.AGENT_VISION_MODEL else []),
+    ]
 
 
 def default_middleware() -> list[
@@ -94,7 +104,7 @@ def build_pre_diagnosis_graph(
     """`checkpointer` / `store` để None khi nối vào chat graph"""
     return create_agent(
         get_model(),
-        tools=ALL_TOOLS if tools is None else tools,
+        tools=build_tools() if tools is None else tools,
         system_prompt=DIAGNOSIS_PROMPT
         if system_prompt is None
         else system_prompt,

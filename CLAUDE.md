@@ -25,7 +25,8 @@ Cấu trúc thư mục:
 fe/        Next.js App Router: /chats (chat), /doctor/documents (pipeline admin)
 core/      FastAPI (app/), agent LangGraph (agent/), pipeline (pipeline/document_ingest/),
            migrations Alembic (migrations/), dữ liệu nạp (data_ingest/)
-docs/      tài liệu kiến trúc + hướng dẫn chung; docs/notice/ = các lưu ý dễ bỏ sót (xem mục 8)
+docs/      tài liệu kiến trúc + hướng dẫn chung; docs/notice/ = các lưu ý dễ bỏ sót,
+           docs/pending/ = ý tưởng / hướng mở rộng chưa làm (xem mục 8)
 docker-compose.yml   hạ tầng dev (Postgres, Redis, RabbitMQ, Qdrant, Neo4j, MinIO)
 ```
 
@@ -158,5 +159,11 @@ Quy tắc dùng chung:
   `docs/notice/` (mẫu: `doctor-chat-access.md`: quy tắc, lý do, điểm cần lưu ý). Chỉ ghi điều thật sự dễ gây hiểu
   nhầm, không ghi chuyện hiển nhiên; file đã có thì cập nhật, không tạo trùng. Không tự sửa CLAUDE.md/skill chỉ để
   mô tả thay đổi, trừ khi được yêu cầu.
+- **Ghi ý tưởng / hướng mở rộng vào `docs/pending/`**: khi phát sinh ý tưởng, hướng mở rộng hoặc việc cố ý chưa
+  làm (ví dụ cắt vùng tổn thương trước khi cho CNN), ghi vào một file theo chủ đề trong `docs/pending/` thay vì
+  cài đặt luôn hay để mất. Tiêu đề `# [Pending] ...`; mẫu: `kb-enrichment.md` (vấn đề, luồng đề xuất, câu hỏi cần
+  chốt, phụ thuộc). File đã có thì cập nhật, không tạo trùng. Đây là ghi chú, không phải cam kết; không tự làm
+  theo nếu chưa được yêu cầu. Khác `docs/notice/`: notice = điều dễ hiểu nhầm của hệ thống hiện tại, pending =
+  thứ chưa có.
 - Không tự commit, không push, không chạy lệnh huỷ dữ liệu (`docker compose down -v`, xoá bucket, `DROP`)
   nếu chưa được hỏi.

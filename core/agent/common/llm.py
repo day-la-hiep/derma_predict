@@ -17,20 +17,46 @@ def get_model(model: str | None = None) -> BaseChatModel:
 def _get_model_cached(model: str) -> BaseChatModel:
     if ":" not in model:
         raise ValueError(
-            f'model="{model}" thiếu tiền tố provider (vd "openai:{model}" cho '
-            f'OpenRouter, "deepseek:{model}" cho DeepSeek API trực tiếp) — xem '
-            "app/agent/llm.py."
+            f'model="{model}" thiếu tiền tố provider (openrouter, openai, google_genai, deepseek, '
+            f'local; vd "openrouter:{model}") — xem agent/common/llm.py.'
         )
     provider = model.split(":", 1)[0]
 
-    if provider == "openai":
-        # OpenRouter: API tương thích OpenAI (`langchain-openai`), chỉ khác base_url +
-        # api_key riêng — KHÔNG dùng OPENAI_API_KEY (project không có tài khoản OpenAI).
+    if provider == "openrouter":
+        # OpenRouter: API tương thích OpenAI nên dùng `ChatOpenAI` với base_url + key riêng
+        # (`model_provider="openai"` để `init_chat_model` không cắt tiếp tên model có "/" hoặc ":").
         return init_chat_model(
-            model,
+            model.split(":", 1)[1],
+            model_provider="openai",
             temperature=settings.AGENT_TEMPERATURE,
             base_url=settings.OPENROUTER_BASE_URL,
             api_key=settings.OPENROUTER_API_KEY,
+        )
+
+    if provider == "openai":
+        # OpenAI thật (api.openai.com); OpenRouter dùng tiền tố "openrouter:" ở trên.
+        if not settings.OPENAI_API_KEY:
+            raise ValueError(
+                'Provider "openai" cần OPENAI_API_KEY. Model qua OpenRouter dùng tiền tố '
+                '"openrouter:" (vd "openrouter:google/gemma-4-26b-a4b-it").'
+            )
+        return init_chat_model(
+            model.split(":", 1)[1],
+            model_provider="openai",
+            temperature=settings.AGENT_TEMPERATURE,
+            api_key=settings.OPENAI_API_KEY,
+        )
+
+    if provider == "local":
+        # "local:medgemma:4b" -> tên model "medgemma:4b" (Ollama/vLLM). `model_provider` truyền rõ nên
+        # `init_chat_model` không cắt tiếp dấu ":" trong tên.
+        return init_chat_model(
+            model.split(":", 1)[1],
+            model_provider="openai",
+            temperature=settings.AGENT_TEMPERATURE,
+            base_url=settings.LOCAL_LLM_BASE_URL,
+            api_key=settings.LOCAL_LLM_API_KEY,
+            timeout=settings.LOCAL_LLM_TIMEOUT,
         )
 
     if provider == "deepseek":
