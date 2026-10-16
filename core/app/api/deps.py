@@ -37,6 +37,7 @@ from app.services.message_service import MessageService
 from app.services.patient_profile_service import PatientProfileService
 from app.services.doctor_medical_record_service import DoctorMedicalRecordService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
+from app.services.medical_case_index_service import MedicalCaseIndexService
 
 T = TypeVar("T")
 
@@ -126,6 +127,13 @@ def get_knowledge_graph_service() -> KnowledgeGraphService:
     )
 
 
+def get_medical_case_index_service() -> MedicalCaseIndexService:
+    return _singleton(
+        "medical_case_index_service",
+        lambda: MedicalCaseIndexService(get_qdrant_client(), get_embedding_client()),
+    )
+
+
 def get_file_store_service() -> FileStoreService:
     """Kho file của bucket ảnh đính kèm tin nhắn."""
     return _singleton("file_store_service", lambda: FileStoreService(get_minio_client(), settings.MINIO_BUCKET))
@@ -208,7 +216,7 @@ def get_patient_profile_service(
 def get_doctor_medical_record_service(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> DoctorMedicalRecordService:
-    return DoctorMedicalRecordService(db, get_file_store_service())
+    return DoctorMedicalRecordService(db, get_file_store_service(), get_medical_case_index_service())
 
 
 def get_message_repository(
