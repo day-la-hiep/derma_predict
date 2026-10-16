@@ -57,6 +57,16 @@ class KnowledgeBaseService:
                 points.append(p)
         return sorted(points, key=lambda p: p.score, reverse=True)[:limit]
 
+    async def search_medical_cases(self, *, vector: list[float], limit: int) -> list[ScoredPoint]:
+        """Tìm kiếm ca bệnh lâm sàng tương tự trong Qdrant."""
+        name = settings.QDRANT_MEDICAL_CASE_COLLECTION
+        if not await self._qdrant.collection_exists(name):
+            return []
+        if await self._qdrant.dense_size(name) != len(vector):
+            return []
+        found = await self._qdrant.search(name, vector, limit=limit)
+        return sorted(found, key=lambda p: p.score, reverse=True)[:limit]
+
     async def all_document_chunks(self) -> list[Record]:
         """Mọi chunk sách kèm payload, chỉ để thống kê / kiểm tra bằng tay (`agent/test/`); tìm kiếm không đọc cả kho."""
         records: list[Record] = []

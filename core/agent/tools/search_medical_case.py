@@ -1,0 +1,89 @@
+"""Tool tra cứu ca bệnh tương tự từ kho bệnh án thực tế đã được bác sĩ chẩn đoán và điều trị."""
+
+import json
+import logging
+from typing import Any
+
+from langchain_core.tools import tool
+
+from app.api.deps import get_medical_case_index_service
+
+logger = logging.getLogger("agent.tools.search_medical_case")
+
+
+def _dumps(data: Any) -> str:
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+@tool
+async def search_medical_case(query: str, limit: int = 3) -> str:
+    """Tra cứu các ca bệnh da liễu thực tế tương tự trong kho hồ sơ bệnh án của bệnh viện (do bác sĩ đã khám, chẩn đoán và xử trí).
+
+    Dùng khi:
+    - Cần đối chiếu các triệu chứng, tổn thương da, diễn tiến bệnh của người dùng với các ca bệnh lâm sàng thực tế đã được bác sĩ chẩn đoán xác định.
+    - Cần tham khảo hướng điều trị, dặn dò chăm sóc và lập luận lâm sàng của bác sĩ chuyên khoa đối với bệnh cảnh tương tự.
+    - Tìm bằng chứng ca lâm sàng thực tế để hỗ trợ xếp hạng giả thuyết hoặc phân biệt các bệnh có biểu hiện gần giống nhau.
+
+    Args:
+        query: Mô tả triệu chứng, vị trí tổn thương, tiền sử hoặc tên bệnh nghi ngờ cần tìm ca tương tự (vd: "mảng da khô ngứa nhiều ở khuỷu tay", "sẩn phù rải rác tự hết", "nghi vảy nến mảng vảy trắng bạc").
+        limit: Số lượng ca bệnh tương tự tối đa cần lấy (mặc định 3, tối đa 5).
+    """
+    limit = max(1, min(limit, 5))
+    logger.info("🔍 [search_medical_case] Gọi tool tra cứu ca bệnh | query='%s' | limit=%d", query, limit)
+    try:
+        service = get_medical_case_index_service()
+        cases = await service.search_cases(query=query, limit=limit)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("❌ [search_medical_case] Lỗi khi tra cứu ca bệnh: %s", exc, exc_info=True)
+        return _dumps({
+            "evidence_found": False,
+            "query": query,
+            "cases": [],
+            "error": f"Lỗi khi tra cứu ca bệnh: {exc}",
+        })
+
+    if not cases:
+        logger.info("ℹ️ [search_medical_case] Không tìm thấy ca bệnh nào phù hợp cho query='%s'", query)
+        return _dumps({
+            "evidence_found": False,
+            "query": query,
+            "cases": [],
+            "note": "Không tìm thấy ca bệnh tương tự trong kho hồ sơ bệnh án tham khảo.",
+        })
+
+    top_diagnosis = cases[0].get("diagnosis", "N/A")
+    top_score = cases[0].get("score", 0.0)
+    logger.info(
+        "✅ [search_medical_case] Tìm thấy %d ca bệnh tương tự (Top 1: '%s', điểm=%.3f)",
+        len(cases),
+        top_diagnosis,
+        top_score,
+    )
+
+    # Lọc và định dạng các ca tìm thấy
+    formatted_cases = []
+    for c in cases:
+        formatted_cases.append({
+            "case_id": c.get("case_id"),
+            "diagnosis": c.get("diagnosis"),
+            "relevance_score": c.get("score"),
+            "patient_info": {
+                "gender": c.get("gender"),
+                "age": c.get("age"),
+                "allergies": c.get("allergies"),
+                "medical_history": c.get("medical_history"),
+            },
+            "symptoms_and_facts": c.get("clinical_facts", []),
+            "doctor_assessment": c.get("doctor_reasoning"),
+            "urgency": c.get("urgency"),
+            "treatment_instructions": c.get("treatment_instructions"),
+            "doctor_notes": c.get("doctor_notes"),
+            "case_summary": c.get("summary"),
+        })
+
+    return _dumps({
+        "evidence_found": True,
+        "query": query,
+        "total_cases": len(formatted_cases),
+        "cases": formatted_cases,
+    })
