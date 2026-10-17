@@ -1,22 +1,15 @@
 """Tool tra cứu cho agent"""
-import asyncio
 import json
-from typing import Any, TypeVar
+from typing import Any
 
 from langchain_core.tools import tool
 
 from agent.tools.hybrid_retrieval.bm25 import bm25_search
-from agent.tools.hybrid_retrieval.fusion import book_result, fallback_top, merge_chunks
-from agent.tools.hybrid_retrieval.kg import ExtractedEntity, extract_entities
+from agent.tools.hybrid_retrieval.kg import extract_entities
 from agent.tools.hybrid_retrieval.kg_templates import INTENTS, Intent, run_intent
-from agent.tools.hybrid_retrieval.reranker import rerank
+from agent.tools.hybrid_retrieval.pipeline import LEG_LIMIT, expand_query, rank_candidates, run_hybrid, to_candidates
 from agent.tools.hybrid_retrieval.semantic import semantic_search as semantic_leg
 
-T = TypeVar("T")
-
-_LEG_LIMIT = 20  # số chunk lấy về từ mỗi nhánh (semantic / BM25) trước khi trộn / rerank
-_POOL = 20  # số chunk giữ lại sau RRF để đem rerank (hybrid_retrieval)
-_PASSAGE_CHARS = 3000  # cắt đoạn đưa vào reranker (giới hạn kích thước request / chi phí token)
 _MAX_TOP_K = 10
 _MAX_KG_TOP_K = 30
 
@@ -41,14 +34,10 @@ async def _book_response(
     notes: list[str] = []
     if not payloads:
         return _dump(_with_bm25_query({"query": query, "evidence_found": False, "results": [], "notes": [empty_note]}, query, bm25_query))
-    candidates = [
-        {**book_result(p), "_passage": str(p.get("context_text") or p.get("text", ""))[:_PASSAGE_CHARS]} for p in payloads
-    ]
-    scores = await rerank(query, [c["_passage"] for c in candidates])
-    if scores is not None:
-        for c, s in zip(candidates, scores, strict=True):
-            c["score"] = round(s, 3)
-        candidates.sort(key=lambda c: c["score"], reverse=True)
+    candidates = to_candidates(payloads)
+    ranked = await rank_candidates(query, candidates)
+    if ranked is not None:
+        candidates = ranked
         ranked_by = "reranker"
     else:
         notes.append(f"Không rerank được (reranker không khả dụng) — giữ thứ tự của nhánh {leg}.")
@@ -62,31 +51,12 @@ async def _book_response(
     )
 
 
-def _unwrap(name: str, result: list[T] | BaseException, notes: list[str]) -> list[T]:
-    """Nhánh lỗi -> rỗng + ghi chú, để các nhánh còn lại vẫn cho kết quả."""
-    if isinstance(result, BaseException):
-        notes.append(f"Nhánh {name} không dùng được: {type(result).__name__}: {result}")
-        return []
-    return result
-
-
 async def _bm25_query(query: str) -> str:
     try:
         entities = await extract_entities(query)
     except Exception:  # noqa: BLE001  # LLM lỗi -> vẫn tìm từ khoá bằng query gốc
         entities = []
-    return _expand_query(query, entities)
-
-
-def _expand_query(query: str, entities: list[ExtractedEntity]) -> str:
-    """BM25 chỉ khớp đúng chữ: thêm tên Anh + Việt của thực thể để bắt cả sách viết khác ngôn ngữ với câu hỏi."""
-    seen = query.lower()
-    extra: list[str] = []
-    for term in (t for e in entities for t in (e.text, e.vi)):
-        if term and term.lower() not in seen:
-            seen += " " + term.lower()
-            extra.append(term)
-    return " ".join([query, *extra])
+    return expand_query(query, entities)
 
 
 @tool
@@ -107,26 +77,9 @@ async def hybrid_retrieval(query: str, top_k: int = 5) -> str:
         top_k: Số kết quả trả về (1-10, mặc định 5).
     """
     top_k = min(max(top_k, 1), _MAX_TOP_K)
-    notes: list[str] = []
-    # trích thực thể một lần để mở rộng query BM25 (Việt–Anh)
-    try:
-        entities = await extract_entities(query)
-    except Exception as exc:  # noqa: BLE001
-        entities = []
-        notes.append(f"Không mở rộng được query Việt–Anh ({type(exc).__name__}) — BM25 dùng query gốc.")
-    bm25_query = _expand_query(query, entities)
-    semantic_r, bm25_r = await asyncio.gather(
-        semantic_leg(query, _LEG_LIMIT), bm25_search(bm25_query, _LEG_LIMIT), return_exceptions=True
-    )
-    semantic = _unwrap("semantic", semantic_r, notes)
-    bm25 = _unwrap("bm25", bm25_r, notes)
-
-    # trộn 2 nhánh chunk theo RRF, khử trùng theo chunk_id
-    chunks = merge_chunks(semantic, bm25, _POOL)
-    candidates: list[dict[str, Any]] = [
-        {**book_result(p), "_passage": str(p.get("context_text") or p.get("text", ""))[:_PASSAGE_CHARS]} for p in chunks
-    ]
-    if not candidates:
+    result = await run_hybrid(query)
+    notes = result.notes
+    if not result.candidates:
         return _dump(
             _with_bm25_query(
                 {
@@ -136,24 +89,19 @@ async def hybrid_retrieval(query: str, top_k: int = 5) -> str:
                     "notes": [*notes, "KHÔNG có bằng chứng: không có đoạn sách nào khớp (chưa index sách, hoặc không có đoạn liên quan)."],
                 },
                 query,
-                bm25_query,
+                result.bm25_query,
             )
         )
-
-    scores = await rerank(query, [c["_passage"] for c in candidates])
-    if scores is not None:
-        for c, s in zip(candidates, scores, strict=True):
-            c["score"] = round(s, 3)
-        ranked = sorted(candidates, key=lambda c: c["score"], reverse=True)[:top_k]
+    if result.reranked:
         ranked_by = "reranker"
     else:
         notes.append("Không rerank được (reranker không khả dụng) — dùng thứ tự trộn semantic + BM25.")
-        ranked = fallback_top(candidates, top_k)
         ranked_by = "rrf"
-
     return _dump(
         _with_bm25_query(
-            {"query": query, "evidence_found": True, "ranked_by": ranked_by, "results": _clean(ranked), "notes": notes}, query, bm25_query
+            {"query": query, "evidence_found": True, "ranked_by": ranked_by, "results": _clean(result.ranked[:top_k]), "notes": notes},
+            query,
+            result.bm25_query,
         )
     )
 
@@ -174,7 +122,7 @@ async def semantic_search(query: str, top_k: int = 5) -> str:
     """
     top_k = min(max(top_k, 1), _MAX_TOP_K)
     try:
-        payloads = await semantic_leg(query, _LEG_LIMIT)
+        payloads = await semantic_leg(query, LEG_LIMIT)
     except Exception as exc:  # noqa: BLE001  # Qdrant / embedding lỗi -> báo cho model thay vì làm hỏng cả lượt
         return _dump({"query": query, "evidence_found": False, "results": [], "notes": [f"semantic_search không dùng được: {type(exc).__name__}: {exc}"]})
     return await _book_response(
@@ -199,7 +147,7 @@ async def keyword_search(query: str, top_k: int = 5) -> str:
     bm25_query = query
     try:
         bm25_query = await _bm25_query(query)
-        payloads = await bm25_search(bm25_query, _LEG_LIMIT)
+        payloads = await bm25_search(bm25_query, LEG_LIMIT)
     except Exception as exc:  # noqa: BLE001
         return _dump({"query": query, "evidence_found": False, "results": [], "notes": [f"keyword_search không dùng được: {type(exc).__name__}: {exc}"]})
     return await _book_response(

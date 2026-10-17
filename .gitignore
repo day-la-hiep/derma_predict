@@ -9,3 +9,4 @@ reference
 .env
 draft.md
 .agents
+/tmp
