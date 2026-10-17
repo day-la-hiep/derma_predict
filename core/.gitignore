@@ -15,3 +15,5 @@ data_ingest/input_data/
 !data_ingest/byt/output/
 !data_ingest/who/output/
 !data_ingest/medlineplus/output/
+/tmp
+benchmark/data
