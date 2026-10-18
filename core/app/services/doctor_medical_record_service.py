@@ -119,14 +119,23 @@ def build_snapshot(
     )
 
 
+from app.services.medical_case_index_service import MedicalCaseIndexService
+
+
 class DoctorMedicalRecordService:
-    def __init__(self, db: AsyncSession, file_store: FileStoreService) -> None:
+    def __init__(
+        self,
+        db: AsyncSession,
+        file_store: FileStoreService,
+        case_index_service: MedicalCaseIndexService | None = None,
+    ) -> None:
         self._records = MedicalRecordRepository(db)
         self._profiles = PatientProfileRepository(db)
         self._consultations = ConsultationRepository(db)
         self._conversations = ConversationRepository(db)
         self._files = FileRepository(db)
         self._file_store = file_store
+        self._case_index_service = case_index_service
 
     # ---------------------------------------------------------------- đọc
 
@@ -206,7 +215,7 @@ class DoctorMedicalRecordService:
         source_facts = await self._source_facts(profile.id, body.facts)
         files = await self._files_of(list(source_facts.values()))
         snapshot = build_snapshot(profile, body, source_facts, files)
-        return await self._records.create(
+        record = await self._records.create(
             patient_profile_id=profile.id,
             doctor_id=doctor_id,
             diagnosis=body.diagnosis.strip(),
@@ -215,6 +224,13 @@ class DoctorMedicalRecordService:
             consultation_session_id=session_id,
             snapshot=snapshot.model_dump(mode="json"),
         )
+        if self._case_index_service:
+            try:
+                await self._case_index_service.index_record(record, profile)
+            except Exception:  # noqa: BLE001
+                # Không chặn hoàn tất hồ sơ nếu lỗi kết nối vector DB
+                pass
+        return record
 
     # ---------------------------------------------------------------- tiện ích
 

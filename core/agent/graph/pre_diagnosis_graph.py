@@ -33,6 +33,7 @@ from agent.tools.hybrid_retrieval import (
     semantic_search,
 )
 from agent.tools.reasoning import record_reasoning
+from agent.tools.search_medical_case import search_medical_case
 from agent.tools.skin_image_classifier import classify_skin_image
 from agent.tools.skin_image_multimodal import analyze_skin_image_multimodal
 from app.config.settings import settings
@@ -49,6 +50,7 @@ ALL_TOOLS = [
     semantic_search,
     keyword_search,
     knowledge_graph_query,
+    search_medical_case,
     classify_skin_image,
     search_trusted_web,
     fetch_trusted_page,

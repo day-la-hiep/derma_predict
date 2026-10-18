@@ -24,7 +24,7 @@ MAX_EVIDENCE_RETRIES = 2
 
 # Tool tra cứu có thể cho bằng chứng; `search_trusted_web` / `fetch_trusted_page` thành công luôn mở đầu bằng khối đánh dấu này.
 # `knowledge_graph_query` tính là đã tra cứu nhưng không bao giờ cho bằng chứng (kết quả `source="kg"` chỉ là gợi ý).
-_RETRIEVAL_TOOLS = {"hybrid_retrieval", "semantic_search", "keyword_search", "knowledge_graph_query", "search_trusted_web", "fetch_trusted_page"}
+_RETRIEVAL_TOOLS = {"hybrid_retrieval", "semantic_search", "keyword_search", "knowledge_graph_query", "search_medical_case", "search_trusted_web", "fetch_trusted_page"}
 _JSON_RESULT_TOOLS = {"hybrid_retrieval", "semantic_search", "keyword_search", "knowledge_graph_query"}
 _WEB_MARKER = "[DỮ LIỆU NGOÀI TỪ WEB"
 
@@ -53,6 +53,12 @@ def _has_evidence(tool: str, content: str) -> bool:
         except (ValueError, AttributeError):
             return False
         return any(isinstance(r, dict) and r.get("source") == "book" for r in results)
+    if tool == "search_medical_case":
+        try:
+            data = json.loads(content)
+            return bool(data.get("evidence_found") and data.get("cases"))
+        except (ValueError, AttributeError):
+            return False
     return content.startswith(_WEB_MARKER)
 
 
