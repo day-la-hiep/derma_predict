@@ -37,7 +37,7 @@ make infra          # docker compose up -d (hạ tầng)
 make migrate        # alembic upgrade head
 make backend        # Core FastAPI :3050 (hoặc python main.py)
 make worker         # Agent Worker (tiến trình riêng, consume RabbitMQ)
-make frontend       # Next.js :3000
+make frontend       # Next.js :3010
 ```
 
 - Python dùng `uv` (`core/pyproject.toml`), venv tại `core/.venv`. Chạy script trong `core/`.

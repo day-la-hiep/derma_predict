@@ -2,7 +2,7 @@
 # TOÀN BỘ stack (infra + app) trong 1 mạng Docker riêng, khác `docker-compose.yml` (dev,
 # chỉ chạy infra, app chạy thủ công ngoài Docker).
 #
-# KHÔNG kèm cloudflared/tunnel ở đây — tự cấu hình riêng, trỏ vào `fe` cổng 3000 (đã
+# KHÔNG kèm cloudflared/tunnel ở đây — tự cấu hình riêng, trỏ vào `fe` cổng 3010 (đã
 # publish ra host bên dưới, xem `ports:` của service `fe`). FE tự proxy `/api/v1/*`
 # sang `core-api` qua `next.config.ts::rewrites` (biến `BACKEND_URL` đã set sẵn), nên
 # tunnel/reverse-proxy CHỈ CẦN trỏ 1 hostname vào `fe`, không cần lộ core-api riêng —
@@ -205,8 +205,8 @@ services:
     restart: unless-stopped
     ports:
       # Publish ra host để tunnel/reverse-proxy tự cấu hình (cloudflared, nginx...) trỏ
-      # vào đây — đổi cổng host bên trái nếu 3000 đã bị chiếm.
-      - "3000:3000"
+      # vào đây — đổi cổng host bên trái nếu 3010 đã bị chiếm.
+      - "3010:3010"
     depends_on:
       - derma-core-api
     networks: [derma-net]

@@ -19,7 +19,7 @@ Trạng thái: **giả định** — dựa trên giao diện frontend hiện t�
 | `NEXT_PUBLIC_API_URL` | khi dùng BE thật | `/api/v1` | Base URL REST + SSE |
 | `NEXT_PUBLIC_USE_MOCK` | không | `true` | `false` = dùng BE thật (POST + SSE) |
 | `NEXT_PUBLIC_ONLYOFFICE_DOCS_URL` | chỉnh sửa canvas | `http://localhost:8080` | URL OnlyOffice Document Server (browser truy cập) |
-| `NEXT_PUBLIC_APP_URL` | chỉnh sửa canvas | `http://localhost:3000` | URL công khai của app để **Document Server** tải văn bản + gửi callback (không được là `localhost` khi Document Server chạy trong container) |
+| `NEXT_PUBLIC_APP_URL` | chỉnh sửa canvas | `http://localhost:3010` | URL công khai của app để **Document Server** tải văn bản + gửi callback (không được là `localhost` khi Document Server chạy trong container) |
 | `ONLYOFFICE_JWT_SECRET` | khi Document Server bật JWT | trống | Bí mật ký token JWT (HS256) cho config/callback OnlyOffice |
 
 ---

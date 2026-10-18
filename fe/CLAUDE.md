@@ -47,7 +47,7 @@ fe/
 ```bash
 # Development server (auto-reload)
 pnpm dev
-# → Open http://localhost:3000
+# → Open http://localhost:3010
 
 # Build for production
 pnpm build

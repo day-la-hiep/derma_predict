@@ -69,7 +69,7 @@ make migrate     # alembic upgrade head
 make init-db     # bucket MinIO + dữ liệu mẫu (user-1, bác sĩ, admin) — chạy sau migrate
 make backend     # Core http://localhost:3050 (Swagger: /docs)
 make worker      # Agent Worker — bắt buộc để agent trả lời
-make frontend    # FE http://localhost:3000
+make frontend    # FE http://localhost:3010
 ```
 
 **Nạp dữ liệu đồ thị tri thức** (Neo4j mới tạo đang trống; chunk sách vào Qdrant qua giao diện `/doctor/documents`), chạy trong `core/`:

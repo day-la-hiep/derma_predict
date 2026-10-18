@@ -2,13 +2,13 @@
 
 Hướng dẫn dựng toàn bộ stack (Postgres, Redis, RabbitMQ, Qdrant, Neo4j, MinIO + Core API + Agent
 Worker + FE) trong Docker và nạp đủ dữ liệu. Tunnel/reverse-proxy (Cloudflare Tunnel, nginx…) tự
-cấu hình riêng, trỏ vào cổng `3000` của `derma-fe`.
+cấu hình riêng, trỏ vào cổng `3010` của `derma-fe`.
 
 ## 1. Kiến trúc container
 
 | Service | Vai trò | Ghi chú |
 |---|---|---|
-| `derma-fe` | Next.js, **cổng 3000 publish ra host** | Tự proxy `/api/v1/*` sang `derma-core-api` |
+| `derma-fe` | Next.js, **cổng 3010 publish ra host** | Tự proxy `/api/v1/*` sang `derma-core-api` |
 | `derma-core-api` | FastAPI (REST + SSE) | Cổng 3050, chỉ trong mạng Docker |
 | `agent-worker` | LangGraph agent | Cùng image với core-api, khác `command` |
 | `postgres` `redis` `rabbitmq` `qdrant` `neo4j` `minio` | Hạ tầng | Không publish port ra host |
@@ -102,10 +102,10 @@ Nếu thiếu bước này agent vẫn chạy nhưng các tool tra cứu trả v
 
 ```bash
 # 1. FE proxy tới backend được không (kỳ vọng {"status":"ok"})
-curl -s http://localhost:3000/api/v1/health
+curl -s http://localhost:3010/api/v1/health
 
 # 2. Tạo hội thoại (kỳ vọng HTTP 201):
-curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:3000/api/v1/conversations \
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:3010/api/v1/conversations \
   -H "Content-Type: application/json" \
   -d '{"userId":"user-1","initMessage":"","title":"test"}'
 
@@ -116,7 +116,7 @@ from app.api.deps import get_knowledge_base_service
 print('Chunk sách trong Qdrant:', asyncio.run(get_knowledge_base_service().count_document_chunks()))"   # 0 tới khi index sách đầu tiên ở /admin/documents
 ```
 
-Rồi mở `http://<host>:3000`, đăng ký/đăng nhập, gửi thử một tin nhắn.
+Rồi mở `http://<host>:3010`, đăng ký/đăng nhập, gửi thử một tin nhắn.
 
 ## 6. Xử lý sự cố
 
@@ -155,7 +155,7 @@ Dữ liệu nằm trong các named volume (`postgres_data`, `qdrant_data`, `neo4
 
 ## 8. Lưu ý bảo mật
 
-- Chỉ `derma-fe:3000` publish ra host. Đặt tunnel/reverse-proxy phía trước và dùng HTTPS.
+- Chỉ `derma-fe:3010` publish ra host. Đặt tunnel/reverse-proxy phía trước và dùng HTTPS.
 - Các route chat/tài liệu/upload/bác sĩ chưa kiểm tra JWT phía server (chỉ `/auth/*` cấp token), nên đừng mở ra Internet
   mà không có lớp bảo vệ phía trước. Chat vẫn nhận `user_id` từ client chứ chưa lấy từ token.
 - Không commit `.env` và `core/.env` (đã được ignore).

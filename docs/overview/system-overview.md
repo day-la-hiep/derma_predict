@@ -70,7 +70,7 @@ make migrate   # alembic upgrade head
 make init-db   # bucket MinIO + dữ liệu mẫu (user-1, bác sĩ, admin)
 make backend   # Core :3050
 make worker    # Agent Worker
-make frontend  # Next.js :3000
+make frontend  # Next.js :3010
 ```
 
 Guideline/KG phải được nạp trước thì agent mới tra cứu được (`core/data_ingest/`).
