@@ -121,6 +121,23 @@ function Form({ documentId, initial, onClose }: { documentId: string; initial: S
             </select>
           </Field>
         </div>
+        <div className="space-y-3 rounded-xl border border-border p-3">
+          <p className="text-xs font-semibold text-foreground">Đồ thị</p>
+          <Toggle
+            label="Đề xuất thực thể mới"
+            hint="Thuật ngữ sách nhắc tới nhưng không có trong PrimeKG/DermO được đề xuất làm nút mới. Mỗi nút mới chỉ được lưu khi bạn chấp nhận ở bước Trích quan hệ."
+            checked={s.graph_allow_new_entities}
+            onChange={(v) => set("graph_allow_new_entities", v)}
+          />
+          <Field label="Đoạn mỗi lần gọi AI" hint="Số đoạn cùng một bài gửi chung một lần gọi AI. Ít hơn = chính xác hơn nhưng tốn lượt gọi hơn.">
+            <Input
+              value={String(s.graph_chunks_per_call)}
+              onChange={(e) => set("graph_chunks_per_call", Math.min(10, Math.max(1, parseInt(e.target.value.replace(/\D/g, ""), 10) || 1)))}
+              inputMode="numeric"
+              className="h-9 rounded-xl font-mono text-sm"
+            />
+          </Field>
+        </div>
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={onClose} disabled={save.isPending}>

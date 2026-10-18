@@ -10,6 +10,9 @@ import type {
   StepId,
   TocDoc,
   TocUpdate,
+  TripleList,
+  TripleUpdate,
+  GraphNode,
 } from "./types";
 
 /** Thông báo lỗi hiển thị cho người dùng: ưu tiên `detail` của FastAPI. */
@@ -82,6 +85,14 @@ export const documentApi = {
     const blob = (await api.get(`${base(documentId)}/figures/${encodeURIComponent(figureId)}/image`, { responseType: "blob", timeout: 0 })).data as Blob;
     return URL.createObjectURL(blob);
   },
+  triples: (documentId: string, p: { q?: string; status?: string; relation?: string; page: number; pageSize: number }) =>
+    unwrap<TripleList>(
+      api.get(`${base(documentId)}/triples`, {
+        params: { q: p.q || undefined, status: p.status || undefined, relation: p.relation || undefined, page: p.page, page_size: p.pageSize },
+      })
+    ),
+  updateTriples: (documentId: string, body: TripleUpdate) => unwrap<Document>(api.patch(`${base(documentId)}/triples`, body)),
+  searchNodes: (type: string, q: string) => unwrap<GraphNode[]>(api.get(`${root}/graph/nodes`, { params: { type, q } })),
   exportChunks: async (documentId: string) =>
     (await api.get(`${base(documentId)}/chunks/export`, { responseType: "blob", timeout: 0 })).data as Blob,
 };
