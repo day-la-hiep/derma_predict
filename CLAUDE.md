@@ -39,7 +39,7 @@ make init-db        # bucket MinIO + dữ liệu mẫu (user-1, bác sĩ, admin)
 make backend        # Core FastAPI :3050
 make worker         # Agent Worker (tiến trình riêng, consume RabbitMQ)
 make ingest-worker  # Ingest Worker: chạy các bước pipeline tài liệu (bắt buộc chạy thì bấm "Chạy" ở /doctor/documents mới có tác dụng)
-make frontend       # Next.js :3000
+make frontend       # Next.js :3010
 ```
 
 - Python dùng `uv` (`core/pyproject.toml`), venv tại `core/.venv`. Chạy script trong `core/`.
