@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bot, User, Stethoscope, CornerDownLeft, Brain } from "lucide-react";
+import { Bot, User, Stethoscope, CornerDownLeft, Brain, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDoctorStore } from "../store";
 import type { DoctorViewMessage } from "../types";
@@ -11,6 +11,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { STATUS_CONFIG } from "../constants";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MarkdownMessage } from "@/features/chat/components/MarkdownMessage";
+import { ImageThumbnail } from "@/features/chat/components/ImageThumbnail";
 import { ConsultationDivider } from "@/features/chat/components/ConsultationDivider";
 import { PatientProfileSheet } from "./PatientProfileSheet";
 import { ReportPanel } from "./ReportPanel";
@@ -89,6 +90,31 @@ export function ChatBubble({ message }: { message: DoctorViewMessage }) {
         <div
           className={cn("rounded-xl rounded-tl-sm px-3.5 py-2.5", cfg.bubbleClass)}
         >
+          {/* File / ảnh đính kèm */}
+          {message.attachments && message.attachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {message.attachments.map((file) => {
+                const isImage = file.contentType?.startsWith("image/") && file.url;
+                return isImage ? (
+                  <div key={file.id} className="rounded-lg overflow-hidden border border-border/50">
+                    <ImageThumbnail
+                      url={file.url!}
+                      name={file.name}
+                      size={72}
+                    />
+                  </div>
+                ) : (
+                  <div
+                    key={file.id}
+                    className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs text-foreground"
+                  >
+                    <FileText className="size-3.5 shrink-0" />
+                    <span className="truncate max-w-[120px]">{file.name}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="text-[13px] leading-relaxed">
             <MarkdownMessage content={message.content} />
           </div>

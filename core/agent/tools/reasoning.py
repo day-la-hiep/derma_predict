@@ -127,7 +127,10 @@ def validate_reasoning(args: dict[str, Any]) -> tuple[ReasoningInput | None, lis
                 "thiếu — chỉ nêu giả thuyết có căn cứ."
             )
     if data.stage != "initial" and not data.red_flags.checked:
-        problems.append("`red_flags.checked` rỗng — phải nêu các cờ đỏ đã kiểm tra.")
+        if data.next_action == "ask_user" or not data.hypotheses:
+            data.red_flags.checked = ["chưa ghi nhận cờ đỏ"]
+        else:
+            problems.append("`red_flags.checked` rỗng — phải nêu các cờ đỏ đã kiểm tra.")
     if data.stage == "final" and data.next_action == "call_tool":
         problems.append('stage "final" không đi kèm next_action "call_tool".')
     return (None, problems) if problems else (data, [])
