@@ -21,11 +21,12 @@ const mono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Trợ lý Da liễu AI | Derma AI",
+  title: "Derma AI",
   description: "Hệ thống Trợ lý Tư vấn và Chăm sóc Da liễu AI",
   icons: {
     icon: [
       { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
     ],
   },
 };
@@ -41,7 +42,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* chống FOUC: gắn data-theme (brand) trước khi paint */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var b=localStorage.getItem("derma-ai-brand");if(b==="emerald"||b==="violet"||b==="red"){document.documentElement.dataset.theme=b}}catch(e){}`,
+            __html: `try{var b=localStorage.getItem("derma-ai-brand");if(b==="blue"||b==="emerald"||b==="violet"||b==="red"){document.documentElement.dataset.theme=b}}catch(e){}`,
           }}
         />
       </head>

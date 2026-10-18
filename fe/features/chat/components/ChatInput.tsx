@@ -21,9 +21,9 @@ import {
 import { DEFAULT_INPUT_STATE, useChatStore } from "../store";
 import { ImageThumbnail } from "./ImageThumbnail";
 import { useComposerStore } from "../composerStore";
-import { useSelectionStore } from "../selectionStore";
-import type { FileAttachment, MessageSelectionRef } from "../types";
+import type { FileAttachment } from "../types";
 import { Button } from "@/components/ui/button";
+import { Hint } from "@/components/ui/hint";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -115,17 +115,12 @@ export function ChatInput({
     );
   }, [isSlashCommand, filterQuery]);
 
-  const pendingSelections: MessageSelectionRef[] = useMemo(() => {
-    if (!inputState.pendingSelection) return [];
-    if (Array.isArray(inputState.pendingSelection)) return inputState.pendingSelection;
-    return [inputState.pendingSelection];
-  }, [inputState.pendingSelection]);
-
   const hasPendingUploads = files.some((f) => f.uploaded === false);
 
   const canSend =
-    (value.trim().length > 0 || selectedSkill !== null || pendingSelections.length > 0) &&
+    (value.trim().length > 0 || selectedSkill !== null) &&
     !disabled &&
+    !streaming &&
     !hasPendingUploads;
 
   const resize = useCallback(() => {
@@ -156,14 +151,12 @@ export function ChatInput({
       : value;
     sendMessage(fullText, {
       attachments: files.length ? files : undefined,
-      selection: pendingSelections.length ? pendingSelections : undefined,
     });
     setSkillMenuOpen(false);
-    useSelectionStore.getState().clearPendingSelections();
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [canSend, sendMessage, value, selectedSkill, files, pendingSelections]);
+  }, [canSend, sendMessage, value, selectedSkill, files]);
 
   const handleFiles = useCallback(
     (list: FileList | null) => {
@@ -381,35 +374,6 @@ export function ChatInput({
           </div>
         )}
 
-        {/* Pending selection banner */}
-        {pendingSelections.length > 0 && (
-          <div className="mb-2 flex flex-col gap-1.5">
-            {pendingSelections.map((sel, idx) => (
-              <div
-                key={`${sel.source}-${sel.refId}-${idx}`}
-                className="flex items-center justify-between gap-2 rounded-xl border border-brand/30 bg-brand/5 p-2.5 text-xs shadow-xs"
-              >
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className="text-brand font-mono text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded bg-brand/10 shrink-0">
-                    {sel.source === "canvas" ? "CANVAS" : sel.source === "document" ? "TÀI LIỆU" : "TIN NHẮN"}
-                  </span>
-                  <span className="truncate text-foreground font-medium">
-                    “{sel.text}”
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => useSelectionStore.getState().removePendingSelection(idx)}
-                  aria-label="Hủy chọn đoạn"
-                  className="p-1 rounded-md text-muted-foreground hover:bg-brand/10 hover:text-brand cursor-pointer shrink-0"
-                >
-                  <X className="size-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* Input box */}
         <div className="rounded-2xl border border-border bg-card/90 shadow-sm p-3 focus-within:border-brand/50 focus-within:ring-2 focus-within:ring-brand/20 transition-all">
           {selectedSkill && (
@@ -494,8 +458,8 @@ export function ChatInput({
             }}
             placeholder={
               disabled
-                ? "Bắt đầu một cuộc trò chuyện mới..."
-                : "Hỏi về vấn đề da liễu của bạn... (Gõ / để chọn kỹ năng)"
+                ? "Tạo cuộc trò chuyện mới để hỏi"
+                : "Hỏi về da liễu..."
             }
             className="max-h-40 w-full resize-none bg-transparent px-2 py-1 text-sm sm:text-base text-foreground outline-hidden placeholder:text-muted-foreground/60 disabled:opacity-40 font-normal leading-relaxed"
           />
@@ -517,6 +481,7 @@ export function ChatInput({
               )}
 
               {/* Attach file button */}
+              <Hint content="Đính kèm ảnh hoặc tệp: PDF, Word, Excel, TXT, JPG, PNG.">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -526,6 +491,7 @@ export function ChatInput({
                 <Paperclip className="size-3.5 text-brand" />
                 <span className="hidden sm:inline">Đính kèm</span>
               </button>
+              </Hint>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -574,15 +540,17 @@ export function ChatInput({
             <div className="flex items-center gap-2">
               
 
+              <Hint content="Gửi (Enter). Xuống dòng: Shift + Enter. Gõ / để chọn kỹ năng.">
               <button
                 type="button"
                 onClick={handleSend}
                 disabled={!canSend}
                 aria-label="Gửi tin nhắn"
-                className="flex size-9 items-center justify-center rounded-xl bg-linear-to-r from-[var(--brand)] to-[var(--brand-secondary,#4d7cff)] text-white shadow-xs hover:shadow-accent hover:-translate-y-0.5 active:scale-[0.98] transition-all disabled:pointer-events-none disabled:opacity-30 cursor-pointer"
+                className="flex size-9 items-center justify-center rounded-xl bg-linear-to-r from-[var(--brand)] to-[var(--brand-secondary,#4d7cff)] text-brand-foreground shadow-xs hover:shadow-accent hover:-translate-y-0.5 active:scale-[0.98] transition-all disabled:pointer-events-none disabled:opacity-30 cursor-pointer"
               >
                 <ArrowUp className="size-4.5" />
               </button>
+              </Hint>
             </div>
           </div>
         </div>
@@ -592,11 +560,11 @@ export function ChatInput({
           {streaming ? (
             <span className="flex items-center justify-center gap-2 font-medium text-brand">
               <span className="size-2 rounded-full bg-brand animate-pulse-subtle" />
-              Hệ thống đang tư vấn — bạn có thể tiếp tục nhập câu hỏi
+              Đang tư vấn · có thể nhập tiếp
             </span>
           ) : (
             <span>
-              Lưu ý: Thông tin tư vấn chỉ mang tính tham khảo, không thay thế chẩn đoán chuyên khoa của bác sĩ.
+              Chỉ mang tính tham khảo, không thay thế chẩn đoán của bác sĩ.
             </span>
           )}
         </div>

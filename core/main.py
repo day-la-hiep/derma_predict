@@ -1,60 +1,51 @@
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Import aggregator để đăng ký toàn bộ ORM model trước create_all.
+# Import aggregator: đăng ký toàn bộ ORM model (relationship giữa các model cần đủ mapper).
 import app.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
-from agent.handler.response_consumer import start_consuming
+from app.workers.agent_response_consumer import start_consuming
+from app.api.auth_api import router as auth_router
 from app.api.conversation_api import router as conversation_router
+from app.api.deps import (
+    close_clients,
+    get_file_store_service,
+    get_rabbitmq_client,
+)
 from app.api.health import router as health_router
+from app.api.document_api import router as document_router
 from app.api.upload_api import router as upload_router
-from app.core.auth import require_app_token
-from app.core.config import log_startup_infra, settings
-from app.db.base import Base
-from app.db.session import AsyncSessionLocal, engine
-from app.models.user import User
-from app.infra.file_storage import ensure_bucket
-from app.infra.rabbitmq_client import rabbitmq_client
-from app.infra.redis_client import redis_client
+from app.api.doctor_api import router as doctor_router
+from app.api.patient_profile_api import router as patient_profile_router
+from app.config.log import RequestLogMiddleware, setup_logging
+from app.config.settings import log_startup_infra, settings
+from app.exception.exception_handler import register_exception_handlers
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log_startup_infra()
 
-    # DB: tạo bảng cho dev. Production nên dùng Alembic migration thay vì create_all.
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Schema DB do Alembic quản lý (`uv run alembic upgrade head`, xem `migrations/`) — không tạo bảng ở đây.
 
-    # FE chưa có auth thật, hard-code userId "user-1" (fe/features/user/index.ts) — DB mới
-    # tinh (deploy prod) thiếu row này thì `POST /conversations` dính FK violation
-    # (`fk_conversations_user_id_users`). Tạo sẵn user mặc định, idempotent.
-    async with AsyncSessionLocal() as session:
-        if await session.get(User, "user-1") is None:
-            session.add(
-                User(
-                    id="user-1",
-                    name="Nguyễn Văn An",
-                    email="an.nguyen@example.com",
-                )
-            )
-            await session.commit()
+    # Dữ liệu mẫu (user-1 mà FE hard-code, bác sĩ, admin) do `scripts/init_db.py` tạo — Core khởi động không ghi dữ liệu.
 
     # RabbitMQ: mở 1 connection/channel dùng chung cho toàn app.
-    await rabbitmq_client.connect()
+    await get_rabbitmq_client().connect()
     # Consumer `agent_response_queue` — Core là writer duy nhất của bảng `messages` cho
     # kết quả Agent Worker trả về (`docs/async-api-doc.md` mục 6). `consume()` chỉ đăng
     # ký callback rồi return ngay (không block) — an toàn gọi trước `yield`.
     await start_consuming()
-    # MinIO: bucket ảnh đính kèm (app/infra/file_storage.py) — idempotent.
-    await ensure_bucket()
+    # MinIO: bucket ảnh đính kèm (app/services/file_store_service.py) — idempotent.
+    await get_file_store_service().ensure_bucket_async()
 
     yield
 
-    await rabbitmq_client.close()
-    await redis_client.aclose()
+    await (
+        close_clients()
+    )  # RabbitMQ, Redis, Postgres, Qdrant... mọi client đã tạo
 
 
 app = FastAPI(
@@ -69,25 +60,36 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+setup_logging("core")
+app.add_middleware(RequestLogMiddleware)
+register_exception_handlers(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(health_router, prefix=settings.API_V1_PREFIX)
+app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(
     conversation_router,
     prefix=settings.API_V1_PREFIX,
-    dependencies=[Depends(require_app_token)],
+)
+app.include_router(
+    document_router,
+    prefix=settings.API_V1_PREFIX,
 )
 app.include_router(
     upload_router,
     prefix=settings.API_V1_PREFIX,
-    dependencies=[Depends(require_app_token)],
 )
+app.include_router(
+    doctor_router,
+    prefix=settings.API_V1_PREFIX,
+)
+app.include_router(patient_profile_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/status", operation_id="status", tags=["health"])

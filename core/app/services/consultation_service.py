@@ -1,0 +1,488 @@
+"""Nghiệp vụ Tư vấn & Báo cáo tiền tư vấn (Pre-consultation Report Generation)."""
+import json
+from dataclasses import dataclass
+import logging
+import uuid
+from datetime import UTC, datetime
+
+from langchain_core.messages import HumanMessage, SystemMessage
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from agent.common.llm import get_model
+from app.common.constant import MessageSender, MessageType
+from app.dto.consultation import (
+    ClinicalFactOutput,
+    ConsultationSessionOutput,
+    PatientProfileDto,
+    PreConsultationReportOutput,
+)
+from app.dto.response.message import MessageMetadataDto, MessageOutput
+from app.exception.errors import ConflictError, ForbiddenError, NotFoundError
+from app.infra.redis_client import RedisClient
+from app.models.clinical import (
+    ClinicalFact,
+    PreConsultationReport,
+)
+from app.models.consultation_session import ConsultationSession
+from app.models.message import Message
+from app.models.user import User
+from app.models.patient_profile import PatientProfile
+from app.repositories.consultation_repository import ConsultationRepository
+from app.repositories.conversation_repository import ConversationRepository
+from app.repositories.message_repository import MessageRepository
+from app.services.doctor_medical_record_service import to_patient_profile_dto
+from app.repositories.user_repository import UserRepository
+from app.services.room_events import publish_inbox, publish_room
+
+logger = logging.getLogger(__name__)
+
+REPORT_SYSTEM_PROMPT = """Bạn là trợ lý y khoa chuyên sâu da liễu.
+Nhiệm vụ của bạn là phân tích các nguồn dữ liệu lâm sàng của bệnh nhân (dữ kiện lâm sàng đã biết, tóm tắt các lần khám trước, và đoạn hội thoại đợt khám hiện tại giữa bệnh nhân và trợ lý AI), sau đó:
+1. Rút trích các DỮ KIỆN LÂM SÀNG (clinical facts) mới hoặc cập nhật từ đoạn hội thoại hiện tại.
+2. Soạn một BÁO CÁO TIỀN TƯ VẤN (Pre-consultation Report) súc tích, chuyên nghiệp cho Bác sĩ da liễu đọc trước khi nhận ca, kết hợp tiền sử bệnh nhân và diễn biến đợt khám này.
+
+Mỗi tin trong đoạn hội thoại hiện tại có số thứ tự dạng `[#3][PATIENT]: ...`.
+
+BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON SAU (không kèm markdown code block hoặc text thừa):
+{
+  "facts": [
+    {
+      "template_label": "Tên chuẩn của triệu chứng/tổn thương/thuốc",
+      "fact_type": "symptom | lesion | history | medication | allergy | image_finding | other",
+      "detail": "Mô tả chi tiết cụ thể của bệnh nhân",
+      "source_messages": [3]
+    }
+  ],
+  "summary": "Nội dung tóm tắt lâm sàng (định dạng Markdown)"
+}
+
+Yêu cầu cho phần `summary` (dùng Markdown chuyên nghiệp):
+- ## Tiền sử & Cơ địa đã biết: Tóm tắt ngắn gọn dị ứng, bệnh nền, thuốc đã/đang dùng từ dữ kiện trước đây (nếu có).
+- ## Diễn biến các lần khám trước: Tóm tắt chẩn đoán hoặc diễn biến từ lần khám trước (nếu có).
+- ## Lý do khám & Bệnh sử đợt này: Tóm tắt triệu chứng chính, thời gian khởi phát ghi nhận từ hội thoại đợt này.
+- ## Vị trí & Đặc điểm tổn thương: Mô tả hình thái, vị trí vùng da bị bệnh đợt này.
+- ## Đánh giá sơ bộ của AI: 1–3 bệnh nghi ngờ xếp theo độ phù hợp, độ tin cậy (Cao/Vừa/Thấp), có đối chiếu với tiền sử/diễn biến cũ nếu liên quan.
+- ## Dấu hiệu cờ đỏ (Red Flags): Đã kiểm tra loại trừ hay nghi ngờ có cờ đỏ gì.
+- ## Đề xuất cho Bác sĩ tiếp quản: Gợi ý câu hỏi lâm sàng cần làm rõ hoặc cận lâm sàng nên chỉ định.
+- Lưu ý: Ghi rõ 'Kết luận AI chỉ mang tính chất tham khảo hỗ trợ tiền lâm sàng' ở cuối.
+
+Yêu cầu cho `source_messages`: số thứ tự các tin trong đoạn hội thoại hiện tại chứa bằng chứng cho fact đó (ưu tiên tin của bệnh nhân); không bịa số không có trong hội thoại.
+"""
+
+
+@dataclass(frozen=True)
+class RoomAccess:
+    is_doctor: bool
+    until: datetime | None  # tin sau mốc này bác sĩ không được thấy; None = tới hiện tại
+    closed: bool  # phiên của bác sĩ đã kết thúc: không nhận stream live nữa
+
+
+class ConsultationService:
+    def __init__(self, db: AsyncSession, redis: RedisClient) -> None:
+        self._db = db
+        self._redis = redis
+        self._repo = ConsultationRepository(db)
+        self._conv_repo = ConversationRepository(db)
+        self._msg_repo = MessageRepository(db)
+
+    def _to_output(
+        self,
+        session: ConsultationSession,
+        conv_title: str = "Hội thoại tư vấn",
+        report: PreConsultationReport | None = None,
+        facts: list[ClinicalFactOutput] | None = None,
+        patient: PatientProfileDto | None = None,
+    ) -> ConsultationSessionOutput:
+        patient_dto = patient or PatientProfileDto(id="", full_name="Bệnh nhân", dob="", gender="male")
+
+        report_dto = None
+        if report:
+            report_dto = PreConsultationReportOutput(
+                id=report.id,
+                summary=report.summary,
+                created_at=report.created_at.isoformat(),
+            )
+
+        return ConsultationSessionOutput(
+            id=session.id,
+            conversation_id=session.conversation_id,
+            conversation_title=conv_title,
+            patient=patient_dto,
+            doctor_id=session.doctor_id,
+            status=session.status,
+            reason=session.reason or "Bệnh nhân yêu cầu bác sĩ tư vấn",
+            requested_at=session.requested_at.isoformat(),
+            started_at=session.started_at.isoformat() if session.started_at else None,
+            resolved_at=session.resolved_at.isoformat() if session.resolved_at else None,
+            report=report_dto,
+            clinical_facts=facts or [],
+        )
+
+    async def _patient_dto(self, patient_profile_id: str | None) -> PatientProfileDto | None:
+        profile = await self._db.get(PatientProfile, patient_profile_id) if patient_profile_id else None
+        return to_patient_profile_dto(profile) if profile else None
+
+    async def _owned_session(self, session_id: str, doctor_id: str) -> ConsultationSession:
+        session = await self._repo.get_session(session_id)
+        if session is None:
+            raise NotFoundError(f"Không tìm thấy phiên tư vấn id={session_id}")
+        if session.doctor_id not in (None, doctor_id):
+            raise ForbiddenError("Ca tư vấn này đang do bác sĩ khác phụ trách.")
+        return session
+
+    async def _announce(self, output: ConsultationSessionOutput) -> None:
+        await publish_room(
+            self._redis,
+            output.conversation_id,
+            {
+                "type": "consultation.updated",
+                "session_id": output.id,
+                "status": output.status,
+                "doctor_id": output.doctor_id,
+            },
+        )
+        await publish_inbox(
+            self._redis,
+            {"type": "consultation.updated", "session": output.model_dump(mode="json")},
+        )
+
+    async def announce_finalized(self, session_id: str, doctor_id: str) -> None:
+        # chốt bệnh án đã đóng ca ở service khác, nên mốc "kết thúc" và event phải phát ở đây
+        session = await self._owned_session(session_id, doctor_id)
+        await self._post_marker(session, MessageType.CONSULTATION_RESOLVED, MessageSender.DOCTOR, doctor_id)
+        await self._announce(await self.get_session(session_id, doctor_id))
+
+    async def _post_marker(
+        self, session: ConsultationSession, message_type: MessageType, sender: MessageSender, actor_id: str
+    ) -> None:
+        """Tin mốc đầu/cuối phiên tư vấn: hiện thành đường chia trong luồng chat của cả 3 bên."""
+        user = await self._db.get(User, actor_id)
+        name = user.full_name if user else "Bác sĩ"
+        content = {
+            MessageType.CONSULTATION_REQUESTED: "Bạn đã gửi yêu cầu kết nối bác sĩ",
+            MessageType.CONSULTATION_ACCEPTED: f"Bác sĩ {name} đã tham gia cuộc trò chuyện",
+            MessageType.CONSULTATION_RESOLVED: f"Bác sĩ {name} đã kết thúc phiên tư vấn",
+        }[message_type]
+        msg = Message(
+            id=f"msg-{uuid.uuid4()}",
+            conversation_id=session.conversation_id,
+            sender=sender.value,
+            message_type=message_type.value,
+            consultation_session_id=session.id,
+            content=content,
+            status="done",
+            created_at=datetime.now(UTC),
+        )
+        await self._msg_repo.create(msg)
+        out = MessageOutput(
+            id=msg.id,
+            conversation_id=msg.conversation_id,
+            sender=sender,
+            content=content,
+            status="done",
+            metadata=MessageMetadataDto(message_type=message_type),
+            created_at=msg.created_at.isoformat(),
+        )
+        await publish_room(
+            self._redis,
+            msg.conversation_id,
+            {"type": "message.created", "message": out.model_dump(mode="json")},
+        )
+
+    async def room_access(self, conversation_id: str, user_id: str) -> "RoomAccess":
+        """Ai được xem hội thoại và tới đâu: chủ hội thoại xem hết; bác sĩ xem từ đầu tới hết phiên gần nhất của mình."""
+        conv = await self._conv_repo.get(conversation_id)
+        if conv is None:
+            raise NotFoundError("Không tìm thấy hội thoại.")
+        if await self._conv_repo.owner_user_id(conv) == user_id:
+            return RoomAccess(is_doctor=False, until=None, closed=False)
+        if await UserRepository(self._db).get_role(user_id) == "doctor":
+            session = await self._repo.get_session_visible_to_doctor(conversation_id, user_id)
+            if session is not None:
+                if session.status != "resolved":
+                    return RoomAccess(is_doctor=True, until=None, closed=False)
+                until = await self._repo.resolved_marker_time(session.id) or session.resolved_at
+                return RoomAccess(is_doctor=True, until=until, closed=True)
+        raise ForbiddenError("Bạn không có quyền xem hội thoại này.")
+
+    async def list_sessions(
+        self, status: str | None = None, doctor_id: str | None = None
+    ) -> list[ConsultationSessionOutput]:
+        sessions = await self._repo.list_sessions(status, doctor_id)
+        results: list[ConsultationSessionOutput] = []
+        for s in sessions:
+            conv = await self._conv_repo.get(s.conversation_id)
+            title = conv.title if conv else "Hội thoại da liễu"
+            report = await self._repo.get_report(s.id)
+            facts_dto: list[ClinicalFactOutput] = []
+            if conv and conv.patient_profile_id:
+                raw_facts = await self._repo.get_clinical_facts_by_patient(conv.patient_profile_id)
+                facts_dto = [
+                    ClinicalFactOutput(
+                        id=f.id,
+                        template_label=tpl.label,
+                        fact_type=tpl.fact_type,
+                        detail=f.detail,
+                        status=f.status,
+                        created_at=f.created_at.isoformat(),
+                    )
+                    for f, tpl in raw_facts
+                ]
+            patient = await self._patient_dto(conv.patient_profile_id if conv else None)
+            results.append(self._to_output(s, title, report, facts_dto, patient))
+        return results
+
+    async def get_session(
+        self, session_id: str, doctor_id: str
+    ) -> ConsultationSessionOutput:
+        session = await self._owned_session(session_id, doctor_id)
+        conv = await self._conv_repo.get(session.conversation_id)
+        title = conv.title if conv else "Hội thoại da liễu"
+        report = await self._repo.get_report(session.id)
+        facts_dto: list[ClinicalFactOutput] = []
+        if conv and conv.patient_profile_id:
+            raw_facts = await self._repo.get_clinical_facts_by_patient(conv.patient_profile_id)
+            facts_dto = [
+                ClinicalFactOutput(
+                    id=f.id,
+                    template_label=tpl.label,
+                    fact_type=tpl.fact_type,
+                    detail=f.detail,
+                    status=f.status,
+                    created_at=f.created_at.isoformat(),
+                )
+                for f, tpl in raw_facts
+            ]
+        patient = await self._patient_dto(conv.patient_profile_id if conv else None)
+        return self._to_output(session, title, report, facts_dto, patient)
+
+    async def accept_session(
+        self, session_id: str, doctor_id: str
+    ) -> ConsultationSessionOutput:
+        session = await self._owned_session(session_id, doctor_id)
+        if session.status == "resolved":
+            raise ConflictError("Ca tư vấn đã được đóng.")
+        if session.status == "pending":
+            session = await self._repo.accept_session(session, doctor_id)
+            await self._post_marker(session, MessageType.CONSULTATION_ACCEPTED, MessageSender.DOCTOR, doctor_id)
+        out = await self.get_session(session_id, doctor_id)
+        await self._announce(out)
+        return out
+
+    async def resolve_session(
+        self, session_id: str, doctor_id: str
+    ) -> ConsultationSessionOutput:
+        session = await self._owned_session(session_id, doctor_id)
+        if session.status != "active":
+            raise ConflictError("Chỉ đóng được ca đang tư vấn (bác sĩ cần nhận ca trước).")
+        await self._repo.resolve_session(session)
+        await self._post_marker(session, MessageType.CONSULTATION_RESOLVED, MessageSender.DOCTOR, doctor_id)
+        out = await self.get_session(session_id, doctor_id)
+        await self._announce(out)
+        return out
+
+    async def request_consultation(
+        self, conversation_id: str, user_id: str, reason: str = "Bệnh nhân yêu cầu bác sĩ tư vấn"
+    ) -> ConsultationSessionOutput:
+        """Kích hoạt tạo phiên tư vấn & gọi LLM sinh báo cáo tiền tư vấn AI."""
+        conv = await self._conv_repo.get(conversation_id)
+        if conv is None:
+            raise NotFoundError("Không tìm thấy hội thoại.")
+        if await self._conv_repo.owner_user_id(conv) != user_id:
+            raise ForbiddenError("Bạn chỉ có thể yêu cầu bác sĩ cho hội thoại của chính mình.")
+        patient = await self._patient_dto(conv.patient_profile_id)
+
+        # 1. Kiểm tra nếu đã có phiên đang mở thì trả về luôn
+        existing = await self._repo.get_open_session_by_conversation(conversation_id)
+        conv_title = conv.title
+        if existing:
+            rep = await self._repo.get_report(existing.id)
+            return self._to_output(existing, conv_title, rep, patient=patient)
+
+        # 2. Tạo session mới
+        session_id = f"cs-{uuid.uuid4()}"
+        session = ConsultationSession(
+            id=session_id,
+            conversation_id=conversation_id,
+            status="pending",
+            reason=reason,
+            requested_at=datetime.now(UTC),
+        )
+        await self._repo.create_session(session)
+        await self._post_marker(session, MessageType.CONSULTATION_REQUESTED, MessageSender.PATIENT, user_id)
+
+        # 3. Lấy dữ liệu đa nguồn: Dữ kiện lâm sàng đã biết, báo cáo lần khám trước, và hội thoại hiện tại
+        patient_profile_id = conv.patient_profile_id
+
+        # 3.1. Dữ kiện lâm sàng / tiền sử tích luỹ
+        past_facts_data = await self._repo.get_active_facts_with_provenance(patient_profile_id)
+        if past_facts_data:
+            past_facts_text = "\n".join(
+                f"- [{tpl.fact_type.upper()}] {tpl.label}: {fact.detail}"
+                for fact, tpl, _ in past_facts_data
+            )
+        else:
+            past_facts_text = "Chưa ghi nhận dữ kiện lâm sàng tiền sử nào trước đó."
+
+        # 3.2. Báo cáo lần khám gần nhất trước đó
+        latest_past_report = await self._repo.get_latest_past_report(
+            patient_profile_id, exclude_session_id=session.id
+        )
+        if latest_past_report and latest_past_report.summary:
+            past_report_text = latest_past_report.summary
+        else:
+            past_report_text = "Chưa có báo cáo khám trước đó (đây là lần đầu hoặc chưa có phiên tư vấn nào)."
+
+        # 3.3. Lịch sử hội thoại đợt khám hiện tại (bỏ tin mốc hệ thống, không phải lời của ai)
+        messages = [
+            m
+            for m in await self._msg_repo.list_by_conversation(conversation_id)
+            if m.content and not m.message_type.startswith("consultation_")
+        ]
+        # đánh số để LLM chỉ ra tin nguồn của từng fact → ghi `clinical_provenances`
+        chat_transcript = "\n".join(
+            f"[#{i}][{m.sender.upper()}]: {m.content}" for i, m in enumerate(messages, start=1)
+        )
+        provenance_pairs: list[tuple[str, str]] = []
+
+        # 4. Gọi LLM sinh báo cáo & bóc tách dữ kiện lâm sàng
+        facts_to_save: list[ClinicalFact] = []
+        facts_dto: list[ClinicalFactOutput] = []
+        summary_text = ""
+
+        try:
+            llm = get_model()
+            prompt = [
+                SystemMessage(content=REPORT_SYSTEM_PROMPT),
+                HumanMessage(
+                    content=(
+                        "DƯỚI ĐÂY LÀ CÁC NGUỒN DỮ LIỆU CỦA BỆNH NHÂN:\n\n"
+                        "=== 1. DỮ KIỆN LÂM SÀNG / TIỀN SỬ ĐÃ GHI NHẬN TỪ TRƯỚC ===\n"
+                        f"{past_facts_text}\n\n"
+                        "=== 2. TÓM TẮT LẦN KHÁM GẦN NHẤT TRƯỚC ĐÓ ===\n"
+                        f"{past_report_text}\n\n"
+                        "=== 3. ĐOẠN HỘI THOẠI ĐỢT KHÁM HIỆN TẠI ===\n"
+                        f"{chat_transcript}\n\n"
+                        "Hãy phân tích và sinh báo cáo JSON:"
+                    )
+                ),
+            ]
+            response = await llm.ainvoke(prompt)
+            raw_content = response.content
+            if isinstance(raw_content, list):
+                raw_content = "\n".join(str(c) for c in raw_content)
+
+            # Làm sạch JSON nếu model bọc trong ```json
+            cleaned = str(raw_content).strip()
+            if cleaned.startswith("```"):
+                lines = cleaned.split("\n")
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines and lines[-1].startswith("```"):
+                    lines = lines[:-1]
+                cleaned = "\n".join(lines).strip()
+
+            parsed = json.loads(cleaned)
+            summary_text = parsed.get("summary", "")
+            raw_facts = parsed.get("facts", [])
+
+            for rf in raw_facts:
+                f_type = rf.get("fact_type", "symptom")
+                f_label = rf.get("template_label", "Dữ kiện lâm sàng")
+                f_detail = rf.get("detail", "")
+                tpl = await self._repo.get_or_create_template(f_type, f_label)
+                fact_id = f"cf-{uuid.uuid4()}"
+                now = datetime.now(UTC)
+                for idx in rf.get("source_messages") or []:
+                    if isinstance(idx, int) and 1 <= idx <= len(messages):
+                        provenance_pairs.append((fact_id, messages[idx - 1].id))
+                facts_to_save.append(
+                    ClinicalFact(
+                        id=fact_id,
+                        patient_profile_id=patient_profile_id,
+                        template_id=tpl.id,
+                        detail=f_detail,
+                        status="active",
+                        created_at=now,
+                    )
+                )
+                facts_dto.append(
+                    ClinicalFactOutput(
+                        id=fact_id,
+                        template_label=tpl.label,
+                        fact_type=tpl.fact_type,
+                        detail=f_detail,
+                        status="active",
+                        created_at=now.isoformat(),
+                    )
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Lỗi khi gọi LLM sinh báo cáo: %s", exc)
+            summary_text = (
+                f"## Tóm tắt phiên tư vấn\n"
+                f"- **Lý do khám**: {reason}\n"
+                f"- **Tiền sử ghi nhận**: {past_facts_text if past_facts_data else 'Chưa có'}\n"
+                f"- **Ghi nhận**: Bệnh nhân yêu cầu bác sĩ tư vấn trực tiếp.\n"
+                f"- *Hệ thống đang đồng bộ dữ kiện lâm sàng.*"
+            )
+
+        # 5. Lưu Report và Facts
+        report = PreConsultationReport(
+            id=f"rep-{uuid.uuid4()}",
+            consultation_session_id=session_id,
+            summary=summary_text,
+            created_at=datetime.now(UTC),
+        )
+        await self._repo.create_report(report)
+        if facts_to_save:
+            await self._repo.add_clinical_facts(facts_to_save)
+        saved_ids = {f.id for f in facts_to_save}
+        provenance_pairs = [p for p in provenance_pairs if p[0] in saved_ids]
+        if provenance_pairs:
+            await self._repo.add_provenances(provenance_pairs)
+
+        out = self._to_output(session, conv_title, report, facts_dto, patient)
+        await self._announce(out)
+        return out
+
+    async def send_doctor_reply(
+        self, session_id: str, content: str, doctor_id: str
+    ) -> MessageOutput:
+        session = await self._owned_session(session_id, doctor_id)
+        if session.status == "resolved":
+            raise ConflictError("Ca tư vấn đã đóng, không thể gửi thêm tin nhắn.")
+
+        # Gửi tin cũng là nhận ca (UI báo trước điều này ở nút gửi)
+        accepted = session.status == "pending"
+        if accepted:
+            await self._repo.accept_session(session, doctor_id)
+            await self._post_marker(session, MessageType.CONSULTATION_ACCEPTED, MessageSender.DOCTOR, doctor_id)
+
+        msg = Message(
+            id=f"msg-{uuid.uuid4()}",
+            conversation_id=session.conversation_id,
+            sender=MessageSender.DOCTOR.value,
+            message_type=MessageType.TEXT.value,
+            content=content,
+            status="done",
+            extra={"doctorId": doctor_id},
+            created_at=datetime.now(UTC),
+        )
+        await self._msg_repo.create(msg)
+
+        out = MessageOutput(
+            id=msg.id,
+            conversation_id=msg.conversation_id,
+            sender=MessageSender.DOCTOR,
+            content=msg.content,
+            status="done",
+            created_at=msg.created_at.isoformat(),
+        )
+        await publish_room(
+            self._redis,
+            msg.conversation_id,
+            {"type": "message.created", "message": out.model_dump(mode="json")},
+        )
+        if accepted:
+            await self._announce(await self.get_session(session_id, doctor_id))
+        return out

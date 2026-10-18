@@ -35,9 +35,9 @@ COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next ./.next
 
-EXPOSE 3000
+EXPOSE 3010
 # Gọi thẳng binary `next` thay vì `pnpm start` — tránh corepack/pnpm tự chạy lại
 # "deps status check" (tải pnpm từ npm registry + re-verify node_modules) mỗi lần
 # container khởi động, vốn cần mạng ra ngoài và lặp lại đúng lỗi approve-builds
 # (`pnpm-workspace.yaml` không có ở stage này) dù node_modules đã cài đúng từ lúc build.
-CMD ["node_modules/.bin/next", "start", "-p", "3000"]
+CMD ["node_modules/.bin/next", "start", "-p", "3010"]

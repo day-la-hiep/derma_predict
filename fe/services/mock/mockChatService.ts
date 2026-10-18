@@ -428,10 +428,7 @@ function bumpConversation(conversationId: string, content: string) {
   );
 }
 
-/**
- * Service mock: mô phỏng backend bằng cách phát sự kiện stream (SSE) theo
- * thời gian thực theo đúng cấu trúc ConversationStreamEvent.
- */
+/** Mock backend: phát ConversationStreamEvent giả. */
 export const mockChatService: ChatService = {
   async connect() {
     await delay(120);
@@ -510,7 +507,6 @@ export const mockChatService: ChatService = {
       conversationId,
       role: "user",
       content,
-      selectionRef: input.selection,
       createdAt: now(),
       status: "done",
     };

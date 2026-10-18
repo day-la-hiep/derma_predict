@@ -1,9 +1,6 @@
 import { WandSparkles, Search, Stethoscope, Languages, type LucideIcon } from "lucide-react";
 
 /** Giới hạn khi gửi 1 tin nhắn — đồng bộ với core/app/constant/limits.py */
-// Trích dẫn: tối đa 1 đoạn / mỗi loại nguồn (1 từ tin nhắn + 1 từ canvas).
-export const MAX_SELECTIONS_PER_SOURCE = 1;
-export const MAX_SELECTIONS_TOTAL = 2;
 export const MAX_ATTACHMENTS = 5;
 export const MAX_ATTACHMENT_TOTAL_BYTES = 20 * 1024 * 1024;
 
@@ -20,11 +17,7 @@ export interface SkillOption {
   icon: LucideIcon;
 }
 
-/** Danh sách model cho khung nhập chat — `id` PHẢI khớp key trong
- * `core/app/core/config.py::Settings.AGENT_MODEL_CHOICES` (backend chỉ nhận đúng những
- * id này ở `SendMessageInput.modelId`/`CreateConversationInput.model`, id lạ bị bỏ qua
- * lặng lẽ — xem `core/app/services/message_service.py::_apply_model_choice`). Đổi model
- * ở backend thì sửa CẢ 2 nơi. */
+/** `id` phải khớp `Settings.AGENT_MODEL_CHOICES` ở backend, id lạ bị bỏ qua lặng lẽ. */
 export const MODEL_OPTIONS: ModelOption[] = [
   {
     id: "gemma4-26b",

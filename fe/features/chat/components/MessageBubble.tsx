@@ -1,11 +1,9 @@
 "use client";
 
-import { useRef } from "react";
-import { FileText, Sparkles } from "lucide-react";
+import { FileText, Sparkles, Stethoscope } from "lucide-react";
 import type { ChatMessage } from "../types";
 import { ImageThumbnail } from "./ImageThumbnail";
 import { MarkdownMessage } from "./MarkdownMessage";
-import { SelectionAsk } from "./SelectionAsk";
 
 interface QAPair {
   question: string;
@@ -40,8 +38,37 @@ function parseQAPairs(content: string): QAPair[] {
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
+  const isDoctor = message.role === "doctor";
   const streaming = message.status === "streaming";
-  const contentRef = useRef<HTMLDivElement>(null);
+
+  if (isDoctor) {
+    return (
+      <div
+        id={`msg-${message.id}`}
+        className="flex w-full justify-start py-2 text-foreground"
+      >
+        <div className="w-full max-w-[90%] sm:max-w-[80%] rounded-2xl rounded-tl-xs border border-sky-500/30 bg-sky-50/60 dark:bg-sky-950/20 p-4 shadow-sm shadow-sky-500/5">
+          <div className="flex items-center gap-2 mb-2 pb-2 border-b border-sky-500/15">
+            <span className="flex size-6 items-center justify-center rounded-full bg-sky-500 text-white shadow-xs">
+              <Stethoscope className="size-3.5" />
+            </span>
+            <span className="text-xs font-semibold text-sky-800 dark:text-sky-300">
+              Bác sĩ chuyên khoa phụ trách
+            </span>
+            <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+              {new Date(message.createdAt).toLocaleTimeString("vi-VN", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </div>
+          <div className="text-sm sm:text-base leading-relaxed text-foreground">
+            <MarkdownMessage content={message.content} />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (isUser) {
     const isChoiceAnswerMessage =
@@ -54,22 +81,21 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
       return (
         <div id={`msg-${message.id}`} className="flex w-full justify-end py-1">
           <div
-            ref={contentRef}
-            className="w-auto max-w-[90%] sm:max-w-[80%] rounded-2xl rounded-tr-xs bg-brand text-white p-4 shadow-sm shadow-brand/20"
+            className="w-auto max-w-[90%] sm:max-w-[80%] rounded-2xl rounded-tr-xs bg-brand text-brand-foreground p-4 shadow-sm shadow-brand/20"
           >
             <div className="flex flex-col gap-2">
               {qaPairs.map((pair, index) => (
                 <div key={index} className="flex items-start gap-2 text-xs sm:text-sm">
-                  <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-white/20 text-white shrink-0">
+                  <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-brand-foreground/15 text-brand-foreground shrink-0">
                     Q{index + 1}
                   </span>
                   <div className="flex-1 min-w-0 leading-relaxed">
                     {pair.question && (
-                      <span className="text-white/80 mr-1.5">
+                      <span className="text-brand-foreground/80 mr-1.5">
                         {pair.question}:
                       </span>
                     )}
-                    <span className="font-medium text-white">
+                    <span className="font-medium text-brand-foreground">
                       {pair.answer}
                     </span>
                   </div>
@@ -87,49 +113,17 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
         id={`msg-${message.id}`}
         className="flex w-full justify-end py-1"
       >
-        <SelectionAsk
-          messageId={message.id}
-          containerRef={contentRef}
-          className="flex justify-end max-w-[90%] sm:max-w-[75%]"
-        >
+        <div className="relative flex justify-end max-w-[90%] sm:max-w-[75%]">
           <div
-            ref={contentRef}
-            className="w-full rounded-2xl rounded-tr-xs bg-brand text-white px-4 py-3 sm:px-5 sm:py-3.5 shadow-sm shadow-brand/20 leading-relaxed"
+            className="w-full rounded-2xl rounded-tr-xs bg-brand text-brand-foreground px-4 py-3 sm:px-5 sm:py-3.5 shadow-sm shadow-brand/20 leading-relaxed"
           >
-            {/* Trích dẫn selection */}
-            {(() => {
-              const refs = Array.isArray(message.selectionRef)
-                ? message.selectionRef
-                : message.selectionRef
-                ? [message.selectionRef]
-                : [];
-              if (refs.length === 0) return null;
-              return (
-                <div className="mb-2.5 flex flex-col gap-1.5">
-                  {refs.map((ref, idx) => (
-                    <div
-                      key={`${ref.source}-${ref.refId}-${idx}`}
-                      className="rounded-xl border-l-2 border-white/60 bg-white/10 p-2.5 text-white text-xs"
-                    >
-                      <span className="block text-[10px] font-mono uppercase tracking-wider text-white/80 font-semibold">
-                        Trích dẫn {refs.length > 1 ? `#${idx + 1}` : ""}:
-                      </span>
-                      <p className="mt-0.5 whitespace-pre-wrap text-white/95 line-clamp-3">
-                        “{ref.text}”
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              );
-            })()}
-
             {/* File đính kèm */}
             {message.attachments && message.attachments.length > 0 && (
               <div className="mb-2.5 flex flex-wrap gap-2">
                 {message.attachments.map((file) => {
                   const isPreviewableImage = file.type?.startsWith("image/") && file.url;
                   return isPreviewableImage ? (
-                    <div key={file.id} className="rounded-xl overflow-hidden border border-white/20">
+                    <div key={file.id} className="rounded-xl overflow-hidden border border-brand-foreground/20">
                       <ImageThumbnail
                         url={file.url!}
                         name={file.name}
@@ -140,7 +134,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
                   ) : (
                     <div
                       key={file.id}
-                      className="flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-2.5 py-1.5 text-xs text-white"
+                      className="flex items-center gap-1.5 rounded-lg border border-brand-foreground/20 bg-brand-foreground/10 px-2.5 py-1.5 text-xs text-brand-foreground"
                     >
                       <FileText className="size-3.5" />
                       <span>{file.name}</span>
@@ -150,9 +144,9 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
               </div>
             )}
 
-            <p className="whitespace-pre-wrap text-sm sm:text-base font-normal text-white">{message.content}</p>
+            <p className="whitespace-pre-wrap text-sm sm:text-base font-normal text-brand-foreground">{message.content}</p>
           </div>
-        </SelectionAsk>
+        </div>
       </div>
     );
   }
@@ -163,12 +157,8 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
       id={`msg-${message.id}`}
       className="flex w-full justify-start py-1 text-foreground"
     >
-      <SelectionAsk
-        messageId={message.id}
-        containerRef={contentRef}
-        className="w-full"
-      >
-        <div ref={contentRef} className="w-full text-foreground">
+      <div className="relative w-full">
+        <div className="w-full text-foreground">
           {message.content ? (
             <div className="text-sm sm:text-base leading-relaxed text-foreground">
               <MarkdownMessage content={message.content} />
@@ -183,7 +173,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
             </div>
           )}
         </div>
-      </SelectionAsk>
+      </div>
     </div>
   );
 }

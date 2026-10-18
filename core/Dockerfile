@@ -3,7 +3,7 @@
 # `core-api`/`agent-worker`, `command:` override).
 #
 # QUAN TRỌNG — build context phải là REPO ROOT (không phải core/), vì cần COPY thêm
-# checkpoint model từ ../model/ (sibling repo root, xem app/core/config.py::
+# checkpoint model từ ../model/ (sibling repo root, xem app/config/settings.py::
 # SKIN_CNN_CHECKPOINT_PATH):
 #   docker build -f core/Dockerfile -t derma-core .
 # (docker-compose.prod.yml đã cấu hình đúng context/dockerfile này.)
@@ -40,13 +40,7 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     SKIN_CNN_CHECKPOINT_PATH=/model/model_output/AdaptiveCNN_SkinDisease_v5_best.pth
 
-# Bake model embedding local (sentence-transformers, app/agent/embeddings.py) vào
-# image lúc build — tránh tải ~470MB từ HuggingFace Hub lúc container khởi động lần
-# đầu (chậm/lỗi nếu mạng prod hạn chế). Cần GOOGLE_API_KEY/OPENROUTER_API_KEY KHÔNG bắt
-# buộc ở bước này (chỉ load embedding model, không gọi LLM).
-RUN /app/.venv/bin/python -c "from agent.embeddings import _get_model; _get_model()"
-
 EXPOSE 3050
 
-# Mặc định chạy Core API — Agent Worker override command trong compose.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "3050"]
+# Mặc định: áp migration DB (Alembic) rồi chạy Core API — Agent Worker override command trong compose.
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn main:app --host 0.0.0.0 --port 3050"]

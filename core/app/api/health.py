@@ -1,16 +1,14 @@
-"""Health check endpoints — dùng cho liveness/readiness probe và debug thủ công.
+"""Health check endpoints"""
+from typing import Annotated
 
-Đồng thời làm ví dụ quy ước DTO: response được validate/serialize qua Pydantic
-model trong `app/dto/health.py` thay vì trả dict tay.
-"""
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
 
-from app.db.session import AsyncSessionLocal
-from app.dto.health import LivenessResponse, ReadinessChecks, ReadinessResponse
-from app.infra.rabbitmq_client import rabbitmq_client
-from app.infra.redis_client import redis_client
+from app.api.deps import get_postgres_client, get_rabbitmq_client, get_redis_client
+from app.dto.response.health import LivenessResponse, ReadinessChecks, ReadinessResponse
+from app.infra.postgres_client import PostgresClient
+from app.infra.rabbitmq_client import RabbitMQClient
+from app.infra.redis_client import RedisClient
 
 router = APIRouter(tags=["health"])
 
@@ -29,28 +27,24 @@ async def liveness() -> LivenessResponse:
         503: {"model": ReadinessResponse, "description": "Ít nhất 1 dependency lỗi"},
     },
 )
-async def readiness() -> JSONResponse:
-    """Readiness: kiểm tra kết nối tới Postgres, Redis, RabbitMQ.
-
-    Trả JSONResponse thủ công (không dùng response_model) vì cần tự set status
-    code 200/503 theo kết quả check — DTO vẫn được dùng để validate nội dung
-    trước khi serialize. `responses=` ở decorator chỉ để khai báo schema cho
-    OpenAPI (Swagger UI, `docs/openapi.yaml`), không ảnh hưởng hành vi thật.
-    """
+async def readiness(
+    postgres: Annotated[PostgresClient, Depends(get_postgres_client)],
+    redis: Annotated[RedisClient, Depends(get_redis_client)],
+    rabbitmq: Annotated[RabbitMQClient, Depends(get_rabbitmq_client)],
+) -> JSONResponse:
     database = "ok"
     try:
-        async with AsyncSessionLocal() as session:
-            await session.execute(text("SELECT 1"))
+        await postgres.ping()
     except Exception as exc:  # noqa: BLE001
         database = f"error: {exc}"
 
     redis_status = "ok"
     try:
-        await redis_client.ping()
+        await redis.ping()
     except Exception as exc:  # noqa: BLE001
         redis_status = f"error: {exc}"
 
-    rabbitmq_status = "ok" if rabbitmq_client.is_connected else "error: not connected"
+    rabbitmq_status = "ok" if rabbitmq.is_connected else "error: not connected"
 
     checks = ReadinessChecks(database=database, redis=redis_status, rabbitmq=rabbitmq_status)
     healthy = all(v == "ok" for v in checks.model_dump().values())

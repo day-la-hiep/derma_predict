@@ -1,179 +1,154 @@
-"""Qdrant client dùng chung. Cùng phong cách `redis_client.py`/`rabbitmq_client.py`:
-1 client module-level + hàm free-function, không phải class service.
+"""Qdrant dùng chung"""
+import threading
+from typing import Any
 
-2 nhóm hàm, 2 collection RIÊNG BIỆT trên cùng client:
-  - `ensure_collection`/`upsert_memory`/`search_memories`: long-term memory user
-    (`settings.QDRANT_COLLECTION`) — hạ tầng cũ, hiện KHÔNG được gọi (xem
-    `app/kien-truc-memory.md`, `app/agent/memory.py` đã chuyển sang
-    `langgraph.store.InMemoryStore`). Giữ lại, chưa xoá.
-  - `ensure_kb_collection`/`upsert_kb_chunks`/`search_kb_chunks`: guideline da liễu
-    tĩnh (`settings.QDRANT_KB_COLLECTION`), ingest 1 lần qua
-    `data-ingest/01_normalize/scripts/load_knowledge_base.py`, đọc bởi
-    `app/agent/tools/knowledge_base_search.py`.
-"""
-from qdrant_client import AsyncQdrantClient
+from qdrant_client import AsyncQdrantClient, QdrantClient
 from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    FilterSelector,
     MatchValue,
+    Modifier,
+    PayloadSchemaType,
     PointStruct,
     Record,
     ScoredPoint,
+    SparseVector,
+    SparseVectorParams,
     VectorParams,
 )
 
-from app.core.config import settings
-
-EMBEDDING_DIM = 768  # models/gemini-embedding-001 (Google), truncated qua
-# output_dimensionality — PHẢI khớp app/agent/memory.py::_EMBEDDING_DIM
-
-client = AsyncQdrantClient(
-    url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY or None
-)
+from app.config.settings import settings
 
 
-async def ensure_collection() -> None:
-    """Tạo collection nếu chưa có — gọi 1 lần lúc Agent Worker khởi động (idempotent,
-    xem `app/agent/worker.py::main()`)."""
-    if not await client.collection_exists(settings.QDRANT_COLLECTION):
-        await client.create_collection(
-            settings.QDRANT_COLLECTION,
-            vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE),
-        )
+def eq_filter(key: str, value: Any) -> Filter:
+    """Bộ lọc payload `key == value`."""
+    return Filter(must=[FieldCondition(key=key, match=MatchValue(value=value))])
 
 
-async def upsert_memory(*, point_id: str, vector: list[float], payload: dict[str, object]) -> None:
-    await client.upsert(
-        settings.QDRANT_COLLECTION,
-        points=[PointStruct(id=point_id, vector=vector, payload=payload)],
-    )
+class QdrantVectorClient:
+    def __init__(self, url: str, api_key: str | None = None, *, sync_client: QdrantClient | None = None) -> None:
+        """`sync_client` cho phép thay client đồng bộ (test dùng `QdrantClient(":memory:")`)."""
+        self._url, self._api_key = url, api_key or None
+        self._async: AsyncQdrantClient | None = None
+        self._sync = sync_client
+        self._guard = threading.Lock()
 
+    @classmethod
+    def from_settings(cls) -> "QdrantVectorClient":
+        return cls(settings.QDRANT_URL, settings.QDRANT_API_KEY or None)
 
-async def search_memories(
-    *, user_id: str, vector: list[float], limit: int = 5, score_threshold: float = 0.5
-) -> list[ScoredPoint]:
-    """Semantic search, lọc theo `user_id` — dùng chung cho memory trong-hội-thoại lẫn
-    xuyên-hội-thoại (không phân biệt nguồn gốc, xem `app/agent/memory.py`)."""
-    result = await client.query_points(
-        settings.QDRANT_COLLECTION,
-        query=vector,
-        query_filter=Filter(must=[FieldCondition(key="user_id", match=MatchValue(value=user_id))]),
-        limit=limit,
-        score_threshold=score_threshold,
-    )
-    return result.points
+    @property
+    def client(self) -> AsyncQdrantClient:
+        with self._guard:
+            if self._async is None:
+                self._async = AsyncQdrantClient(url=self._url, api_key=self._api_key)
+            return self._async
 
+    @property
+    def sync_client(self) -> QdrantClient:
+        with self._guard:
+            if self._sync is None:
+                self._sync = QdrantClient(url=self._url, api_key=self._api_key)
+            return self._sync
 
-async def existing_kb_point_ids(point_ids: list[str]) -> set[str]:
-    """Cho ingest script (`data-ingest/01_normalize/scripts/load_knowledge_base.py`) resume được sau khi
-    bị 429 (free-tier embedding quota) giữa chừng — bỏ qua chunk đã ingest thay vì gọi
-    lại embedding API cho chunk đã có."""
-    if not point_ids:
-        return set()
-    records = await client.retrieve(
-        settings.QDRANT_KB_COLLECTION, ids=point_ids, with_payload=False, with_vectors=False
-    )
-    return {str(r.id) for r in records}
+    async def close(self) -> None:
+        if self._async is not None:
+            await self._async.close()
+            self._async = None
+        if self._sync is not None:
+            self._sync.close()
+            self._sync = None
 
+    # ---------------------------------------------------------------- async (Core / Agent)
+    async def search(self, name: str, vector: list[float], *, limit: int, query_filter: Filter | None = None,
+                     score_threshold: float | None = None) -> list[ScoredPoint]:
+        result = await self.client.query_points(name, query=vector, query_filter=query_filter, limit=limit,
+                                                score_threshold=score_threshold)
+        return result.points
 
-async def ensure_kb_collection(dim: int) -> None:
-    """Tạo collection KB nếu chưa có — gọi bởi `data-ingest/01_normalize/scripts/load_knowledge_base.py`
-    (idempotent, an toàn gọi lại nhiều lần khi re-ingest)."""
-    if not await client.collection_exists(settings.QDRANT_KB_COLLECTION):
-        await client.create_collection(
-            settings.QDRANT_KB_COLLECTION,
-            vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
-        )
+    async def search_sparse(self, name: str, vector: SparseVector, *, using: str, limit: int,
+                            query_filter: Filter | None = None) -> list[ScoredPoint]:
+        """Tìm theo sparse vector đã đặt tên (BM25); chỉ trả point có điểm > 0, tức có ít nhất một từ trùng."""
+        if not vector.indices:
+            return []
+        result = await self.client.query_points(name, query=vector, using=using, query_filter=query_filter, limit=limit)
+        return result.points
 
+    async def has_sparse_vector(self, name: str, vector_name: str) -> bool:
+        """Collection có sparse vector tên này không"""
+        if not await self.client.collection_exists(name):
+            return False
+        sparse = (await self.client.get_collection(name)).config.params.sparse_vectors
+        return bool(sparse) and vector_name in sparse
 
-async def delete_kb_collection() -> None:
-    """Xoá sạch collection KB — dùng khi cần re-ingest từ đầu (`--reset` của
-    `data-ingest/01_normalize/scripts/load_knowledge_base.py`), vd đổi embedding model/dim. An toàn gọi
-    khi collection chưa tồn tại (no-op)."""
-    if await client.collection_exists(settings.QDRANT_KB_COLLECTION):
-        await client.delete_collection(settings.QDRANT_KB_COLLECTION)
+    async def collection_exists(self, name: str) -> bool:
+        return await self.client.collection_exists(name)
 
+    async def dense_size(self, name: str) -> int | None:
+        """Số chiều vector dense của collection; None khi collection chưa có hoặc dùng nhiều vector đặt tên."""
+        if not await self.client.collection_exists(name):
+            return None
+        vectors = (await self.client.get_collection(name)).config.params.vectors
+        return getattr(vectors, "size", None)
 
-async def upsert_kb_chunks(points: list[PointStruct]) -> None:
-    await client.upsert(settings.QDRANT_KB_COLLECTION, points=points)
+    async def count(self, name: str) -> int:
+        """Số point của collection; 0 khi collection chưa có."""
+        if not await self.client.collection_exists(name):
+            return 0
+        return int((await self.client.count(name, exact=True)).count)
 
+    async def scroll_all(self, name: str, *, with_payload: bool | list[str] = True, batch: int = 256) -> list[Record]:
+        """Đọc toàn bộ point (không cần vector), phân trang. Chỉ dùng cho thống kê / kiểm tra bằng tay trên kho cỡ vài nghìn chunk."""
+        if not await self.client.collection_exists(name):
+            return []
+        records: list[Record] = []
+        offset = None
+        while True:
+            page, offset = await self.client.scroll(name, limit=batch, offset=offset, with_payload=with_payload)
+            records += page
+            if offset is None:
+                return records
 
-async def search_kb_chunks(
-    *, vector: list[float], limit: int = 3, chunk_type: str | None = None
-) -> list[ScoredPoint]:
-    """`chunk_type=None`/`"all"` -> không lọc, search trên mọi loại chunk."""
-    query_filter = (
-        Filter(must=[FieldCondition(key="chunk_type", match=MatchValue(value=chunk_type))])
-        if chunk_type and chunk_type != "all"
-        else None
-    )
-    result = await client.query_points(
-        settings.QDRANT_KB_COLLECTION,
-        query=vector,
-        query_filter=query_filter,
-        limit=limit,
-    )
-    return result.points
+    # ---------------------------------------------------------------- đồng bộ (pipeline ở thread nền)
+    def ensure_collection_sync(self, name: str, dim: int, *, keyword_index_fields: tuple[str, ...] = (),
+                               sparse_names: tuple[str, ...] = ()) -> None:
+        """Tạo collection nếu chưa có"""
+        client = self.sync_client
+        if not client.collection_exists(name):
+            client.create_collection(
+                name,
+                vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+                sparse_vectors_config={n: SparseVectorParams(modifier=Modifier.IDF) for n in sparse_names} or None,
+            )
+        else:
+            params = client.get_collection(name).config.params
+            size = params.vectors.size  # type: ignore[union-attr]
+            if size != dim:
+                raise RuntimeError(f"Collection {name} có vector {size} chiều, khác embedding hiện tại ({dim} chiều).")
+            missing = [n for n in sparse_names if n not in (params.sparse_vectors or {})]
+            if missing:
+                raise RuntimeError(
+                    f"Collection {name} thiếu sparse vector {', '.join(missing)} và Qdrant không thêm được vào collection đã tạo — "
+                    "đặt QDRANT_DOCUMENT_COLLECTION sang tên mới rồi chạy lại bước Lưu vào kho tri thức."
+                )
+        for field in keyword_index_fields:
+            try:
+                client.create_payload_index(name, field_name=field, field_schema=PayloadSchemaType.KEYWORD)
+            except Exception:  # noqa: BLE001  # chỉ mục đã có / local mode không hỗ trợ
+                pass
 
+    def delete_by_filter_sync(self, name: str, query_filter: Filter) -> None:
+        client = self.sync_client
+        if client.collection_exists(name):
+            client.delete(name, points_selector=FilterSelector(filter=query_filter), wait=True)
 
-async def get_kb_disease_id_by_dermo_id(dermo_id: str) -> str | None:
-    """Cầu nối id-based giữa DermO/PrimeKG (`app/agent/tools/entity_grounding.py`, field
-    `dermo.id`) và guideline KB — filter thuần trên payload `dermo_id` (gắn sẵn lúc ingest
-    bởi `data-ingest/01_normalize/scripts/04_link_dermo_ids.py`, KHÔNG phải semantic
-    search/LLM tự đoán tên bệnh). Trả `disease_id` của chunk đầu tiên khớp (mọi chunk cùng
-    1 bệnh chia sẻ `disease_id`, chỉ cần 1) hoặc `None` nếu bệnh đó chưa match được DermO
-    term nào lúc ingest — caller nên fallback về `search_kb_chunks` (semantic search) khi
-    đó."""
-    records, _ = await client.scroll(
-        settings.QDRANT_KB_COLLECTION,
-        scroll_filter=Filter(
-            must=[FieldCondition(key="dermo_id", match=MatchValue(value=dermo_id))]
-        ),
-        limit=1,
-        with_payload=["disease_id"],
-    )
-    if not records or not records[0].payload:
-        return None
-    return records[0].payload.get("disease_id")
+    def count_sync(self, name: str, query_filter: Filter | None = None) -> int:
+        client = self.sync_client
+        if not client.collection_exists(name):
+            return 0
+        return int(client.count(name, count_filter=query_filter, exact=True).count)
 
-
-async def get_kb_chunks_by_disease_id(disease_id: str) -> list[Record]:
-    """Lấy TOÀN BỘ chunk (tối đa 5: overview/symptoms/differential/advice/risk) của
-    ĐÚNG 1 bệnh theo `disease_id` — filter thuần trên payload, KHÔNG cần vector/embedding
-    (khác `search_kb_chunks`, vốn semantic search theo câu hỏi tự do). Dùng khi đã biết
-    chính xác bệnh cần đào sâu (vd `disease_id` lấy từ kết quả `search_kb_chunks` trước
-    đó), tránh gọi lại semantic search nhiều lần với các `chunk_type` khác nhau mà không
-    chắc mỗi lần đều trúng cùng 1 bệnh."""
-    records, _ = await client.scroll(
-        settings.QDRANT_KB_COLLECTION,
-        scroll_filter=Filter(
-            must=[FieldCondition(key="disease_id", match=MatchValue(value=disease_id))]
-        ),
-        limit=5,
-    )
-    return records
-
-
-async def ensure_phenotype_collection(dim: int) -> None:
-    if not await client.collection_exists(settings.QDRANT_PHENOTYPE_COLLECTION):
-        await client.create_collection(
-            settings.QDRANT_PHENOTYPE_COLLECTION,
-            vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
-        )
-
-
-async def delete_phenotype_collection() -> None:
-    if await client.collection_exists(settings.QDRANT_PHENOTYPE_COLLECTION):
-        await client.delete_collection(settings.QDRANT_PHENOTYPE_COLLECTION)
-
-
-async def upsert_phenotypes(points: list[PointStruct]) -> None:
-    await client.upsert(settings.QDRANT_PHENOTYPE_COLLECTION, points=points)
-
-
-async def search_phenotypes(*, vector: list[float], limit: int = 5) -> list[ScoredPoint]:
-    result = await client.query_points(
-        settings.QDRANT_PHENOTYPE_COLLECTION, query=vector, limit=limit
-    )
-    return result.points
+    def upsert_points_sync(self, name: str, points: list[PointStruct]) -> None:
+        self.sync_client.upsert(name, points=points, wait=True)

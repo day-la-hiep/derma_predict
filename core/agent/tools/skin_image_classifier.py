@@ -1,21 +1,4 @@
-"""Tool phân loại bệnh da liễu từ ẢNH — CNN (AdaptiveCNN: AMKC + ResNet-18 backbone +
-Adaptive GeM pooling, 22 lớp bệnh) huấn luyện sẵn ở `model/` (repo root, xem
-`model/test_cnn.py`, `model/tool/cnn_predictor.py` — file này port lại kiến trúc y hệt
-để load đúng `model_state_dict` trong checkpoint, KHÔNG import trực tiếp từ `model/` vì
-đó là thư mục thử nghiệm ngoài `core/`, không phải dependency Python cài đặt được).
-
-Ảnh vào tool qua object key MinIO (`app/infra/file_storage.py`), KHÔNG phải path đĩa
-cục bộ hay base64 — luồng đầy đủ: FE `POST /uploads` -> `FileAttachmentDto.id` (=
-object key) -> `SendMessageInput.attachments` -> Core forward qua `TurnRequest.attachments`
-(`app/agent/schemas.py`) -> `worker.py::_human_message_content` chèn `object_key` vào
-text của `HumanMessage` -> agent tự đọc thấy rồi copy làm tham số gọi tool này.
-
-QUAN TRỌNG — kết quả tool này KHÔNG phải clinical evidence: đây là xác suất phân loại
-ảnh của 1 CNN (không phải bác sĩ, không có tiền sử/triệu chứng khác của bệnh nhân), nên
-theo đúng nguyên tắc evidence của `SYSTEM_PROMPT` (`graph.py` mục 2/5) — chỉ được coi là
-GIẢ THUYẾT cần đối chiếu tiếp qua `search_disease_guidelines`/`lookup_dermo_term`/
-`ground_medical_entities`, KHÔNG được khẳng định thẳng thành chẩn đoán.
-"""
+"""Tool phân loại bệnh da liễu từ ẢNH"""
 
 import asyncio
 import difflib
@@ -29,9 +12,9 @@ from langchain.tools import ToolRuntime, tool
 from PIL import Image
 from torchvision import models, transforms  # pyright: ignore[reportMissingTypeStubs]
 
-from agent.state.context import AgentContext
-from app.core.config import settings
-from app.infra.file_storage import get_object_bytes
+from agent.context.agent_context import AgentContext
+from app.config.settings import settings
+from app.api.deps import get_file_store_service
 
 IMG_SIZE = 224
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -164,7 +147,11 @@ class SkinCNNPredictor:
         self, image_bytes: bytes, top_k: int = 5
     ) -> list[dict[str, Any]]:
         image = Image.open(BytesIO(image_bytes)).convert("RGB")
-        x = cast(torch.Tensor, self.transform(image)).unsqueeze(0).to(self.device)
+        x = (
+            cast(torch.Tensor, self.transform(image))
+            .unsqueeze(0)
+            .to(self.device)
+        )
 
         logits = self.model(x)
         probabilities = torch.softmax(logits, dim=1)[0]
@@ -200,9 +187,7 @@ def _format_predictions(results: list[dict[str, Any]]) -> str:
 
 
 def _resolve_object_key(object_key: str, turn_keys: list[str]) -> str:
-    """LLM hay chép sai 1-2 ký tự trong `object_key` (uuid hex 32 ký tự) -> sửa lại theo
-    danh sách ảnh THẬT của turn hiện tại (chỉ ảnh user vừa đính kèm, không đụng ảnh khác
-    trong bucket). Không có danh sách (vd turn resume) thì giữ nguyên giá trị LLM đưa."""
+    """LLM hay chép sai 1-2 ký tự trong `object_key`"""
     if not turn_keys or object_key in turn_keys:
         return object_key
     if len(turn_keys) == 1:
@@ -212,7 +197,9 @@ def _resolve_object_key(object_key: str, turn_keys: list[str]) -> str:
 
 
 @tool
-async def classify_skin_image(object_key: str, runtime: ToolRuntime[AgentContext, Any]) -> str:
+async def classify_skin_image(
+    object_key: str, runtime: ToolRuntime[AgentContext, Any]
+) -> str:
     """Phân loại ảnh tổn thương da bằng CNN đã huấn luyện (22 lớp bệnh da liễu phổ
     biến: Acne, Eczema, Psoriasis, Tinea, SkinCancer...), trả về top-5 kèm % tin cậy.
 
@@ -221,8 +208,8 @@ async def classify_skin_image(object_key: str, runtime: ToolRuntime[AgentContext
 
     KẾT QUẢ TOOL NÀY LÀ GIẢ THUYẾT, KHÔNG PHẢI CHẨN ĐOÁN: đây là xác suất phân loại ảnh
     thuần tuý, không biết tiền sử/triệu chứng khác của người dùng. BẮT BUỘC đối chiếu
-    tên bệnh top-1 (và top-2 nếu tin cậy gần nhau) qua `search_disease_guidelines`
-    hoặc `lookup_dermo_term` để lấy CLINICAL_EVIDENCE trước khi trả lời — KHÔNG được nói
+    tên bệnh top-1 (và top-2 nếu tin cậy gần nhau) qua `hybrid_retrieval`
+    để lấy CLINICAL_EVIDENCE trước khi trả lời — KHÔNG được nói
     thẳng "bạn bị X" chỉ dựa vào % tin cậy của tool này.
 
     Args:
@@ -231,7 +218,7 @@ async def classify_skin_image(object_key: str, runtime: ToolRuntime[AgentContext
     """
     ctx: AgentContext = runtime.context  # type: ignore[assignment]
     object_key = _resolve_object_key(object_key, ctx.image_keys)
-    image_bytes = await get_object_bytes(object_key)
+    image_bytes = await get_file_store_service().get_object_bytes(object_key)
     if image_bytes is None:
         return f"Không tìm thấy ảnh với object_key='{object_key}'."
 
@@ -243,6 +230,6 @@ async def classify_skin_image(object_key: str, runtime: ToolRuntime[AgentContext
     return (
         "Kết quả phân loại ảnh (CNN, KHÔNG phải chẩn đoán y khoa):\n"
         + _format_predictions(results)
-        + "\n\nCần đối chiếu tên bệnh top-1 qua search_disease_guidelines/lookup_dermo_term "
+        + "\n\nCần đối chiếu tên bệnh top-1 qua hybrid_retrieval "
         "trước khi kết luận."
     )

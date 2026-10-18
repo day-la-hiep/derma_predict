@@ -1,5 +1,4 @@
-"""Hằng số/helper dùng chung giữa `chat_graph` và `middleware/*` — module lá (không import
-lại `chat_graph`/`middleware`) để tránh vòng import."""
+"""Hằng số/helper dùng chung giữa `pre_diagnosis_graph` và `middleware/*`"""
 
 import json
 import re
@@ -8,35 +7,34 @@ from typing import Any, NotRequired
 from langchain.agents import AgentState
 from pydantic import BaseModel, Field
 
-from app.core.constants import AGENT_EVENTS_CHANNEL
-from app.infra.redis_client import publish as redis_publish
+from app.config.constants import CONVERSATION_ROOM_CHANNEL
+from app.api.deps import get_redis_client
 
 # Tên tool hiển thị cho người dùng khi FE render bước "đang tra cứu ..." (SSE
 # `message.tool_result`/`message.thinking`, xem `emit_tool_result`/`emit_reasoning_step`
-# bên dưới) — tên hàm tiếng Anh (`ask_user`, `ground_medical_entities`...) khó hiểu với
+# bên dưới) — tên hàm tiếng Anh (`ask_user`, `hybrid_retrieval`...) khó hiểu với
 # người dùng cuối, map sang nhãn tiếng Việt dễ hiểu. Tool nào quên thêm vào đây thì
 # fallback về tên gốc.
 TOOL_DISPLAY_NAMES: dict[str, str] = {
     "record_reasoning": "Lập luận",
     "ask_user": "Hỏi lại người dùng",
     "save_memory": "Lưu thông tin ghi nhớ",
-    "query_dermatology_kg": "Tra cứu cơ sở tri thức da liễu",
-    "lookup_dermo_term": "Tra cứu thuật ngữ da liễu",
-    "ground_medical_entities": "Phân tích & đối chiếu thông tin y khoa",
-    "expand_entity_context": "Mở rộng ứng viên từ đồ thị tri thức",
-    "search_disease_guidelines": "Tra cứu tài liệu hướng dẫn lâm sàng",
-    "get_disease_guideline_profile": "Xem hồ sơ chi tiết 1 bệnh",
+    "hybrid_retrieval": "Tra cứu sách giáo khoa",
+    "semantic_search": "Tra cứu sách giáo khoa (theo ngữ nghĩa)",
+    "keyword_search": "Tra cứu sách giáo khoa (theo từ khoá)",
+    "knowledge_graph_query": "Tra cứu đồ thị tri thức",
     "classify_skin_image": "Phân tích ảnh tổn thương da",
-    "describe_morphology": "Chuẩn hoá mô tả triệu chứng",
-    "generate_differential": "Xếp hạng bệnh phù hợp",
+    "analyze_skin_image_multimodal": "Mô tả tổn thương bằng AI đa phương thức",
     "search_trusted_web": "Tra cứu nguồn web uy tín",
     "fetch_trusted_page": "Đọc trang web uy tín",
 }
 
 
 async def emit(conversation_id: str, payload: dict[str, Any]) -> None:
-    channel = AGENT_EVENTS_CHANNEL.format(conversation_id=conversation_id)
-    await redis_publish(channel, json.dumps(payload, ensure_ascii=False, default=str))
+    channel = CONVERSATION_ROOM_CHANNEL.format(conversation_id=conversation_id)
+    await get_redis_client().publish(
+        channel, json.dumps(payload, ensure_ascii=False, default=str)
+    )
 
 
 # Gemini (`include_thoughts=True`, `llm.py`) mở đầu mỗi đoạn "thinking" bằng 1 dòng tiêu
@@ -48,10 +46,7 @@ THINKING_SUMMARY_MAX_LEN = 160
 
 
 class CriticState(AgentState):
-    """`AgentState` mở rộng: đếm số lần critic đã yêu cầu viết lại câu trả lời trong
-    CÙNG 1 turn — không dùng reducer (`Annotated[..., operator.add]`) vì mỗi lần cần GHI
-    ĐÈ giá trị mới, không cộng dồn qua nhiều turn (field reset ngầm mỗi
-    `agent_graph.astream()` mới vì không nằm trong checkpoint theo cách cộng dồn)."""
+    """`AgentState` mở rộng"""
 
     critic_retries: NotRequired[int]
 

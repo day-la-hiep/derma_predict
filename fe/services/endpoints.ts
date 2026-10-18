@@ -1,12 +1,12 @@
-/**
- * Tập trung toàn bộ đường dẫn API ở một nơi.
- * Khi backend thật có sẵn, chỉ cần chỉnh endpoints này.
- */
+// Toàn bộ đường dẫn API.
 export const endpoints = {
   conversations: "/conversations",
   messages: (conversationId: string) => `/conversations/${conversationId}/messages`,
   sendMessage: (conversationId: string) => `/conversations/${conversationId}/messages`,
+  /** room của hội thoại: SSE dài hạn cho bệnh nhân, bác sĩ và agent */
   streamMessage: (conversationId: string) => `/conversations/${conversationId}/stream`,
+  /** ca tư vấn mới / đổi trạng thái, cho danh sách ca của bác sĩ */
+  doctorConsultationsStream: "/doctor/consultations/stream",
   /** trả lời 1 câu hỏi (`tool_ask`) agent đang chờ — KHÔNG dùng sendMessage cho việc này */
   answerQuestion: (conversationId: string, questionId: string) =>
     `/conversations/${conversationId}/questions/${questionId}/answer`,

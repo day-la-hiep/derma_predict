@@ -1,41 +1,52 @@
 """Router Conversation + Message — REST (`docs/api-doc.md`) và SSE (`docs/async-api-doc.md`)."""
-from collections.abc import AsyncIterator
+
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import get_conversation_service, get_message_service
-from app.core.config import settings
-from app.core.constants import AGENT_EVENTS_CHANNEL, STREAM_DONE_SENTINEL
+from app.api.deps import (
+    get_consultation_service,
+    get_conversation_service,
+    get_current_user,
+    get_message_service,
+    get_rabbitmq_client,
+    get_redis_client,
+)
+from app.config.settings import settings
+from app.api.sse import pubsub_event_stream
+from app.config.constants import CONVERSATION_ROOM_CHANNEL
 from app.dto.common import ApiResponse
-from app.dto.conversation import (
-    ConversationOutput,
-    CreateConversationInput,
-    ModelOption,
-    UpdateConversationModelInput,
-)
-from app.dto.message import (
-    MessageAnswerDto,
-    MessageOutput,
-    SendMessageInput,
-    SendMessageResult,
-)
-from app.infra.redis_client import redis_client
+from app.exception.errors import ForbiddenError
+from app.dto.request.conversation import CreateConversationInput, UpdateConversationModelInput
+from app.dto.request.message import MessageAnswerDto, SendMessageInput
+from app.dto.response.conversation import ConversationOutput, ModelOption
+from app.dto.response.message import MessageOutput, SendMessageResult
+from app.infra.rabbitmq_client import RabbitMQClient
+from app.models.user import User
+from app.infra.redis_client import RedisClient
+from app.services.consultation_service import ConsultationService
 from app.services.conversation_service import (
     ConversationNotFoundError,
     ConversationService,
+    PatientProfileNotFoundError,
 )
 from app.services.message_service import (
+    AttachmentNotFoundError,
     MessageNotFoundError,
     MessageService,
+    TurnInProgressError,
     flush_pending_turn,
 )
 
 router = APIRouter(tags=["conversations"])
 
-ConversationServiceDep = Annotated[ConversationService, Depends(get_conversation_service)]
+ConversationServiceDep = Annotated[
+    ConversationService, Depends(get_conversation_service)
+]
 MessageServiceDep = Annotated[MessageService, Depends(get_message_service)]
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
+ConsultationServiceDep = Annotated[ConsultationService, Depends(get_consultation_service)]
 
 
 @router.get(
@@ -44,11 +55,12 @@ MessageServiceDep = Annotated[MessageService, Depends(get_message_service)]
     operation_id="listModelOptions",
 )
 async def list_model_options() -> ApiResponse[list[ModelOption]]:
-    """Danh sách model FE cho user chọn lúc tạo/đổi hội thoại (`AGENT_MODEL_CHOICES`,
-    `app/core/config.py`) — `id` là giá trị gửi lên `CreateConversationInput.model`/
-    `PATCH /conversations/{id}/model`."""
+    """Danh sách model FE cho user chọn lúc tạo/đổi hội thoại"""
     return ApiResponse(
-        data=[ModelOption(id=model_id) for model_id in settings.AGENT_MODEL_CHOICES]
+        data=[
+            ModelOption(id=model_id)
+            for model_id in settings.AGENT_MODEL_CHOICES
+        ]
     )
 
 
@@ -59,10 +71,10 @@ async def list_model_options() -> ApiResponse[list[ModelOption]]:
 )
 async def list_conversations(
     service: ConversationServiceDep,
-    user_id: Annotated[str, Query(alias="userId")],
+    current_user: CurrentUserDep,
 ) -> ApiResponse[list[ConversationOutput]]:
-    """`docs/api-doc.md` mục 1.1. Auth chưa có — `userId` truyền tay (mục 0)."""
-    conversations = await service.list_conversations(user_id)
+    """`docs/api-doc.md` mục 1.1 — luôn theo tài khoản trong JWT, không nhận `user_id` từ client."""
+    conversations = await service.list_conversations(current_user.id)
     return ApiResponse(data=conversations)
 
 
@@ -73,10 +85,18 @@ async def list_conversations(
     operation_id="createConversation",
 )
 async def create_conversation(
-    body: CreateConversationInput, service: ConversationServiceDep
+    body: CreateConversationInput,
+    service: ConversationServiceDep,
+    current_user: CurrentUserDep,
 ) -> ApiResponse[ConversationOutput]:
-    """`docs/api-doc.md` mục 1.2 — tạo hội thoại + lưu `initMessage` + publish turn đầu."""
-    conversation = await service.create_conversation(body)
+    """`docs/api-doc.md` mục 1.2 — tạo hội thoại + lưu `content` + publish turn đầu."""
+    try:
+        # chủ hội thoại luôn là tài khoản đăng nhập, bỏ qua `user_id` client gửi
+        conversation = await service.create_conversation(body.model_copy(update={"user_id": current_user.id}))
+    except PatientProfileNotFoundError as exc:
+        raise HTTPException(
+            status_code=400, detail="Không tìm thấy hồ sơ bệnh nhân của tài khoản."
+        ) from exc
     return ApiResponse(data=conversation)
 
 
@@ -90,9 +110,7 @@ async def update_conversation_model(
     body: UpdateConversationModelInput,
     service: ConversationServiceDep,
 ) -> ApiResponse[ConversationOutput]:
-    """Đổi model cho hội thoại — chỉ áp dụng cho turn KẾ TIẾP (worker resolve model mới
-    nhất từ DB mỗi turn, `app/agent/worker.py::_conversation_for`), không ảnh hưởng turn
-    đang chạy dở."""
+    """Đổi model cho hội thoại"""
     try:
         conversation = await service.update_model(conversation_id, body.model)
     except ConversationNotFoundError as exc:
@@ -108,10 +126,14 @@ async def update_conversation_model(
     operation_id="listMessages",
 )
 async def list_messages(
-    conversation_id: str, service: MessageServiceDep
+    conversation_id: str,
+    service: MessageServiceDep,
+    current_user: CurrentUserDep,
+    consultations: ConsultationServiceDep,
 ) -> ApiResponse[list[MessageOutput]]:
-    """`docs/api-doc.md` mục 1.3 — sắp theo `createdAt` tăng dần."""
-    messages = await service.list_messages(conversation_id)
+    """`docs/api-doc.md` mục 1.3 — sắp theo `createdAt` tăng dần; bác sĩ chỉ thấy tới hết phiên gần nhất của mình."""
+    access = await consultations.room_access(conversation_id, current_user.id)
+    messages = await service.list_messages(conversation_id, access.until)
     return ApiResponse(data=messages)
 
 
@@ -124,14 +146,18 @@ async def list_messages(
 async def send_message(
     conversation_id: str, body: SendMessageInput, service: MessageServiceDep
 ) -> ApiResponse[SendMessageResult]:
-    """`docs/api-doc.md` mục 2.1 — tin nhắn mở đầu turn mới HOẶC Steer (không dùng để
-    trả lời câu hỏi agent đang chờ, xem `answer_question` bên dưới).
-
-    Trả về `{ userMessage, assistantMessage }`: Core tạo sẵn row assistant
-    (`status="queued"`) và trả `id` để FE lắng nghe SSE theo đó. Turn CHƯA được đẩy cho
-    Worker — chỉ chạy khi client mở `GET .../stream` (`docs/async-api-doc.md` mục 1).
-    """
-    result = await service.send_message(conversation_id, body)
+    """`docs/api-doc.md` mục 2.1"""
+    try:
+        result = await service.send_message(conversation_id, body)
+    except AttachmentNotFoundError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Tệp đính kèm chưa được tải lên: {exc}"
+        ) from exc
+    except TurnInProgressError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Trợ lý đang trả lời hoặc đang chờ bạn trả lời câu hỏi, vui lòng đợi.",
+        ) from exc
     return ApiResponse(data=result)
 
 
@@ -149,7 +175,9 @@ async def answer_question(
 ) -> ApiResponse[MessageOutput]:
     """`docs/api-doc.md` mục 2.2 — trả lời `tool_ask` đang chờ, KHÔNG tạo `messages` mới."""
     try:
-        message = await service.answer_question(conversation_id, question_id, body)
+        message = await service.answer_question(
+            conversation_id, question_id, body
+        )
     except MessageNotFoundError as exc:
         raise HTTPException(
             status_code=404, detail="Không tìm thấy câu hỏi đang chờ trả lời."
@@ -157,38 +185,35 @@ async def answer_question(
     return ApiResponse(data=message)
 
 
-async def _sse_event_stream(conversation_id: str) -> AsyncIterator[str]:
-    """Forward nguyên văn từng message từ Redis Pub/Sub ra SSE — Core là pure forwarder,
-    không transform (`docs/async-api-doc.md` mục 1).
-
-    Sau khi `subscribe` xong (client chắc chắn nhận được event kể từ đây),
-    `flush_pending_turn` đẩy `TurnRequest` đang chờ vào `agent_request_queue` — đây là lúc
-    Worker mới thực sự bắt đầu xử lý turn, nên không event nào rơi mất.
-    """
-    channel = AGENT_EVENTS_CHANNEL.format(conversation_id=conversation_id)
-    pubsub = redis_client.pubsub()
-    await pubsub.subscribe(channel)
-    try:
-        await flush_pending_turn(conversation_id)
-        async for message in pubsub.listen():
-            if message["type"] != "message":
-                continue
-            data = message["data"]
-            yield f"data: {data}\n\n"
-            if data == STREAM_DONE_SENTINEL:
-                break
-    finally:
-        await pubsub.unsubscribe(channel)
-        await pubsub.aclose()
+def _session_resolved(event: dict[str, object]) -> bool:
+    return event.get("type") == "consultation.updated" and event.get("status") == "resolved"
 
 
 @router.get("/conversations/{conversation_id}/stream", include_in_schema=False)
-async def stream_conversation(conversation_id: str) -> StreamingResponse:
-    """`docs/async-api-doc.md` mục 1 — SSE, đóng khi nhận sentinel `[DONE]`.
+async def stream_conversation(
+    conversation_id: str,
+    current_user: CurrentUserDep,
+    consultations: ConsultationServiceDep,
+    redis: Annotated[RedisClient, Depends(get_redis_client)],
+    rabbitmq: Annotated[RabbitMQClient, Depends(get_rabbitmq_client)],
+) -> StreamingResponse:
+    """Room của hội thoại: SSE dài hạn cho bệnh nhân, bác sĩ và agent (`docs/async-api-doc.md` mục 1)"""
+    access = await consultations.room_access(conversation_id, current_user.id)
+    if access.closed:
+        raise ForbiddenError("Phiên tư vấn của bạn với hội thoại này đã kết thúc.")
+    channel = CONVERSATION_ROOM_CHANNEL.format(conversation_id=conversation_id)
 
-    `include_in_schema=False`: SSE thuộc phạm vi `docs/asyncapi.yaml`, không lặp lại
-    trong `docs/openapi.yaml` (OpenAPI mô tả REST request/response thông thường).
-    """
+    async def flush() -> None:
+        await flush_pending_turn(conversation_id, redis, rabbitmq)
+
     return StreamingResponse(
-        _sse_event_stream(conversation_id), media_type="text/event-stream"
+        # phiên kết thúc thì bác sĩ không được nhận thêm gì: đóng stream ngay sau event kết thúc đó
+        pubsub_event_stream(
+            redis,
+            channel,
+            flush,
+            stop_after=_session_resolved if access.is_doctor else None,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

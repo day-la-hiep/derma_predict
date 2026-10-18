@@ -6,28 +6,41 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "aio-pika>=9.4",
+    "alembic>=1.13",
     "asyncpg>=0.29",
+    "bcrypt>=5.0.0",
     "celery>=5.4",
     "datasets>=5.0.1",
+    "docling>=2.130.0",
     "fastapi[standard]>=0.141.1",
+    "huggingface-hub>=1.31.0",
     "ipykernel>=7.3.0",
     "jupyter>=1.1.1",
     "langchain-deepseek>=1.1.0",
     "langchain-google-vertexai>=3.2.4",
     "langchain-neo4j>=0.10.0",
     "langchain-openai>=1.6.2",
+    "langchain-openrouter>=0.2.9",
     "langchain[google-genai]>=0.3",
     "langgraph>=0.2",
     "minio>=7.2.20",
+    "nltk>=3.10.3",
+    "numpy>=2.5.2",
+    "onnxruntime>=1.30.0",
     "pillow>=10.0",
+    "psycopg[binary]>=3.2",
     "pydantic-settings>=2.0",
+    "pyjwt>=2.15.1",
     "qdrant-client>=1.19.0",
+    "rank-bm25>=0.2.2",
     "redis>=5.0",
+    "scipy>=1.18.1",
     "sentence-transformers>=6.0.1",
     "sqlalchemy>=2.0.52",
     "torch>=2.4",
     "torchvision>=0.19",
     "trafilatura>=2.2.0",
+    "underthesea>=9.5.0",
 ]
 
 [tool.fastapi]
@@ -53,7 +66,7 @@ typeCheckingMode = "basic"
 pythonVersion = "3.12"
 venvPath = "."
 venv = ".venv"
-include = ["app", "agent", "main.py"]
+include = ["app", "agent", "pipeline", "main.py"]
 exclude = ["**/__pycache__", ".venv"]
 
 [dependency-groups]

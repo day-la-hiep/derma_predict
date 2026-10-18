@@ -1,9 +1,11 @@
 """Business logic cho Conversation (`docs/api-doc.md` mục 1)."""
-from app.core.config import settings
-from app.core.ids import new_conversation_id
-from app.dto.conversation import ConversationOutput, CreateConversationInput
+
+from app.config.settings import settings
+from app.dto.request.conversation import CreateConversationInput
+from app.dto.response.conversation import ConversationOutput
 from app.models.conversation import Conversation
 from app.repositories.conversation_repository import ConversationRepository
+from app.repositories.patient_profile_repository import PatientProfileRepository
 from app.services.message_service import MessageService
 
 
@@ -11,41 +13,47 @@ class ConversationNotFoundError(Exception):
     pass
 
 
+class PatientProfileNotFoundError(Exception):
+    """Không có hồ sơ dùng được (tài khoản chưa có hồ sơ, hoặc hồ sơ được chọn không thuộc tài khoản)."""
+
+
 class ConversationService:
     def __init__(
         self,
         conversation_repository: ConversationRepository,
+        patient_profile_repository: PatientProfileRepository,
         message_service: MessageService,
     ) -> None:
         self._conversations = conversation_repository
+        self._patient_profiles = patient_profile_repository
         self._messages = message_service
 
-    async def list_conversations(self, user_id: str) -> list[ConversationOutput]:
+    async def list_conversations(
+        self, user_id: str
+    ) -> list[ConversationOutput]:
         conversations = await self._conversations.list_by_user(user_id)
         return [_to_output(c) for c in conversations]
 
     async def create_conversation(
         self, body: CreateConversationInput
     ) -> ConversationOutput:
-        """Tạo hội thoại + lưu `initMessage` (nếu có) + publish turn đầu tiên — quyết định
-        thiết kế ở `docs/api-doc.md` mục 1.2 (FE chỉ cần 1 request).
-
-        Chỉ mở turn khi `init_message` thực sự có nội dung: FE (`store.ts`) luôn tạo
-        conversation với `initMessage=""` rồi gọi `POST .../messages` riêng cho tin đầu
-        tiên (tránh trùng lặp) — mở turn với content rỗng vừa vô nghĩa vừa khiến LLM
-        (Gemini) từ chối request, để lại Redis "active_turn" key treo vĩnh viễn vì turn
-        không bao giờ hoàn tất."""
+        """Tạo hội thoại + lưu `content`"""
+        if body.patient_profile_id:
+            profile = await self._patient_profiles.get_for_user(body.user_id, body.patient_profile_id)
+        else:
+            profile = await self._patient_profiles.first_for_user(body.user_id)
+        if profile is None:
+            raise PatientProfileNotFoundError(body.user_id)
         conversation = Conversation(
-            id=new_conversation_id(),
-            user_id=body.user_id,
+            patient_profile_id=profile.id,
             title=body.title or "",
             model=body.model or settings.AGENT_DEFAULT_MODEL_ID,
         )
         await self._conversations.create(conversation)
 
-        if body.init_message.strip():
+        if body.content.strip():
             await self._messages.start_new_turn(
-                conversation_id=conversation.id, content=body.init_message
+                conversation_id=conversation.id, content=body.content
             )
         return _to_output(conversation)
 
@@ -55,13 +63,16 @@ class ConversationService:
         conversation = await self._conversations.get(conversation_id)
         if conversation is None:
             raise ConversationNotFoundError(conversation_id)
-        conversation = await self._conversations.update_model(conversation, model)
+        conversation = await self._conversations.update_model(
+            conversation, model
+        )
         return _to_output(conversation)
 
 
 def _to_output(conversation: Conversation) -> ConversationOutput:
     return ConversationOutput(
         id=conversation.id,
+        patient_profile_id=conversation.patient_profile_id,
         title=conversation.title,
         model=conversation.model,
         created_at=conversation.created_at.isoformat(),

@@ -23,7 +23,7 @@ CORE_DIR = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(CORE_DIR))
 
 from agent.embeddings import EMBEDDING_DIM, LocalEmbeddings  # noqa: E402
-from app.core.config import settings  # noqa: E402
+from app.config.settings import settings  # noqa: E402
 from app.infra.qdrant_client import (  # noqa: E402
     delete_phenotype_collection,
     ensure_phenotype_collection,

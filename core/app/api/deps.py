@@ -1,25 +1,341 @@
-"""Provider DI (FastAPI `Depends`) — dựng cây service/repository theo `AsyncSession`
-request-scoped (`docs/quy-uoc.md` mục 4)."""
-from typing import Annotated
+"""Quản lý vòng đời các instance + provider DI"""
 
-from fastapi import Depends
+import threading
+from pathlib import Path
+from collections.abc import AsyncGenerator, Callable
+from typing import Annotated, Any, TypeVar
+
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
+from app.config.security import decode_token
+from app.config.settings import settings
+from app.exception.errors import AuthenticationError, ForbiddenError
+from app.models.user import User
+from app.repositories.user_repository import UserRepository
+from app.services.auth_service import AuthService
+from app.infra.docling_client import DoclingClient
+from app.infra.embedding_client import EmbeddingClient
+from app.infra.minio_client import MinioClient
+from app.infra.neo4j_client import Neo4jClient
+from app.infra.postgres_client import PostgresClient
+from app.infra.qdrant_client import QdrantVectorClient
+from app.infra.rabbitmq_client import RabbitMQClient
+from app.infra.redis_client import RedisClient
+from app.repositories.consultation_repository import ConsultationRepository
 from app.repositories.conversation_repository import ConversationRepository
+from app.repositories.file_repository import FileRepository
 from app.repositories.message_repository import MessageRepository
+from app.repositories.medical_record_repository import MedicalRecordRepository
+from app.repositories.patient_profile_repository import PatientProfileRepository
+from app.services.file_store_service import FileStoreService
+from app.repositories.document_repository import DocumentRepository
+from app.services.document_graph_service import DocumentGraphService
+from app.services.document_service import DocumentService
 from app.services.conversation_service import ConversationService
+from app.services.knowledge_base_service import KnowledgeBaseService
+from app.services.knowledge_graph_service import KnowledgeGraphService
 from app.services.message_service import MessageService
+from app.services.patient_profile_service import PatientProfileService
+from app.services.doctor_medical_record_service import DoctorMedicalRecordService
+from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
+
+T = TypeVar("T")
+
+# ---------------------------------------------------------------- registry instance (một mỗi process)
+_instances: dict[str, Any] = {}
+_guard = threading.RLock()
+
+
+def _singleton(key: str, factory: Callable[[], T]) -> T:
+    with _guard:
+        if key not in _instances:
+            _instances[key] = factory()
+        return _instances[key]  # type: ignore[no-any-return]
+
+
+def set_instance(key: str, instance: Any) -> None:
+    """Test thay một instance (key = tên hàm `get_*` bỏ tiền tố `get_`, vd "redis_client")."""
+    with _guard:
+        _instances[key] = instance
+
+
+def reset_instances() -> None:
+    """Quên mọi instance (không đóng). Dùng trong test."""
+    with _guard:
+        _instances.clear()
+
+
+async def close_clients() -> None:
+    """Đóng mọi client đã tạo — gọi khi tắt Core/worker."""
+    with _guard:
+        items = list(_instances.values())
+        _instances.clear()
+    for obj in items:
+        close = getattr(obj, "close", None)
+        if close is None:
+            continue
+        result = close()
+        if hasattr(result, "__await__"):
+            await result
+
+
+# ---------------------------------------------------------------- infra client
+def get_postgres_client() -> PostgresClient:
+    return _singleton("postgres_client", PostgresClient.from_settings)
+
+
+def get_redis_client() -> RedisClient:
+    return _singleton("redis_client", RedisClient.from_settings)
+
+
+def get_rabbitmq_client() -> RabbitMQClient:
+    return _singleton("rabbitmq_client", RabbitMQClient)
+
+
+def get_qdrant_client() -> QdrantVectorClient:
+    return _singleton("qdrant_client", QdrantVectorClient.from_settings)
+
+
+def get_neo4j_client() -> Neo4jClient:
+    return _singleton("neo4j_client", Neo4jClient.from_settings)
+
+
+def get_minio_client() -> MinioClient:
+    return _singleton("minio_client", MinioClient.from_settings)
+
+
+def get_docling_client() -> DoclingClient:
+    return _singleton("docling_client", DoclingClient)
+
+
+def get_embedding_client() -> EmbeddingClient:
+    return _singleton("embedding_client", EmbeddingClient)
+
+
+# ---------------------------------------------------------------- service dùng chung
+def get_knowledge_base_service() -> KnowledgeBaseService:
+    return _singleton(
+        "knowledge_base_service",
+        lambda: KnowledgeBaseService(get_qdrant_client()),
+    )
+
+
+def get_knowledge_graph_service() -> KnowledgeGraphService:
+    return _singleton(
+        "knowledge_graph_service",
+        lambda: KnowledgeGraphService(get_neo4j_client()),
+    )
+
+
+def get_file_store_service() -> FileStoreService:
+    """Kho file của bucket ảnh đính kèm tin nhắn."""
+    return _singleton("file_store_service", lambda: FileStoreService(get_minio_client(), settings.MINIO_BUCKET))
+
+
+def get_document_file_store() -> FileStoreService:
+    """Kho file của bucket tài liệu (pipeline `document_ingest`)."""
+    return _singleton("document_file_store", lambda: FileStoreService(get_minio_client(), settings.MINIO_DOCUMENTS_BUCKET))
+
+
+def get_document_repository() -> DocumentRepository:
+    return _singleton("document_repository", lambda: DocumentRepository(get_document_file_store(), get_postgres_client().sync_session_factory))
+
+
+def get_document_graph_service() -> DocumentGraphService:
+    return _singleton(
+        "document_graph_service",
+        lambda: DocumentGraphService(get_document_repository(), get_neo4j_client(), Path(settings.GRAPH_LEXICON_DIR)),
+    )
+
+
+def get_document_service() -> DocumentService:
+    return _singleton(
+        "document_service",
+        lambda: DocumentService(
+            get_document_repository(),
+            get_qdrant_client(),
+            settings.QDRANT_DOCUMENT_COLLECTION,
+            graph=get_document_graph_service(),
+        ),
+    )
+
+
+def get_document_ingest_pipeline_service() -> DocumentIngestPipelineService:
+    return _singleton(
+        "document_ingest_pipeline_service",
+        lambda: DocumentIngestPipelineService(
+            get_document_service(),
+            get_document_repository(),
+            docling=get_docling_client(),
+            embedding=get_embedding_client(),
+            rabbitmq=get_rabbitmq_client(),
+            redis=get_redis_client(),
+            graph=get_document_graph_service(),
+        ),
+    )
+
+
+# ---------------------------------------------------------------- theo request
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with get_postgres_client().session_factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+
+def get_conversation_repository(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ConversationRepository:
+    return ConversationRepository(db)
+
+
+def get_patient_profile_repository(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PatientProfileRepository:
+    return PatientProfileRepository(db)
+
+
+def get_medical_record_repository(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> MedicalRecordRepository:
+    return MedicalRecordRepository(db)
+
+
+def get_patient_profile_service(
+    patient_profile_repository: Annotated[
+        PatientProfileRepository, Depends(get_patient_profile_repository)
+    ],
+    medical_record_repository: Annotated[
+        MedicalRecordRepository, Depends(get_medical_record_repository)
+    ],
+) -> PatientProfileService:
+    return PatientProfileService(patient_profile_repository, medical_record_repository)
+
+
+def get_doctor_medical_record_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> DoctorMedicalRecordService:
+    return DoctorMedicalRecordService(db, get_file_store_service())
+
+
+def get_message_repository(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> MessageRepository:
+    return MessageRepository(db)
+
+
+def get_file_repository(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> FileRepository:
+    return FileRepository(db)
 
 
 def get_message_service(
+    message_repository: Annotated[
+        MessageRepository, Depends(get_message_repository)
+    ],
+    conversation_repository: Annotated[
+        ConversationRepository, Depends(get_conversation_repository)
+    ],
+    file_repository: Annotated[FileRepository, Depends(get_file_repository)],
+    redis: Annotated[RedisClient, Depends(get_redis_client)],
+    rabbitmq: Annotated[RabbitMQClient, Depends(get_rabbitmq_client)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MessageService:
-    return MessageService(MessageRepository(db), ConversationRepository(db))
+    return MessageService(
+        message_repository,
+        conversation_repository,
+        file_repository,
+        get_file_store_service(),
+        redis,
+        rabbitmq,
+        ConsultationRepository(db),
+    )
 
 
 def get_conversation_service(
-    db: Annotated[AsyncSession, Depends(get_db)],
+    conversation_repository: Annotated[
+        ConversationRepository, Depends(get_conversation_repository)
+    ],
+    patient_profile_repository: Annotated[
+        PatientProfileRepository, Depends(get_patient_profile_repository)
+    ],
     message_service: Annotated[MessageService, Depends(get_message_service)],
 ) -> ConversationService:
-    return ConversationService(ConversationRepository(db), message_service)
+    return ConversationService(conversation_repository, patient_profile_repository, message_service)
+
+
+from app.services.consultation_service import ConsultationService
+
+
+def get_consultation_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[RedisClient, Depends(get_redis_client)],
+) -> ConsultationService:
+    return ConsultationService(db, redis)
+
+
+def get_user_repository(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserRepository:
+    return UserRepository(db)
+
+
+def get_auth_service(
+    user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    patient_profile_repository: Annotated[
+        PatientProfileRepository, Depends(get_patient_profile_repository)
+    ],
+    redis: Annotated[RedisClient, Depends(get_redis_client)],
+) -> AuthService:
+    return AuthService(user_repository, patient_profile_repository, redis)
+
+
+async def get_current_user(
+    request: Request,
+    user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+) -> User:
+    """Dependency trích xuất user hiện tại từ Access Token (Bearer JWT)."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise AuthenticationError("Yêu cầu đăng nhập (thiếu Authorization Bearer header).")
+    token = auth_header.removeprefix("Bearer ").strip()
+    try:
+        payload = decode_token(token)
+    except Exception as exc:
+        raise AuthenticationError("Access token không hợp lệ hoặc đã hết hạn.") from exc
+
+    if payload.get("type") != "access":
+        raise AuthenticationError("Token không phải là access token.")
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise AuthenticationError("Token thiếu thông tin người dùng.")
+
+    user = await user_repository.get_by_id(user_id)
+    if user is None:
+        raise AuthenticationError("Không tìm thấy người dùng của token.")
+
+    return user
+
+
+def require_role(*allowed_roles: str):
+    """Dependency kiểm tra vai trò người dùng (patient, doctor, admin)."""
+
+    async def role_checker(
+        current_user: Annotated[User, Depends(get_current_user)],
+        user_repository: Annotated[UserRepository, Depends(get_user_repository)],
+    ) -> User:
+        role = await user_repository.get_role(current_user.id)
+        if role not in allowed_roles:
+            raise ForbiddenError(
+                f"Bạn không có quyền truy cập chức năng này (yêu cầu vai trò: {', '.join(allowed_roles)})."
+            )
+        return current_user
+
+    return role_checker
+

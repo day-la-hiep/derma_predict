@@ -1,4 +1,4 @@
-export type ChatRole = "user" | "assistant";
+export type ChatRole = "user" | "assistant" | "doctor";
 
 export type MessageStatus =
   | "pending"
@@ -9,7 +9,7 @@ export type MessageStatus =
 
 export type ReasoningStepStatus = "processing" | "done";
 
-export type ReasoningStepType = "default" | "tool_call" | "tool_ask" | "thinking";
+export type ReasoningStepType = "default" | "tool" | "thinking";
 
 export interface ChoiceOption {
   id: string;
@@ -28,22 +28,17 @@ export interface ReasoningStep {
   id: string;
   /** tiêu đề ngắn gọn của bước, hiển thị khi thu gọn */
   title: string;
-  /** nội dung chi tiết, được stream từng token khi mở rộng (output của tool nếu là tool_call) */
+  /** nội dung chi tiết, được stream từng token khi mở rộng (output của tool nếu type là tool) */
   content: string;
-  /** Tham số đầu vào khi gọi tool (nếu là tool_call) */
+  /** Tham số đầu vào khi gọi tool (nếu type là tool) */
   input?: unknown;
   status: ReasoningStepStatus;
-  /** Loại bước suy luận: default (thông thường) hoặc tool_call */
+  /** Loại bước suy luận: default (thông thường), tool hoặc thinking */
   type?: ReasoningStepType;
   choice?: MessageChoice;
 }
 
-/**
- * Tệp đính kèm. `id` khi mới chọn file (chưa upload) là id tạm sinh phía client
- * (`name-size-lastModified`); sau khi `POST /uploads` xong, `id` được THAY bằng object
- * key MinIO thật (backend dùng `id` này để đọc lại file cho Agent, xem
- * `core/app/infra/file_storage.py`) và `url` được gắn thêm để preview.
- */
+/** `id` là id tạm phía client, sau `POST /uploads` được thay bằng object key MinIO thật. */
 export interface FileAttachment {
   id: string;
   name: string;
@@ -64,23 +59,6 @@ export interface ComposedDocument {
   isCanvas?: boolean;
 }
 
-/** Nguồn của một đoạn trích dẫn kèm tin nhắn ("quote-then-ask") */
-export type SelectionSource = "message" | "canvas" | "document";
-
-/** Tham chiếu đoạn được bôi đen khi người dùng hỏi về đoạn đó */
-export interface MessageSelectionRef {
-  source: SelectionSource;
-  /** messageId | canvasId | documentId — tuỳ `source` */
-  refId: string;
-  /** phiên bản (chỉ với canvas/document) */
-  versionNo?: number;
-  /** nội dung đoạn được trích */
-  text: string;
-  /** offset ký tự (tuỳ chọn) */
-  start?: number;
-  end?: number;
-}
-
 export interface ChatMessage {
   id: string;
   conversationId: string;
@@ -88,8 +66,6 @@ export interface ChatMessage {
   content: string;
   /** Chuỗi các bước lý luận của AI, hiển thị theo danh sách */
   reasoning?: ReasoningStep[];
-  /** đoạn tin nhắn được bôi đen mà tin này tham chiếu (hỗ trợ chọn 1 hoặc nhiều đoạn) */
-  selectionRef?: MessageSelectionRef | MessageSelectionRef[];
   /** văn bản soạn sẵn kèm tin assistant, có thể chỉnh sửa (canvas) */
   document?: ComposedDocument;
   /** tệp đính kèm (chủ yếu cho tin nhắn của user) */
@@ -98,10 +74,13 @@ export interface ChatMessage {
   status: MessageStatus;
   choice?: MessageChoice;
   isOptionResponse?: boolean;
+  /** `consultation_*` = tin mốc đầu/cuối phiên bác sĩ, hiện thành đường chia thay vì bubble */
+  messageType?: string;
 }
 
 export interface Conversation {
   id: string;
+  patientProfileId?: string;
   title: string;
   createdAt: string;
   updatedAt: string;
@@ -109,7 +88,6 @@ export interface Conversation {
 
 export type MessageStatusType =
   | "message.started"
-  | "message.steered"
   | "message.delta"
   | "message.done";
 
@@ -145,13 +123,6 @@ export interface ConversationStreamEvent {
 }
 
 export type FlatStreamEvent =
-  | {
-      type: "message.steered";
-      corrId: string;
-      conversationId: string;
-      messageId: string;
-      content: string;
-    }
   | {
       type: "message.started";
       corrId: string;
@@ -208,6 +179,20 @@ export type FlatStreamEvent =
       conversationId: string;
       choice: MessageChoice;
     }
+  /** Tin của bệnh nhân/bác sĩ đã ghi DB (room). `message` là `ApiChatMessage` snake_case, chuyển bằng `toChatMessage`. */
+  | {
+      type: "message.created";
+      conversationId: string;
+      message: unknown;
+    }
+  /** Ca tư vấn của hội thoại đổi trạng thái (bác sĩ nhận / đóng ca). */
+  | {
+      type: "consultation.updated";
+      conversationId: string;
+      sessionId: string;
+      status: "pending" | "active" | "resolved";
+      doctorId: string | null;
+    }
   /** Kết quả 1 tool nghiệp vụ (không phải `ask_user`) vừa chạy xong — chỉ backend thật
    * gửi (`core/app/agent/graph.py::_emit_tool_result`), hiển thị như 1 bước trong
    * `ReasoningSection`. */
@@ -219,11 +204,7 @@ export type FlatStreamEvent =
       input?: unknown;
       content: string;
     }
-  /** 1 bước suy luận của LLM — phát SAU MỖI lần LLM được gọi trong vòng lặp ReAct (kể cả
-   * khi model chỉ quyết định gọi tool, không có "thinking" riêng — nội dung khi đó là 1
-   * dòng tổng hợp từ tên tool, xem `core/app/agent/graph.py::_emit_reasoning_step`). Gửi
-   * NGUYÊN 1 khối nội dung mỗi lần (không stream theo token như `message.delta`) — mỗi
-   * event là 1 bước MỚI, không update bước cũ. */
+  /** Một bước suy luận mỗi lần LLM được gọi; gửi nguyên khối, mỗi event là bước mới. */
   | {
       type: "message.thinking";
       messageId: string;
@@ -267,8 +248,11 @@ export interface MessageAnswer {
 
 export interface CreateConversationInput {
   userId: string;
-  initMessage: string;
+  /** tin nhắn đầu tiên — cùng tên `Message.content` ở base */
+  content: string;
   title?: string;
+  /** hồ sơ bệnh nhân của hội thoại; bỏ trống = backend dùng hồ sơ tạo sớm nhất */
+  patientProfileId?: string | null;
 }
 
 /** Input nội bộ store → chatService. Adapter (services/apiAdapters.ts) map sang wire body. */
@@ -279,7 +263,6 @@ export interface SendMessageInput {
   content: string;
   modelId?: string;
   attachments?: FileAttachment[];
-  selection?: MessageSelectionRef | MessageSelectionRef[];
 }
 
 /** Input trả lời 1 câu hỏi agent đang chờ — đi qua endpoint riêng
@@ -291,7 +274,8 @@ export type AnswerQuestionInput = MessageAnswer & { conversationId: string };
  * assistant rồi lắng nghe SSE theo id đó (không cần chờ `message.started`). */
 export interface SendMessageResult {
   userMessage: ChatMessage;
-  assistantMessage: ChatMessage;
+  /** null khi bác sĩ đang phụ trách ca: AI không tạo turn */
+  assistantMessage: ChatMessage | null;
 }
 
 export interface ChatService {
@@ -312,4 +296,8 @@ export interface ChatService {
   /** Upload 1 file lên backend TRƯỚC khi gửi tin nhắn — trả về `FileAttachment` với
    * `id` = object key thật (backend dùng để đọc lại file cho Agent) và `url` preview. */
   uploadAttachment(file: File): Promise<FileAttachment>;
+  /** Mở room (SSE dài hạn) của hội thoại; bản mock không có. */
+  openRoom?(conversationId: string): void;
+  /** Gọi khi room nối lại sau khi đứt — nơi refetch tin nhắn bị lỡ. */
+  onRoomReconnect?(listener: (conversationId: string) => void): () => void;
 }

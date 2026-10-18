@@ -60,7 +60,7 @@ export function formatReasoningSteps(steps: ReasoningStep[]): string {
     .map((step, index) => {
       const num = index + 1;
       const typeBadge =
-        step.type === "tool_call" || step.type === "tool_ask"
+        step.type === "tool"
           ? " [Tool Call]"
           : "";
       let text = `### Bước ${num}: ${step.title}${typeBadge}`;
@@ -97,7 +97,7 @@ export function formatReasoningSteps(steps: ReasoningStep[]): string {
 export function formatSingleStep(step: ReasoningStep, index?: number): string {
   const prefix = typeof index === "number" ? `Bước ${index + 1}: ` : "Bước: ";
   const typeBadge =
-    step.type === "tool_call" || step.type === "tool_ask"
+    step.type === "tool"
       ? " [Tool Call]"
       : "";
   let text = `${prefix}${step.title}${typeBadge}`;
@@ -136,7 +136,7 @@ function StepItem({
   index?: number;
   isLast?: boolean;
 }) {
-  const isToolCall = step.type === "tool_call" || step.type === "tool_ask" || !!step.choice;
+  const isToolCall = step.type === "tool" || !!step.choice;
   const hasChoice = !!step.choice;
   const isAnswered = !!step.choice?.answered;
   const [open, setOpen] = useState(false);
@@ -188,22 +188,12 @@ function StepItem({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleStepSelectCopy = (e: React.ClipboardEvent) => {
-    const text = formatSingleStep(step, index);
-    e.clipboardData.setData("text/plain", text);
-    e.preventDefault();
-    setCopied(true);
-    toast.success(`Đã sao chép: ${step.title}`);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   const stepNumber = typeof index === "number" ? String(index + 1).padStart(2, "0") : "01";
 
   return (
     <Collapsible
       open={open}
       onOpenChange={setOpen}
-      onCopy={handleStepSelectCopy}
       className={cn(
         "relative flex flex-col gap-1 text-left text-xs transition-all duration-200 animate-in fade-in-50 slide-in-from-top-1",
         processing && "rounded-lg bg-brand/5 px-2 py-0.5 -mx-2 ring-1 ring-brand/20 shadow-2xs"
@@ -270,7 +260,7 @@ function StepItem({
                     variant="outline"
                     className="shrink-0 border-emerald-500/30 bg-emerald-500/10 text-[10px] text-emerald-600 dark:text-emerald-400 py-0 px-2 font-medium rounded-full"
                   >
-                    <CheckCircle2 className="size-2.5 text-emerald-500 mr-1" />
+                    <CheckCircle2 className="size-2.5 text-emerald-500 dark:text-emerald-400 mr-1" />
                     <span className="max-w-[120px] truncate">{step.choice?.answered?.label}</span>
                   </Badge>
                 )}
@@ -350,7 +340,7 @@ function StepItem({
                       <TooltipContent side="top">Sao chép input của tool</TooltipContent>
                     </Tooltip>
                   </div>
-                  <div className="p-3 font-mono text-xs text-foreground whitespace-pre-wrap break-words max-h-72 overflow-y-auto">
+                  <div className="p-3 select-text font-mono text-xs text-foreground whitespace-pre-wrap break-words max-h-72 overflow-y-auto">
                     {formattedInput}
                   </div>
                 </div>
@@ -378,7 +368,7 @@ function StepItem({
                         >
                           {outputCopied ? (
                             <>
-                              <Check className="size-3 text-emerald-500" />
+                              <Check className="size-3 text-emerald-500 dark:text-emerald-400" />
                               <span className="text-emerald-600 dark:text-emerald-400 font-medium">Đã chép</span>
                             </>
                           ) : (
@@ -392,7 +382,7 @@ function StepItem({
                       <TooltipContent side="top">Sao chép output của tool</TooltipContent>
                     </Tooltip>
                   </div>
-                  <div className="p-3 font-mono text-xs text-foreground whitespace-pre-wrap break-words max-h-80 overflow-y-auto">
+                  <div className="p-3 select-text font-mono text-xs text-foreground whitespace-pre-wrap break-words max-h-80 overflow-y-auto">
                     {formattedOutput}
                   </div>
                 </div>
@@ -401,7 +391,7 @@ function StepItem({
           ) : (
             /* Bước suy luận thông thường (thinking / default) */
             step.content && (
-              <div className="rounded-xl border border-border bg-muted/40 p-3 font-mono text-xs text-foreground whitespace-pre-wrap break-words">
+              <div className="rounded-xl border border-border bg-muted/40 p-3 select-text font-mono text-xs text-foreground whitespace-pre-wrap break-words">
                 {step.content}
               </div>
             )
@@ -431,7 +421,7 @@ function StepItem({
                     <span className="size-1.5 rounded-full bg-brand" />
                     <span>Lựa chọn đã ghi nhận: <strong className="text-brand font-semibold">{step.choice?.answered?.label}</strong></span>
                   </div>
-                  <Badge variant="outline" className="border-brand/30 bg-brand text-white text-[10px] py-0 px-2 rounded-full">
+                  <Badge variant="outline" className="border-brand/30 bg-brand text-brand-foreground text-[10px] py-0 px-2 rounded-full">
                     Đã chọn
                   </Badge>
                 </div>
@@ -529,15 +519,6 @@ export function ReasoningSection({
     }
   };
 
-  const handleContainerCopy = (e: React.ClipboardEvent) => {
-    const fullText = formatReasoningSteps(steps);
-    e.clipboardData.setData("text/plain", fullText);
-    e.preventDefault();
-    setCopied(true);
-    toast.success("Đã sao chép toàn bộ tiến trình suy luận");
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   return (
     <Collapsible
       open={open}
@@ -546,7 +527,6 @@ export function ReasoningSection({
     >
       <div className="flex items-center justify-start gap-2">
         <div
-          onCopy={handleContainerCopy}
           className={cn(
             "flex h-9 max-w-full items-center justify-between gap-2 rounded-full border px-3.5 py-1 text-xs shadow-xs transition-all duration-300",
             streaming
@@ -622,7 +602,6 @@ export function ReasoningSection({
       </div>
 
       <CollapsibleContent
-        onCopy={handleContainerCopy}
         className={cn(
           "mt-2 border-l-2 pl-4 ml-3 py-1 space-y-1.5 transition-colors duration-200",
           streaming ? "border-brand/40" : "border-border/60"

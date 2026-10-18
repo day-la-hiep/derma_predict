@@ -2,6 +2,9 @@
 
 import { create } from "zustand";
 import { chatService } from "@/services";
+import { toChatMessage, type ApiChatMessage } from "@/services/apiAdapters";
+import { getCurrentUserId } from "@/services/client";
+import { getActiveProfileId } from "@/features/patient-profile/store";
 import { MODEL_OPTIONS } from "./constants";
 import type {
   ChatMessage,
@@ -9,7 +12,6 @@ import type {
   Conversation,
   FileAttachment,
   MessageChoice,
-  MessageSelectionRef,
   ReasoningStep,
 } from "./types";
 
@@ -28,14 +30,12 @@ export interface ConversationInputState {
   value: string;
   selectedSkill: SkillOption | null;
   files: FileAttachment[];
-  pendingSelection: MessageSelectionRef | MessageSelectionRef[] | null;
 }
 
 export const DEFAULT_INPUT_STATE: ConversationInputState = {
   value: "",
   selectedSkill: null,
   files: [],
-  pendingSelection: null,
 };
 
 interface ChatState {
@@ -44,7 +44,9 @@ interface ChatState {
   messagesByConversation: Record<string, ChatMessage[]>;
   /** số luồng AI đang chạy theo từng hội thoại -> cho phép gửi song song */
   activeStreams: Record<string, number>;
-  /** Quản lý trạng thái khung nhập (draft text, skill, files, pendingSelection) theo từng conversationId */
+  /** trạng thái ca tư vấn bác sĩ của từng hội thoại (chỉ biết sau khi có event hoặc lúc gửi tin) */
+  consultationByConversation: Record<string, "pending" | "active" | "resolved">;
+  /** Quản lý trạng thái khung nhập (draft text, skill, files) theo từng conversationId */
   inputsByConversation: Record<string, ConversationInputState>;
   connected: boolean;
   loadingConversations: boolean;
@@ -57,6 +59,8 @@ interface ChatState {
   startNewChat: () => void;
   selectConversation: (id: string) => Promise<void>;
   setModel: (modelId: string) => void;
+  /** Kéo về các tin còn thiếu sau khi room nối lại (Pub/Sub không replay) */
+  syncMissingMessages: (conversationId: string) => Promise<void>;
   /** Lấy input state hiện tại của hội thoại */
   getInputState: (convId?: string | null) => ConversationInputState;
   /** Cập nhật input state cho hội thoại */
@@ -68,7 +72,6 @@ interface ChatState {
     content: string,
     options?: {
       attachments?: FileAttachment[];
-      selection?: MessageSelectionRef | MessageSelectionRef[];
     }
   ) => void;
   /** Lưu bản chỉnh sửa văn bản soạn sẵn (canvas) vào message + database */
@@ -101,15 +104,6 @@ function normalizeStreamEvent(rawEvent: ChatStreamEvent): import("./types").Flat
         clientMessageId,
         conversationId,
         messageId,
-      };
-    }
-    if (status === "message.steered") {
-      return {
-        type: "message.steered",
-        corrId: clientMessageId,
-        conversationId,
-        messageId,
-        content: meta.content,
       };
     }
     if (status === "message.delta") {
@@ -210,10 +204,11 @@ export const useChatStore = create<ChatState>((set, get) => {
           title: event.title,
           content: "",
           status: "processing",
-          type: event.stepType ?? "default",
+          // stepType của event SSE còn là `tool_call` / `tool_ask`; ở dạng lưu chỉ còn `tool`
+          type: event.stepType === "tool_call" || event.stepType === "tool_ask" ? "tool" : "default",
           choice: event.choice,
         };
-        const isToolAsk = step.type === "tool_call" || step.type === "tool_ask" || !!event.choice;
+        const isToolAsk = step.type === "tool" || !!event.choice;
 
         patchMessage(event.messageId, (m) => {
           const list = m.reasoning ?? [];
@@ -322,7 +317,7 @@ export const useChatStore = create<ChatState>((set, get) => {
             input: event.input,
             content: event.content,
             status: "done",
-            type: "tool_call",
+            type: "tool",
           };
           const exists = list.some((s) => s.id === stepId);
           return {
@@ -366,7 +361,7 @@ export const useChatStore = create<ChatState>((set, get) => {
             return {
               ...exStep,
               ...incStep,
-              type: incStep.type || exStep.type || (mergedChoice ? "tool_call" : "default"),
+              type: incStep.type || exStep.type || (mergedChoice ? "tool" : "default"),
               choice: mergedChoice,
             };
           });
@@ -399,6 +394,31 @@ export const useChatStore = create<ChatState>((set, get) => {
               ? { ...c, updatedAt: new Date().toISOString() }
               : c
           ),
+        }));
+        break;
+      }
+      case "message.created": {
+        const incoming = toChatMessage(event.message as ApiChatMessage);
+        // tin của chính bệnh nhân đã có sẵn ở FE (optimistic) — chỉ lấy tin bác sĩ và tin mốc phiên từ room
+        if (incoming.role !== "doctor" && !incoming.messageType?.startsWith("consultation_")) break;
+        set((state) => {
+          const list = state.messagesByConversation[event.conversationId];
+          if (!list || list.some((m) => m.id === incoming.id)) return state;
+          return {
+            messagesByConversation: {
+              ...state.messagesByConversation,
+              [event.conversationId]: [...list, incoming],
+            },
+          };
+        });
+        break;
+      }
+      case "consultation.updated": {
+        set((state) => ({
+          consultationByConversation: {
+            ...state.consultationByConversation,
+            [event.conversationId]: event.status,
+          },
         }));
         break;
       }
@@ -437,6 +457,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     activeId: null,
     messagesByConversation: {},
     activeStreams: {},
+    consultationByConversation: {},
     inputsByConversation: {},
     connected: false,
     loadingConversations: false,
@@ -476,6 +497,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
 
       chatService.onEvent(handleEvent);
+      chatService.onRoomReconnect?.((id) => void get().syncMissingMessages(id));
 
       try {
         const conversations = await chatService.getConversations();
@@ -501,6 +523,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     async selectConversation(id) {
       const state = get();
+      chatService.openRoom?.(id);
       if (state.messagesByConversation[id]) {
         set({ activeId: id });
         return;
@@ -522,6 +545,28 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({ selectedModelId: modelId });
     },
 
+    async syncMissingMessages(conversationId) {
+      // đang có turn chạy thì bubble optimistic chưa có id thật, sync lúc này sẽ nhân đôi tin
+      if (get().hasActiveStream(conversationId)) return;
+      try {
+        const remote = await chatService.getMessages(conversationId);
+        set((s) => {
+          const local = s.messagesByConversation[conversationId] ?? [];
+          const known = new Set(local.map((m) => m.id));
+          const fresh = remote.filter((m) => !known.has(m.id));
+          if (fresh.length === 0) return s;
+          return {
+            messagesByConversation: {
+              ...s.messagesByConversation,
+              [conversationId]: [...local, ...fresh],
+            },
+          };
+        });
+      } catch {
+        // lỗi mạng tạm thời, lần nối lại kế tiếp sẽ thử lại
+      }
+    },
+
     sendMessage(content, options) {
       const trimmed = content.trim();
       if (!trimmed) return;
@@ -533,10 +578,11 @@ export const useChatStore = create<ChatState>((set, get) => {
         void (async () => {
           try {
             const conversation = await chatService.createConversation({
-              userId: "user-1",
-              // Không seed initMessage ở đây — sendMessage bên dưới sẽ gửi tin
+              userId: getCurrentUserId(),
+              patientProfileId: getActiveProfileId(),
+              // Không seed content ở đây — sendMessage bên dưới sẽ gửi tin
               // đầu tiên (tránh trùng lặp user message ở turn đầu).
-              initMessage: "",
+              content: "",
               title: trimmed.slice(0, MAX_SAVED_TITLE_LENGTH),
             });
             set((s) => ({
@@ -562,11 +608,12 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       const { activeId, activeStreams, selectedModelId } = get();
       if (!activeId) return;
+      // Không có Steer: đang có turn chạy thì không gửi tin mới (backend cũng trả 409).
+      if ((activeStreams[activeId] ?? 0) > 0) return;
 
       const attachments = options?.attachments?.length
         ? options.attachments
         : undefined;
-      const selection = options?.selection;
 
       // Reset input state cho conversation này sau khi bấm gửi
       get().setInputState(activeId, DEFAULT_INPUT_STATE);
@@ -578,7 +625,6 @@ export const useChatStore = create<ChatState>((set, get) => {
         role: "user",
         content: trimmed,
         attachments,
-        selectionRef: selection,
         createdAt: nowIso,
         status: "done",
       };
@@ -594,28 +640,11 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       set((state) => {
         const currentList = state.messagesByConversation[activeId] ?? [];
-        const isStreaming = (activeStreams[activeId] ?? 0) > 0;
-        const nextList = [...currentList];
-
-        if (isStreaming) {
-          // If streaming, find the active assistant message and insert steer userMessage BEFORE it
-          const asstIdx = nextList.findIndex(
-            (m) => m.role === "assistant" && m.status !== "done"
-          );
-          if (asstIdx !== -1) {
-            nextList.splice(asstIdx, 0, userMessage);
-          } else {
-            nextList.push(userMessage);
-          }
-        } else {
-          // New turn: append userMessage and assistantMessage
-          nextList.push(userMessage, assistantMessage);
-        }
 
         return {
           messagesByConversation: {
             ...state.messagesByConversation,
-            [activeId]: nextList,
+            [activeId]: [...currentList, userMessage, assistantMessage],
           },
           activeStreams: {
             ...state.activeStreams,
@@ -634,8 +663,6 @@ export const useChatStore = create<ChatState>((set, get) => {
         };
       });
 
-      const isSteer = (activeStreams[activeId] ?? 0) > 0;
-
       Promise.resolve(
         chatService.sendMessage({
           conversationId: activeId,
@@ -644,30 +671,42 @@ export const useChatStore = create<ChatState>((set, get) => {
           content: trimmed,
           modelId: selectedModelId,
           attachments,
-          selection,
         })
       ).then((result) => {
-        // Backend thật trả về id thật của cả user message lẫn assistant row
-        // (status="queued") — thay id optimistic để các event SSE sau đó (keyed theo
-        // messageId thật) và thao tác trích dẫn về sau khớp đúng. Mock trả `void` ->
-        // bỏ qua, correlation qua `corrId` ở `message.started` lo phần đó.
+        // Thay id optimistic bằng id thật để event SSE (keyed theo messageId) khớp; mock trả `void` thì bỏ qua.
         if (!result) return;
+        const assistant = result.assistantMessage;
         set((state) => {
           const list = state.messagesByConversation[activeId] ?? [];
-          const next = list.map((m) => {
-            if (m.id === userMessage.id) {
-              return { ...m, id: result.userMessage.id, status: result.userMessage.status };
-            }
-            if (!isSteer && m.id === assistantMessage.id) {
-              return { ...m, id: result.assistantMessage.id, status: result.assistantMessage.status };
-            }
-            return m;
-          });
+          // không có assistant = bác sĩ đang phụ trách ca: bỏ bubble chờ AI và trả lượt stream
+          const next = list
+            .filter((m) => assistant || m.id !== assistantMessage.id)
+            .map((m) => {
+              if (m.id === userMessage.id) {
+                return { ...m, id: result.userMessage.id, status: result.userMessage.status };
+              }
+              if (assistant && m.id === assistantMessage.id) {
+                return { ...m, id: assistant.id, status: assistant.status };
+              }
+              return m;
+            });
           return {
             messagesByConversation: {
               ...state.messagesByConversation,
               [activeId]: next,
             },
+            ...(assistant
+              ? {}
+              : {
+                  activeStreams: {
+                    ...state.activeStreams,
+                    [activeId]: Math.max(0, (state.activeStreams[activeId] ?? 0) - 1),
+                  },
+                  consultationByConversation: {
+                    ...state.consultationByConversation,
+                    [activeId]: "active" as const,
+                  },
+                }),
           };
         });
       }).catch(() => {

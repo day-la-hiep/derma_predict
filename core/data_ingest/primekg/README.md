@@ -6,8 +6,8 @@ và các từ khóa ICD-10 chương XII (L00–L99).
 | | |
 |---|---|
 | Input | `input/kg.csv` (PrimeKG gốc, ~850MB, không commit) + `../byt/output/pdf_guideline_2015.json` |
-| Script | `scripts/01_extract_derma_subgraph.py [--output-dir DIR]` (~15 giây) |
-| Output | `output/derma_nodes.csv`, `derma_edges.csv`, `entity_mapping.json`, `derma_kg.json` |
+| Script | `scripts/01_extract_derma_subgraph.py [--output-dir DIR]` (~15 giây), `scripts/02_build_entity_lexicon.py` (~20 giây) |
+| Output | `output/derma_nodes.csv`, `derma_edges.csv`, `entity_mapping.json`, `derma_kg.json`, `entity_lexicon.csv` (từ điển khớp thực thể cho bước trích quan hệ từ tài liệu: bệnh/triệu chứng/thuốc/gen/tác nhân của PrimeKG đầy đủ) |
 
 Chạy: `python ../run.py primekg`.
 
