@@ -82,6 +82,12 @@ def main() -> int:
     for src in (nodes, edges):
         stage(src, OUT_DIR / "primekg")
     stage(dermo, OUT_DIR / "dermo")
+    # từ điển khớp thực thể cho bước trích graph từ tài liệu; thiếu thì bước đó báo lỗi, không chặn phần còn lại
+    lexicon = INGEST_DIR / "primekg" / "output" / "entity_lexicon.csv"
+    if lexicon.exists():
+        stage(lexicon, OUT_DIR / "primekg")
+    else:
+        print(f"[cảnh báo] không thấy {lexicon.relative_to(INGEST_DIR)} — chạy `python run.py primekg` để tạo")
     return 0
 
 

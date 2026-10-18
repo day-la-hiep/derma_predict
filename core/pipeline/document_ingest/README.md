@@ -5,6 +5,7 @@ rồi chunk tự do trong khung đó. Mỗi chunk mang metadata của mục ch�
 
 ```
 PDF → ingest (chữ từng trang) → toc (LLM đọc mục lục, người duyệt) → độ lệch + neo (luật) → chunks → index (Qdrant)
+                                                                                         └→ graph (LLM trích quan hệ, người duyệt) → graph_index (Neo4j)
 ```
 
 | Bước | Module | Ra (trong MinIO `document/<document>/`) | LLM |
@@ -13,6 +14,11 @@ PDF → ingest (chữ từng trang) → toc (LLM đọc mục lục, người du
 | toc | `stages/toc.py` + `mapping.py` | `toc.auto.json` (máy), `toc.json` (đã áp override + độ lệch + neo) | đọc vài chục trang mục lục |
 | chunks | `stages/chunks.py` | `chunks.jsonl`, `review/chunks.json` | không |
 | index | `stages/index.py` (+ `DocumentService`) | `index.json` + các point trong Qdrant | không (embedding qua OpenRouter) |
+| graph | `stages/graph.py` + `graph_schema.py` + `graph_link.py` | `graph/topics.json`, `graph/unmapped.json`, `triples.auto.jsonl` (máy), `triples.jsonl` (đã áp override) | phân loại mục, trích theo ô, chọn nút khớp |
+| graph_index | `stages/graph_index.py` (+ `DocumentGraphService`) | `graph_index.json` + cạnh `source='DOC'` trong Neo4j | không |
+
+- `graph` chỉ trích quan hệ có trong PrimeKG/DermO (registry `graph_schema.py`), khớp tên vào từ điển PrimeKG đầy đủ + DermO;
+  lưu ý và giới hạn ở `docs/notice/document-graph-extract.md`.
 
 - `toc` **không phụ thuộc** `ingest`: đọc mục lục chỉ OCR riêng vài trang. `mapping.py` (độ lệch + neo) cần `pages.jsonl` nên
   được tính lại mỗi khi sửa mục lục (`reapply`) và ngay trước khi chunk — rất rẻ, không gọi LLM.
@@ -66,4 +72,4 @@ Tiền xử lý cho tìm từ khoá (`app/infra/bm25/`): làm sạch chữ OCR (
 Test dùng `MemoryMinio` + SQLite + Qdrant in-memory + embedding giả (không cần dịch vụ nào chạy).
 
 Giao diện: `/admin/toc` (API `/api/v1/admin/toc-pipeline/*`). 
-Test: `python -m unittest pipeline.document_ingest.tests.test_toc_pipeline pipeline.document_ingest.tests.test_api pipeline.document_ingest.tests.test_storage_index`.
+Test: `python -m unittest pipeline.document_ingest.tests.test_document_pipeline pipeline.document_ingest.tests.test_api pipeline.document_ingest.tests.test_storage_index pipeline.document_ingest.tests.test_graph`.

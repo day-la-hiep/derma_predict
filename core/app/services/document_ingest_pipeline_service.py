@@ -13,7 +13,7 @@ from app.config.constants import (
     DOCUMENT_INGEST_CANCEL_CHANNEL,
     DOCUMENT_INGEST_QUEUE,
 )
-from app.dto.request.document import TocUpdate
+from app.dto.request.document import TocUpdate, TripleUpdate
 from app.dto.response.document import DocumentOutput
 from app.exception.errors import (
     ConflictError,
@@ -28,12 +28,16 @@ from app.infra.rabbitmq_client import RabbitMQClient
 from app.infra.redis_client import RedisClient
 from app.models.document_stage import STAGE_BY_ID
 from app.repositories.document_repository import DocumentRepository, now_iso
+from app.services.document_graph_service import DocumentGraphService
 from app.services.document_service import DocumentService
 from pipeline.document_ingest.stages import (
     StageCancelled,
     StageContext,
     StageError,
 )
+
+
+_GRAPH_STAGES = {"graph", "graph_index"}
 
 
 def _module(stage_id: str) -> ModuleType:
@@ -56,11 +60,13 @@ class DocumentIngestPipelineService:
         embedding: EmbeddingClient | None = None,
         rabbitmq: RabbitMQClient | None = None,
         redis: RedisClient | None = None,
+        graph: DocumentGraphService | None = None,
     ) -> None:
         """`rabbitmq`/`redis` chỉ Core cần (đẩy yêu cầu chạy + Dừng); ingest worker chỉ gọi `execute` nên để trống."""
         self.documentService, self._repo = documentService, repository
         self._rabbitmq, self._redis = rabbitmq, redis
         self._docling, self._embedding = docling, embedding
+        self._graph = graph
 
     def make_ctx(
         self,
@@ -91,6 +97,9 @@ class DocumentIngestPipelineService:
             docling=self._docling,
             embedding=self._embedding,
             vectors=self.documentService,
+            # từ điển ~70k thực thể: chỉ nạp khi bước cần (lần đầu mất vài giây)
+            lexicon=self._graph.lexicon() if self._graph is not None and stage_id in _GRAPH_STAGES else None,
+            graph=self._graph if self._graph is not None and self._graph.configured else None,
             pdf=lambda: DocumentService.local_pdf(self._repo, document_id),
             cancel=cancel or threading.Event(),
         )
@@ -270,6 +279,13 @@ class DocumentIngestPipelineService:
     ) -> DocumentOutput:
         self.reapply(document_id, stage_id)
         return self.documentService.get_document(document_id)
+
+    def update_triples(self, document_id: str, body: TripleUpdate) -> DocumentOutput:
+        """Lưu duyệt quan hệ rồi áp lại bước `graph` (bước quay về chờ duyệt, `graph_index` thành stale)."""
+        if self._graph is None:
+            raise PipelineError("Chưa cấu hình đồ thị tri thức.")
+        self._graph.update_triples(document_id, body)
+        return self.reapply_stage(document_id, "graph")
 
     def update_toc(
         self, document_id: str, body: TocUpdate
