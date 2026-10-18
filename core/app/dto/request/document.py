@@ -25,6 +25,8 @@ class DocumentSettings(BaseModel):
     boundary_level: int = Field(ge=0, le=3)
     breadcrumb: bool = True
     text_language: Literal["vi", "en", "mixed"] = "mixed"
+    graph_allow_new_entities: bool = False
+    graph_chunks_per_call: int = Field(default=3, ge=1, le=10)
 
 
 class TocItem(BaseModel):
@@ -53,3 +55,20 @@ class TocUpdate(BaseModel):
     removed_added: list[str] = []  # id mục thêm tay cần xoá
     offset: int | None = None  # trang PDF = trang in + offset; đặt tay thì thắng độ lệch tự suy
     clear_offset: bool = False  # quay về độ lệch tự suy
+
+
+class TripleRelink(BaseModel):
+    """Đổi nút khớp cho một đầu của triple; `node_id=None` = bỏ sửa tay, quay về kết quả máy."""
+
+    triple_id: str
+    side: Literal["subject", "object"]
+    node_id: str | None = None
+    same_term: bool = True  # áp cho mọi triple có cùng thuật ngữ (cùng loại + chữ trong sách), ở bất kỳ đầu nào
+
+
+class TripleUpdate(BaseModel):
+    rejected: list[str] = []
+    restored: list[str] = []  # hoàn tác loại
+    relink: list[TripleRelink] = []
+    accept_nodes: list[str] = []  # chấp nhận thực thể mới (id `doc_*`) cho mọi triple dùng nó
+    unaccept_nodes: list[str] = []

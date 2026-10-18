@@ -7,7 +7,7 @@ export type StageState =
   | "failed"
   | "cancelled"
   | "stale";
-export type StepId = "ingest" | "toc" | "chunks" | "index";
+export type StepId = "ingest" | "toc" | "chunks" | "index" | "graph" | "graph_index";
 
 export interface Progress {
   done: number;
@@ -73,6 +73,8 @@ export interface Settings {
   boundary_level: number;
   breadcrumb: boolean;
   text_language: "vi" | "en" | "mixed";
+  graph_allow_new_entities: boolean;
+  graph_chunks_per_call: number;
 }
 
 export interface TocEntry {
@@ -176,4 +178,58 @@ export interface SourcePage {
   noise: boolean;
   noise_reason?: string | null;
   noise_score: number;
+}
+
+/** Khớp `GraphNodeRef` (`core/app/dto/base/document.py`). kg="doc" = thực thể mới đề xuất từ sách. */
+export interface GraphNodeRef {
+  kg: "primekg" | "dermo" | "doc" | string;
+  type: string;
+  text: string;
+  en: string;
+  node_id?: string | null;
+  name: string;
+  /** exact | llm | manual | new */
+  link_method: string;
+}
+
+export type TripleStatus = "ok" | "unlinked" | "rejected";
+
+export interface Triple {
+  triple_id: string;
+  slot: string;
+  relation: string;
+  /** đầu cạnh trong Neo4j (subject -> object) */
+  subject: GraphNodeRef;
+  object: GraphNodeRef;
+  evidence: string;
+  chunk_ids: string[];
+  /** trang PDF */
+  pages: number[];
+  status: TripleStatus;
+}
+
+export interface TripleList {
+  items: Triple[];
+  total: number;
+  page: number;
+  page_size: number;
+  counts: { all?: number; ok?: number; unlinked?: number; rejected?: number; new?: number; by_relation?: Record<string, number> };
+  accepted_nodes: string[];
+}
+
+export interface TripleUpdate {
+  rejected?: string[];
+  restored?: string[];
+  /** same_term (mặc định true): áp cho mọi quan hệ có cùng thuật ngữ trong sách */
+  relink?: { triple_id: string; side: "subject" | "object"; node_id: string | null; same_term?: boolean }[];
+  accept_nodes?: string[];
+  unaccept_nodes?: string[];
+}
+
+export interface GraphNode {
+  kg: string;
+  type: string;
+  id: string;
+  name: string;
+  source: string;
 }

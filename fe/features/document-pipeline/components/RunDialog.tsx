@@ -28,6 +28,12 @@ const FIELDS: Partial<Record<Stage["stage_id"], Field>> = {
     placeholder: "vd 8-22",
     hint: "Nếu biết mục lục nằm ở trang nào của file PDF thì nhập vào (vd 8-22). Để trống, AI sẽ tự tìm trong các trang đầu và cuối sách.",
   },
+  graph: {
+    key: "limit_topics",
+    label: "Số bài thử",
+    placeholder: "vd 5",
+    hint: "Chỉ trích N bài bệnh/thuốc đầu tiên để xem chất lượng trước khi chạy cả sách (tốn ít lượt gọi AI). Để trống = cả sách.",
+  },
 };
 
 /** Hộp thoại tùy chọn trước khi chạy một bước. Bước không có tùy chọn (chunk) chạy thẳng, không mở hộp này. */

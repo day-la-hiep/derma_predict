@@ -93,7 +93,7 @@ class ApiTest(Base):
         did = book["id"]
         self.assertEqual(
             (book["title"], book["pdf_pages"], [s["stage_id"] for s in book["stages"]]),
-            ("Sách thử", 3, ["ingest", "toc", "chunks", "index"]),
+            ("Sách thử", 3, ["ingest", "toc", "chunks", "index", "graph", "graph_index"]),
         )
         self.assertEqual(book["stages"][2]["blocked_by"], ["ingest", "toc"])
         bad = self.c.post(

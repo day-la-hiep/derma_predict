@@ -42,51 +42,58 @@ RELATION_LABELS = {
 }
 _RELATION_ORDER = {name: i for i, name in enumerate(RELATION_LABELS)}
 
+# `edge_sources` (KnowledgeGraphService tự truyền, `settings.KG_EDGE_SOURCES`): cạnh gốc không có `source` = "KG", cạnh trích từ
+# sách = "DOC"; `refs` = trang sách của cạnh DOC để agent trích nguồn.
 # Cạnh viết thẳng trong pattern (không `type(r) IN $...`) để Neo4j chỉ duyệt đúng loại cạnh: thuốc có hàng nghìn cạnh DRUG_DRUG.
 # `ORDER BY m.name` trước `collect` để phần cắt `[..$per_relation]` ổn định giữa các lần chạy.
 _DISEASE_OVERVIEW = """
 MATCH (s:Entity) WHERE elementId(s) IN $sids
 MATCH (s)-[r:DISEASE_PHENOTYPE_POSITIVE|DISEASE_TYPICAL_LOCATION|DISEASE_RISK_FACTOR|DISEASE_RED_FLAG|DISEASE_DISEASE]-(m:Entity)
-WITH s, r, m ORDER BY m.name
-WITH s, type(r) AS relation, collect(DISTINCT m)[..$per_relation] AS ms
-UNWIND ms AS m
-RETURN s.name AS subject, s.type AS subject_type, relation, m.name AS object, m.type AS object_type
+WITH s, r, m WHERE coalesce(r.source, 'KG') IN $edge_sources
+WITH s, type(r) AS relation, m, [x IN collect(DISTINCT r.source_ref) WHERE x IS NOT NULL] AS refs ORDER BY m.name
+WITH s, relation, collect({m: m, refs: refs})[..$per_relation] AS ms
+UNWIND ms AS x
+RETURN s.name AS subject, s.type AS subject_type, relation, x.m.name AS object, x.m.type AS object_type, x.refs AS refs
 """
 
 _SYMPTOMS_OF_DISEASE = """
 MATCH (s:Entity) WHERE elementId(s) IN $sids
 MATCH (s)-[r:DISEASE_PHENOTYPE_POSITIVE|DISEASE_PHENOTYPE_NEGATIVE]-(m:Entity)
-WITH s, r, m ORDER BY m.name
-WITH s, type(r) AS relation, collect(DISTINCT m)[..$per_relation] AS ms
-UNWIND ms AS m
-RETURN s.name AS subject, s.type AS subject_type, relation, m.name AS object, m.type AS object_type
+WITH s, r, m WHERE coalesce(r.source, 'KG') IN $edge_sources
+WITH s, type(r) AS relation, m, [x IN collect(DISTINCT r.source_ref) WHERE x IS NOT NULL] AS refs ORDER BY m.name
+WITH s, relation, collect({m: m, refs: refs})[..$per_relation] AS ms
+UNWIND ms AS x
+RETURN s.name AS subject, s.type AS subject_type, relation, x.m.name AS object, x.m.type AS object_type, x.refs AS refs
 """
 
 _RED_FLAGS_RISK = """
 MATCH (s:Entity) WHERE elementId(s) IN $sids
 MATCH (s)-[r:DISEASE_RED_FLAG|DISEASE_RISK_FACTOR|DISEASE_TYPICAL_LOCATION]-(m:Entity)
-WITH s, r, m ORDER BY m.name
-WITH s, type(r) AS relation, collect(DISTINCT m)[..$per_relation] AS ms
-UNWIND ms AS m
-RETURN s.name AS subject, s.type AS subject_type, relation, m.name AS object, m.type AS object_type
+WITH s, r, m WHERE coalesce(r.source, 'KG') IN $edge_sources
+WITH s, type(r) AS relation, m, [x IN collect(DISTINCT r.source_ref) WHERE x IS NOT NULL] AS refs ORDER BY m.name
+WITH s, relation, collect({m: m, refs: refs})[..$per_relation] AS ms
+UNWIND ms AS x
+RETURN s.name AS subject, s.type AS subject_type, relation, x.m.name AS object, x.m.type AS object_type, x.refs AS refs
 """
 
 _TREATMENTS = """
 MATCH (s:Entity) WHERE elementId(s) IN $sids
 MATCH (s)-[r:INDICATION|OFF_LABEL_USE]-(m:Entity)
-WITH s, r, m ORDER BY m.name
-WITH s, type(r) AS relation, collect(DISTINCT m)[..$per_relation] AS ms
-UNWIND ms AS m
-RETURN s.name AS subject, s.type AS subject_type, relation, m.name AS object, m.type AS object_type
+WITH s, r, m WHERE coalesce(r.source, 'KG') IN $edge_sources
+WITH s, type(r) AS relation, m, [x IN collect(DISTINCT r.source_ref) WHERE x IS NOT NULL] AS refs ORDER BY m.name
+WITH s, relation, collect({m: m, refs: refs})[..$per_relation] AS ms
+UNWIND ms AS x
+RETURN s.name AS subject, s.type AS subject_type, relation, x.m.name AS object, x.m.type AS object_type, x.refs AS refs
 """
 
 _CONTRAINDICATIONS = """
 MATCH (s:Entity) WHERE elementId(s) IN $sids
 MATCH (s)-[r:CONTRAINDICATION]-(m:Entity)
-WITH s, r, m ORDER BY m.name
-WITH s, type(r) AS relation, collect(DISTINCT m)[..$per_relation] AS ms
-UNWIND ms AS m
-RETURN s.name AS subject, s.type AS subject_type, relation, m.name AS object, m.type AS object_type
+WITH s, r, m WHERE coalesce(r.source, 'KG') IN $edge_sources
+WITH s, type(r) AS relation, m, [x IN collect(DISTINCT r.source_ref) WHERE x IS NOT NULL] AS refs ORDER BY m.name
+WITH s, relation, collect({m: m, refs: refs})[..$per_relation] AS ms
+UNWIND ms AS x
+RETURN s.name AS subject, s.type AS subject_type, relation, x.m.name AS object, x.m.type AS object_type, x.refs AS refs
 """
 
 # Hỏi ≥2 thuốc thì chỉ giữ tương tác GIỮA các thuốc đó, không liệt kê mọi thuốc tương tác với từng cái.
@@ -94,10 +101,11 @@ _DRUG_PROFILE = """
 MATCH (s:Entity) WHERE elementId(s) IN $sids
 MATCH (s)-[r:INDICATION|CONTRAINDICATION|OFF_LABEL_USE|DRUG_EFFECT|DRUG_DRUG]-(m:Entity)
 WHERE type(r) <> 'DRUG_DRUG' OR size($sids) < 2 OR elementId(m) IN $sids
-WITH s, r, m ORDER BY m.name
-WITH s, type(r) AS relation, collect(DISTINCT m)[..$per_relation] AS ms
-UNWIND ms AS m
-RETURN s.name AS subject, s.type AS subject_type, relation, m.name AS object, m.type AS object_type
+WITH s, r, m WHERE coalesce(r.source, 'KG') IN $edge_sources
+WITH s, type(r) AS relation, m, [x IN collect(DISTINCT r.source_ref) WHERE x IS NOT NULL] AS refs ORDER BY m.name
+WITH s, relation, collect({m: m, refs: refs})[..$per_relation] AS ms
+UNWIND ms AS x
+RETURN s.name AS subject, s.type AS subject_type, relation, x.m.name AS object, x.m.type AS object_type, x.refs AS refs
 """
 
 # Trọng số (heuristic). `3 / ln(2 + degree)`: triệu chứng nối với ít bệnh thì đặc hiệu hơn, đóng góp nhiều điểm hơn. Degree chỉ
@@ -110,24 +118,27 @@ WITH collect(s) AS seeds
 CALL (seeds) {
   UNWIND seeds AS s
   WITH s WHERE s.type = 'effect/phenotype'
-  MATCH (s)-[:DISEASE_PHENOTYPE_POSITIVE]-(d:Entity {type: 'disease'})
-  RETURN d, 3.0 / log(2.0 + COUNT { (s)-[:DISEASE_PHENOTYPE_POSITIVE]-() }) AS w, 'direct' AS kind, 'triệu chứng: ' + s.name AS via
+  MATCH (s)-[e:DISEASE_PHENOTYPE_POSITIVE]-(d:Entity {type: 'disease'}) WHERE coalesce(e.source, 'KG') IN $edge_sources
+  RETURN d, 3.0 / log(2.0 + COUNT { (s)-[x:DISEASE_PHENOTYPE_POSITIVE]-() WHERE coalesce(x.source, 'KG') IN $edge_sources }) AS w,
+         'direct' AS kind, 'triệu chứng: ' + s.name AS via
   UNION ALL
   UNWIND seeds AS s
   WITH s WHERE s.type = 'disease'
-  MATCH (s)-[:DISEASE_DISEASE]-(d:Entity {type: 'disease'}) WHERE d <> s
+  MATCH (s)-[e:DISEASE_DISEASE]-(d:Entity {type: 'disease'}) WHERE d <> s AND coalesce(e.source, 'KG') IN $edge_sources
   RETURN d, 1.0 AS w, 'direct' AS kind, 'bệnh liên quan tới: ' + s.name AS via
   UNION ALL
   UNWIND seeds AS s
   WITH s WHERE s.type = 'disease'
-  MATCH (s)-[:DISEASE_PHENOTYPE_POSITIVE]-(p:Entity {type: 'effect/phenotype'})
-        -[:DISEASE_PHENOTYPE_POSITIVE]-(d:Entity {type: 'disease'}) WHERE d <> s
-  RETURN d, 1.5 / log(2.0 + COUNT { (p)-[:DISEASE_PHENOTYPE_POSITIVE]-() }) AS w, 'shared' AS kind,
+  MATCH (s)-[e1:DISEASE_PHENOTYPE_POSITIVE]-(p:Entity {type: 'effect/phenotype'})
+        -[e2:DISEASE_PHENOTYPE_POSITIVE]-(d:Entity {type: 'disease'})
+  WHERE d <> s AND coalesce(e1.source, 'KG') IN $edge_sources AND coalesce(e2.source, 'KG') IN $edge_sources
+  RETURN d, 1.5 / log(2.0 + COUNT { (p)-[x:DISEASE_PHENOTYPE_POSITIVE]-() WHERE coalesce(x.source, 'KG') IN $edge_sources }) AS w,
+         'shared' AS kind,
          'chung triệu chứng ' + p.name + ' với ' + s.name AS via
   UNION ALL
   UNWIND seeds AS s
   WITH s WHERE s.type = 'drug'
-  MATCH (s)-[:INDICATION]-(d:Entity {type: 'disease'})
+  MATCH (s)-[e:INDICATION]-(d:Entity {type: 'disease'}) WHERE coalesce(e.source, 'KG') IN $edge_sources
   RETURN d, 1.0 AS w, 'direct' AS kind, 'thuốc ' + s.name + ' chỉ định cho bệnh này' AS via
 }
 WITH d, seeds,
@@ -178,6 +189,8 @@ TEMPLATES: dict[str, _Template] = {
 def _fact(intent: str, row: dict[str, Any]) -> dict[str, str]:
     label = RELATION_LABELS.get(row["relation"], row["relation"])
     text = f"{row['subject']} ({row['subject_type']}) — {label} — {row['object']} ({row['object_type']})"
+    if row.get("refs"):
+        text += f" [theo sách: {'; '.join(row['refs'][:2])}]"
     return {"intent": intent, "relation": row["relation"], "text": text}
 
 

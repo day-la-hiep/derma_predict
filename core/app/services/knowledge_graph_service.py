@@ -2,6 +2,7 @@
 import re
 from typing import Any, LiteralString
 
+from app.config.settings import settings
 from app.infra.neo4j_client import Neo4jClient
 
 # `WITH t, ... ` giữa mỗi `OPTIONAL MATCH` để mở rộng TUẦN TỰ (parents rồi related) thay
@@ -75,8 +76,9 @@ def trim(text: str) -> str:
 # Phenotype của bệnh (kèm độ hiếm `degree` = số bệnh nối tới, càng ít càng đặc hiệu; không đếm cạnh thuốc/phenotype khác) để chọn câu hỏi phân biệt.
 _DISEASE_PHENOTYPES_QUERY = """
 MATCH (d:Entity {type: 'disease'}) WHERE d.id IN $dids
-MATCH (d)-[:DISEASE_PHENOTYPE_POSITIVE]-(p:Entity {type: 'effect/phenotype'})
-RETURN d.id AS did, p.id AS pid, p.name AS pname, COUNT { (p)-[:DISEASE_PHENOTYPE_POSITIVE]-() } AS degree
+MATCH (d)-[e:DISEASE_PHENOTYPE_POSITIVE]-(p:Entity {type: 'effect/phenotype'}) WHERE coalesce(e.source, 'KG') IN $edge_sources
+RETURN d.id AS did, p.id AS pid, p.name AS pname,
+       COUNT { (p)-[x:DISEASE_PHENOTYPE_POSITIVE]-() WHERE coalesce(x.source, 'KG') IN $edge_sources } AS degree
 """
 
 
@@ -85,6 +87,8 @@ class KnowledgeGraphService:
         self._neo4j = neo4j
 
     async def run(self, query: LiteralString, **params: Any) -> list[dict[str, Any]]:
+        # mọi truy vấn quan hệ lọc theo nguồn cạnh; câu không dùng `$edge_sources` thì Neo4j bỏ qua tham số thừa
+        params.setdefault("edge_sources", settings.KG_EDGE_SOURCES)
         return await self._neo4j.run(query, **params)
 
     async def search_dermo_terms(self, term: str, limit: int = 5) -> list[dict[str, Any]]:

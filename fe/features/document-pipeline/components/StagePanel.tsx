@@ -40,6 +40,19 @@ const SUMMARY_LABELS: Record<string, string> = {
   collection: "Kho lưu trữ",
   embedding_model: "Mô hình tạo vector",
   dimension: "Số chiều vector",
+  topics_used: "Loại mục (bệnh / thuốc / khác)",
+  triples: "Số quan hệ",
+  ok: "Đã khớp",
+  unlinked: "Chưa khớp",
+  rejected: "Đã loại",
+  by_relation: "Theo loại quan hệ",
+  linked: "Thuật ngữ khớp được",
+  new_entities: "Thực thể mới",
+  unmapped: "Ngoài schema (không lưu)",
+  evidence_dropped: "Bị loại do trích dẫn sai",
+  edges: "Số cạnh đã lưu",
+  nodes_added: "Nút thêm vào đồ thị",
+  skipped: "Bị bỏ qua",
 };
 
 /** Summary của backend -> cặp nhãn tiếng Việt/giá trị dễ đọc; bỏ số liệu kỹ thuật (llm). */
@@ -54,6 +67,8 @@ function readableSummary(summary: Record<string, unknown>): Record<string, unkno
     } else if (k === "page_range" && Array.isArray(v)) val = v.join("–");
     else if (k === "pages_source") val = v === "user" ? "bạn nhập" : "AI tìm";
     else if (k === "engine") val = v === "docling" ? "nhận dạng từ ảnh" : "văn bản có sẵn";
+    else if (v && typeof v === "object" && !Array.isArray(v))
+      val = Object.entries(v as Record<string, unknown>).map(([a, n]) => `${a}: ${n}`).join(", ") || "—";
     out[SUMMARY_LABELS[k] ?? k] = val;
   }
   return out;

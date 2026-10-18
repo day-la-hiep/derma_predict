@@ -4,7 +4,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { useState } from "react";
 import { toast } from "sonner";
 import { errorMessage, documentApi } from "./api";
-import type { Document, StepId } from "./types";
+import type { Document, StepId, TripleUpdate } from "./types";
 
 export const qk = {
   documents: ["toc", "documents"] as const,
@@ -88,4 +88,14 @@ export function usePage(resetKey: string): [number, (p: number) => void] {
   const [s, setS] = useState({ key: resetKey, page: 1 });
   const page = s.key === resetKey ? s.page : 1;
   return [page, (p) => setS({ key: resetKey, page: p })];
+}
+
+/** Duyệt quan hệ: lưu override rồi backend áp lại bước `graph` (bước Lưu đồ thị thành “cần làm lại”). */
+export function useUpdateTriples(documentId: string) {
+  const refresh = useRefreshDocument(documentId);
+  return useMutation({
+    mutationFn: (body: TripleUpdate) => documentApi.updateTriples(documentId, body),
+    onSuccess: (b) => refresh(b),
+    onError: (e: unknown) => toast.error(errorMessage(e)),
+  });
 }

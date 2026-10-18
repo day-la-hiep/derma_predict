@@ -12,6 +12,7 @@ from app.infra.llm_client import LLMClient
 from app.models.document_profile import Profile
 
 from .. import mapping
+from ..graph_link import EntityLexicon
 
 if TYPE_CHECKING:  # chỉ để khai báo kiểu; bước không gọi gì của app ngoài các client được truyền vào
     from app.services.file_store_service import FileStoreService
@@ -27,6 +28,15 @@ class ChunkIndex(Protocol):
     def count_chunks(self, document_id: str) -> int: ...
     def upsert_chunks(self, document_id: str, chunks: list[dict[str, Any]], vectors: list[list[float]], extra: dict[str, Any],
                       language: str = "mixed") -> None: ...
+
+
+class GraphStore(Protocol):
+    """Đồ thị tri thức Neo4j (cài đặt: `DocumentGraphService`)."""
+
+    def doc_entities(self) -> list[dict[str, Any]]: ...  # nút thực thể mới đã nạp từ tài liệu: id, name, type
+    def existing_types(self, ids: list[str]) -> dict[str, str]: ...  # id -> type của nút `:Entity` đang có
+    def replace_document(self, document_id: str, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> None: ...
+    def count_edges(self, document_id: str) -> int: ...
 
 
 class StageCancelled(Exception):
@@ -54,6 +64,8 @@ class StageContext:
     docling: DoclingClient | None = None
     embedding: EmbeddingClient | None = None
     vectors: ChunkIndex | None = None
+    lexicon: EntityLexicon | None = None  # từ điển PrimeKG + DermO để khớp thực thể
+    graph: GraphStore | None = None
     # trả về bản sao `source.pdf` trên đĩa cho công cụ cần file thật (pdftotext, Docling, pypdf)
     pdf: Callable[[], Path] | None = None
     options: dict[str, Any] = field(default_factory=dict)
@@ -103,6 +115,16 @@ class StageContext:
         if self.vectors is None:
             raise StageError("Chưa cấu hình kho vector (Qdrant).")
         return self.vectors
+
+    def require_lexicon(self) -> EntityLexicon:
+        if self.lexicon is None or not len(self.lexicon):
+            raise StageError("Chưa có từ điển thực thể PrimeKG/DermO (chạy `python data_ingest/run.py primekg normalize`).")
+        return self.lexicon
+
+    def require_graph(self) -> GraphStore:
+        if self.graph is None:
+            raise StageError("Chưa cấu hình đồ thị tri thức (Neo4j).")
+        return self.graph
 
 
 def refresh_toc(ctx: StageContext, total_pages: int) -> None:

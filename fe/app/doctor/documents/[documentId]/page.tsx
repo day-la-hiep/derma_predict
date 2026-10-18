@@ -16,6 +16,7 @@ import { SettingsDialog } from "@/features/document-pipeline/components/Settings
 import { StageLogDialog } from "@/features/document-pipeline/components/StageLogDialog";
 import { StagePanel } from "@/features/document-pipeline/components/StagePanel";
 import { TocEditor } from "@/features/document-pipeline/components/TocEditor";
+import { TripleBrowser } from "@/features/document-pipeline/components/TripleBrowser";
 import { STEP_INFO, STEP_ORDER } from "@/features/document-pipeline/constants";
 import { useDocument, useData, useStageActions } from "@/features/document-pipeline/hooks";
 import type { Document, Stage, StepId, TocEntry } from "@/features/document-pipeline/types";
@@ -30,12 +31,14 @@ function stepLine(stage: Stage): string {
   if (stage.stage_id === "ingest") return `${s.pages ?? "?"} trang`;
   if (stage.stage_id === "toc") return `${s.entries ?? "?"} mục`;
   if (stage.stage_id === "chunks") return `${s.chunks ?? "?"} đoạn`;
+  if (stage.stage_id === "graph") return `${s.ok ?? "?"}/${s.triples ?? "?"} quan hệ đã khớp`;
+  if (stage.stage_id === "graph_index") return `${s.edges ?? "?"} cạnh đã lưu`;
   return `${s.points ?? "?"} đoạn đã lưu`;
 }
 
 function Stepper({ doc, step, onPick }: { doc: Document; step: StepId; onPick: (s: StepId) => void }) {
   return (
-    <ol className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4" aria-label="Các bước xử lý">
+    <ol className="grid gap-2 sm:grid-cols-3 xl:grid-cols-6" aria-label="Các bước xử lý">
       {STEP_ORDER.map((id, i) => {
         const stage = doc.stages.find((s) => s.stage_id === id) as Stage;
         const Icon = STEP_INFO[id].icon;
@@ -205,6 +208,15 @@ export default function TocDocumentPage({ params }: { params: Promise<{ document
               title="Chưa lưu vào kho tri thức"
               hint="Làm sau khi đã xác nhận Chia đoạn."
             />
+          )}
+          {step === "graph" &&
+            (hasResult ? (
+              <TripleBrowser documentId={documentId} onPreview={(p) => setPreviewPage(p)} />
+            ) : (
+              stage.state !== "running" && <EmptyState title="Chưa trích quan hệ" hint="Làm sau khi đã xác nhận Chia đoạn." />
+            ))}
+          {step === "graph_index" && !hasResult && stage.state !== "running" && (
+            <EmptyState title="Chưa lưu vào đồ thị" hint="Làm sau khi đã xác nhận Trích quan hệ." />
           )}
           {step === "chunks" &&
             (hasResult ? (

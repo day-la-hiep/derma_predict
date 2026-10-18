@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     NEO4J_URL: str = "bolt://localhost:7687"
     NEO4J_USER: str = "neo4j"
     NEO4J_PASSWORD: str = "derma12345"
+    # Cạnh của agent `knowledge_graph_query` lấy từ những nguồn nào: "KG" = PrimeKG/DermO/BYT gốc (cạnh không có
+    # `source`), "DOC" = cạnh trích từ sách (bước graph_index). Mặc định chưa dùng DOC cho tới khi benchmark xong.
+    KG_EDGE_SOURCES: list[str] = ["KG"]
+    # Từ điển khớp thực thể cho bước trích quan hệ từ tài liệu (`data_ingest/primekg/scripts/02_build_entity_lexicon.py`)
+    GRAPH_LEXICON_DIR: str = str(_REPO_ROOT / "core" / "data_ingest" / "01_normalize" / "output" / "kg")
 
     # ----- Web search nguồn uy tín (agent/tools/web_search.py) -----
     # Rỗng = tool trả thông báo "chưa cấu hình", không crash. Tavily lọc domain ngay ở provider

@@ -1,7 +1,7 @@
-import { Database, FileText, Layers, ListTree, type LucideIcon } from "lucide-react";
+import { Database, FileText, Layers, ListTree, Network, Share2, type LucideIcon } from "lucide-react";
 import type { StageState, StepId } from "./types";
 
-export const STEP_ORDER: StepId[] = ["ingest", "toc", "chunks", "index"];
+export const STEP_ORDER: StepId[] = ["ingest", "toc", "chunks", "index", "graph", "graph_index"];
 
 export const STEP_INFO: Record<StepId, { label: string; icon: LucideIcon; desc: string; review: string; note?: string }> = {
   ingest: {
@@ -30,6 +30,45 @@ export const STEP_INFO: Record<StepId, { label: string; icon: LucideIcon; desc: 
     note: "Nếu sau này sửa mục lục hoặc chia đoạn lại, hãy làm lại bước này để kho tri thức khớp nội dung mới nhất.",
     review: "Kiểm tra số đoạn đã lưu khớp với số đoạn ở bước Chia đoạn. Sau khi xác nhận, nội dung sách sẵn sàng cho trợ lý AI sử dụng.",
   },
+  graph: {
+    label: "Trích quan hệ",
+    icon: Share2,
+    desc: "AI đọc từng bài bệnh/thuốc và trích quan hệ theo đúng loại quan hệ của PrimeKG và DermO (triệu chứng, thuốc điều trị, chống chỉ định, tác dụng phụ, biến chứng...). Mỗi quan hệ kèm câu trích nguyên văn trong sách; câu không có thật trong đoạn bị loại. Tên thuật ngữ được khớp vào nút có sẵn của đồ thị.",
+    note: "Làm song song được với bước Kho tri thức. Kết quả chỉ là gợi ý, không phải chẩn đoán.",
+    review: "Lọc “Chưa khớp” để chọn nút đúng hoặc loại quan hệ sai. Thực thể mới (nếu bật trong Cài đặt) cần được chấp nhận trước khi lưu.",
+  },
+  graph_index: {
+    label: "Lưu đồ thị",
+    icon: Network,
+    desc: "Ghi các quan hệ đã khớp đủ hai đầu vào đồ thị tri thức (Neo4j), mỗi cạnh ghi rõ tên sách và số trang. Không sửa dữ liệu PrimeKG/DermO gốc; làm lại bước này sẽ thay toàn bộ cạnh cũ của sách.",
+    note: "Trợ lý AI chỉ dùng các cạnh này khi cấu hình KG_EDGE_SOURCES có “DOC”.",
+    review: "Kiểm tra số cạnh đã lưu và các quan hệ bị bỏ qua (nếu có).",
+  },
+};
+
+/** Nhãn ngắn của loại quan hệ (khớp `pipeline/document_ingest/graph_schema.py`). */
+export const RELATION_LABELS: Record<string, string> = {
+  DISEASE_PHENOTYPE_POSITIVE: "có triệu chứng",
+  DISEASE_PHENOTYPE_NEGATIVE: "không có triệu chứng",
+  DISEASE_DISEASE: "thể bệnh",
+  IS_A: "là một thể của",
+  INDICATION: "điều trị",
+  OFF_LABEL_USE: "ngoài chỉ định",
+  CONTRAINDICATION: "chống chỉ định",
+  EXPOSURE_DISEASE: "tác nhân",
+  DISEASE_PROTEIN: "gen liên quan",
+  RESULTS_IN: "gây biến chứng",
+  ASSOCIATED_WITH: "đi kèm",
+  DRUG_EFFECT: "tác dụng phụ",
+};
+
+export const ENTITY_LABELS: Record<string, string> = {
+  disease: "Bệnh",
+  "effect/phenotype": "Triệu chứng",
+  drug: "Thuốc",
+  exposure: "Tác nhân",
+  "gene/protein": "Gen",
+  dermo: "DermO",
 };
 
 export const LEVELS = [
