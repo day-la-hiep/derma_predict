@@ -39,6 +39,35 @@ class DocumentChunk(BaseModel):
     chars: int
 
 
+class GraphNodeRef(BaseModel):
+    """Một đầu của `DocumentTriple`: chữ trong sách + nút graph đã khớp. `kg="doc"` = thực thể mới đề xuất từ sách
+    (chưa có trong PrimeKG/DermO), chỉ nạp khi người duyệt chấp nhận."""
+
+    kg: Literal["primekg", "dermo", "doc"]
+    type: str  # `pipeline/document_ingest/graph_schema.py::ENTITY_TYPES`
+    text: str  # chữ trong sách
+    en: str = ""  # tên tiếng Anh LLM đưa ra để khớp
+    node_id: str | None = None  # None = chưa khớp
+    name: str = ""  # tên nút đã khớp
+    link_method: str = ""  # exact | llm | manual | new
+
+
+class DocumentTriple(BaseModel):
+    """Một quan hệ trích từ sách (`triples.jsonl`, bước `graph`). `subject` -> `object` đúng chiều cạnh trong Neo4j;
+    `slot` (ô LLM điền) cho biết đầu nào là chủ đề của mục sách."""
+
+    triple_id: str  # tất định theo nội dung để override của người duyệt giữ được khi chạy lại
+    document_id: str
+    slot: str
+    relation: str  # relationship type Neo4j, vd INDICATION, RESULTS_IN
+    subject: GraphNodeRef
+    object: GraphNodeRef
+    evidence: str  # câu trích nguyên văn trong chunk
+    chunk_ids: list[str]
+    pages: list[int]
+    status: Literal["ok", "unlinked", "rejected"]
+
+
 class DocumentFigure(BaseModel):
     """Một ảnh (hình minh hoạ, sơ đồ, biểu đồ) được trích từ trang của `Document` type "book". Nguồn: bước Đọc nội dung
     (engine docling) -> `figures.json`. `caption` là chữ chú thích đi kèm trong sách để tìm kiếm, không phải mô tả do AI sinh."""

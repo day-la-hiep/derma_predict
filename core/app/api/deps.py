@@ -1,6 +1,7 @@
 """Quản lý vòng đời các instance + provider DI"""
 
 import threading
+from pathlib import Path
 from collections.abc import AsyncGenerator, Callable
 from typing import Annotated, Any, TypeVar
 
@@ -29,6 +30,7 @@ from app.repositories.medical_record_repository import MedicalRecordRepository
 from app.repositories.patient_profile_repository import PatientProfileRepository
 from app.services.file_store_service import FileStoreService
 from app.repositories.document_repository import DocumentRepository
+from app.services.document_graph_service import DocumentGraphService
 from app.services.document_service import DocumentService
 from app.services.conversation_service import ConversationService
 from app.services.knowledge_base_service import KnowledgeBaseService
@@ -140,6 +142,13 @@ def get_document_repository() -> DocumentRepository:
     return _singleton("document_repository", lambda: DocumentRepository(get_document_file_store(), get_postgres_client().sync_session_factory))
 
 
+def get_document_graph_service() -> DocumentGraphService:
+    return _singleton(
+        "document_graph_service",
+        lambda: DocumentGraphService(get_document_repository(), get_neo4j_client(), Path(settings.GRAPH_LEXICON_DIR)),
+    )
+
+
 def get_document_service() -> DocumentService:
     return _singleton(
         "document_service",
@@ -147,6 +156,7 @@ def get_document_service() -> DocumentService:
             get_document_repository(),
             get_qdrant_client(),
             settings.QDRANT_DOCUMENT_COLLECTION,
+            graph=get_document_graph_service(),
         ),
     )
 
@@ -161,6 +171,7 @@ def get_document_ingest_pipeline_service() -> DocumentIngestPipelineService:
             embedding=get_embedding_client(),
             rabbitmq=get_rabbitmq_client(),
             redis=get_redis_client(),
+            graph=get_document_graph_service(),
         ),
     )
 

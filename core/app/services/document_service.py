@@ -33,6 +33,7 @@ from app.infra.qdrant_client import QdrantVectorClient, eq_filter
 from app.models.document_profile import Profile
 from app.models.document_stage import STAGE_BY_ID, STAGES
 from app.repositories.document_repository import DocumentRepository, now_iso
+from app.services.document_graph_service import DocumentGraphService
 from pipeline.document_ingest.profile import ProfileError, default_profile
 from pipeline.document_ingest.textutil import sha
 
@@ -61,10 +62,12 @@ def temp_root() -> Path:
 
 
 class DocumentService:
-    def __init__(self, repository: DocumentRepository, qdrant: QdrantVectorClient, collection: str) -> None:
+    def __init__(self, repository: DocumentRepository, qdrant: QdrantVectorClient, collection: str,
+                 graph: DocumentGraphService | None = None) -> None:
         """`repository` = repository tài liệu"""
         self._repo, self.files = repository, repository.files
         self._qdrant, self.collection = qdrant, collection
+        self.graph = graph
         self.files.ensure_bucket()
 
     # ---- tiện ích trên repository ----
@@ -504,8 +507,10 @@ class DocumentService:
         )
 
     def _delete(self, document_id: str) -> None:
-        """Xoá tài liệu: mọi đối tượng trong MinIO + các đoạn đã lưu trong Qdrant."""
+        """Xoá tài liệu: mọi đối tượng trong MinIO + các đoạn đã lưu trong Qdrant + cạnh đã nạp vào Neo4j."""
         self.delete_chunks(document_id)
+        if self.graph is not None:
+            self.graph.delete_document(document_id)
         self._repo.delete(document_id)
         shutil.rmtree(temp_root() / document_id, ignore_errors=True)
 
@@ -525,6 +530,8 @@ class DocumentService:
             boundary_level=p.chunking.boundary_level,
             breadcrumb=p.chunking.breadcrumb,
             text_language=p.indexing.text_language,
+            graph_allow_new_entities=p.graph.allow_new_entities,
+            graph_chunks_per_call=p.graph.chunks_per_call,
         )
 
     def update_settings(self, document_id: str, body: DocumentSettings) -> DocumentSettings:
@@ -547,6 +554,7 @@ class DocumentService:
             body.breadcrumb,
         )
         p.indexing.text_language = body.text_language
+        p.graph.allow_new_entities, p.graph.chunks_per_call = body.graph_allow_new_entities, body.graph_chunks_per_call
         self.save_profile(self._repo, document_id, p)
         self._repo.update_meta(document_id, title=title)
         return self.get_settings(document_id)

@@ -1,6 +1,6 @@
 ---
 name: derma-pipeline-conventions
-description: Conventions for the Derma document-ingest pipeline (`core/pipeline/document_ingest/` — PDF document → table-of-contents-anchored chunks → Qdrant, admin UI at /doctor/documents) — the 4-stage model (ingest/toc/chunks/index), the StageContext contract, the `app/dto/base/document.py` business entities (`Document`/`DocumentChunk`/`DocumentStage`/`DocumentStageOverride`), where transformation logic vs infra clients vs persistence go, and how to add or modify a stage. Use whenever the user asks to add/modify a pipeline stage, touches `pipeline/document_ingest/`, `app/services/document_*.py`, `app/repositories/document_repository.py`, asks about document/book/TOC/chunk ingestion, or asks where document-ingest code should live — even if they don't say "pipeline" or "convention".
+description: Conventions for the Derma document-ingest pipeline (`core/pipeline/document_ingest/` — PDF document → table-of-contents-anchored chunks → Qdrant, admin UI at /doctor/documents) — the 6-stage model (ingest/toc/chunks/index + graph/graph_index → Neo4j), the StageContext contract, the `app/dto/base/document.py` business entities (`Document`/`DocumentChunk`/`DocumentTriple`/`DocumentStage`/`DocumentStageOverride`), where transformation logic vs infra clients vs persistence go, and how to add or modify a stage. Use whenever the user asks to add/modify a pipeline stage, touches `pipeline/document_ingest/`, `app/services/document_*.py`, `app/repositories/document_repository.py`, asks about document/book/TOC/chunk ingestion, or asks where document-ingest code should live — even if they don't say "pipeline" or "convention".
 ---
 
 # Derma document-ingest pipeline (`pipeline/document_ingest/`) — conventions
@@ -29,6 +29,17 @@ PDF → ingest (text/page)  → toc (LLM reads TOC, human reviews) → mapping (
 | `toc` | `stages/toc.py` + `mapping.py` | `toc.auto.json` (machine), `toc.json` (+ overrides + offset + anchor) | reads a few dozen TOC pages |
 | `chunks` | `stages/chunks.py` | `chunks.jsonl`, `review/chunks.json` | no |
 | `index` | `stages/index.py` (+ `DocumentService`) | `index.json` + points in Qdrant | no (embedding via OpenRouter) |
+| `graph` | `stages/graph.py` + `graph_schema.py` + `graph_link.py` | `graph/topics.json`, `graph/unmapped.json`, `triples.auto.jsonl` (machine), `triples.jsonl` (+ overrides) | classify TOC topics, slot-filling, pick among match candidates |
+| `graph_index` | `stages/graph_index.py` (+ `DocumentGraphService`) | `graph_index.json` + edges `source='DOC'` in Neo4j | no |
+
+`graph`/`graph_index` run parallel to `index` (both depend on `chunks`). Only PrimeKG/DermO relation types are
+extracted; the registry `pipeline/document_ingest/graph_schema.py` (`ENTITY_TYPES`, `SLOTS`) drives the prompt,
+entity matching, Neo4j loading and the FE labels — **to add an entity type or relation, add it there** (plus
+`RELATION_LABELS`/`ENTITY_LABELS` in FE `constants.ts`). Names are matched against `EntityLexicon` (full PrimeKG
+`entity_lexicon.csv` + DermO, loaded by `DocumentGraphService.lexicon()` from `settings.GRAPH_LEXICON_DIR`).
+Reviewer overrides (stage `graph`): `rejected`, `relink` (per triple side, expanded to every triple with the same
+term), `accepted_nodes` (new `doc_*` entities, only when `profile.graph.allow_new_entities`). Gotchas (PrimeKG id
+collisions across node types, topic misclassification, `KG_EDGE_SOURCES`): `docs/notice/document-graph-extract.md`.
 
 Stage order/deps live in `app/models/document_stage.py` (`STAGES`, `downstream()`) — the single
 source of truth, shared by repository, runner, and API. `toc` does **not** depend on `ingest`:
@@ -88,6 +99,8 @@ reviewer) and, if it supports re-applying overrides without an LLM call, `reappl
 - `ctx.meta() -> dict` / `ctx.overrides(stage_id) -> dict` — bound callables reading Postgres
   (`DocumentRepository.meta`/`DocumentOverrideRepository.get`) for this `document_id`.
 - `ctx.profile: Profile` — this document's settings (`app/models/document_profile.py`).
+- `ctx.lexicon` / `ctx.graph` — `EntityLexicon` and the `GraphStore` protocol (Neo4j, implemented by
+  `DocumentGraphService`), only wired for the graph stages; `ctx.require_lexicon()` / `ctx.require_graph()`.
 - `ctx.llm` / `ctx.docling` / `ctx.embedding` / `ctx.vectors` — injected clients, `None` if not
   configured for this run; use `ctx.require_llm()` etc. to get-or-raise `StageError` with a
   reviewer-facing message.
@@ -160,7 +173,7 @@ lại. `run_stage` (đồng bộ) vẫn dùng cho test/script. `document_stages`
 
 ## Testing
 
-`python -m unittest pipeline.document_ingest.tests.test_document_pipeline pipeline.document_ingest.tests.test_api pipeline.document_ingest.tests.test_storage_index`
+`python -m unittest pipeline.document_ingest.tests.test_document_pipeline pipeline.document_ingest.tests.test_api pipeline.document_ingest.tests.test_storage_index pipeline.document_ingest.tests.test_graph`
 — verified 2026-10-04, 37 tests pass. Uses `tests/memory_infra.py`'s `MemoryMinio` + a temp SQLite
 file (in place of Postgres) + `QdrantClient(":memory:")` + a fake embedder — no real
 MinIO/Postgres/Qdrant service needs to be running for these tests.

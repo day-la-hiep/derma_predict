@@ -131,3 +131,46 @@ class ChunkListOutput(BaseModel):
     page: int
     page_size: int
     counts: dict[str, Any] = {}
+
+
+class GraphNodeRefOutput(BaseModel):
+    """Field khớp `GraphNodeRef`."""
+
+    kg: str
+    type: str
+    text: str
+    en: str = ""
+    node_id: str | None = None
+    name: str = ""
+    link_method: str = ""
+
+
+class TripleOutput(BaseModel):
+    """Một quan hệ trích từ sách — nguồn: `pipeline/document_ingest/stages/graph.py` (`triples.jsonl`)."""
+
+    triple_id: str
+    slot: str
+    relation: str
+    subject: GraphNodeRefOutput
+    object: GraphNodeRefOutput
+    evidence: str
+    chunk_ids: list[str]
+    pages: list[int]
+    status: str
+
+
+class TripleListOutput(BaseModel):
+    items: list[TripleOutput]
+    total: int
+    page: int
+    page_size: int
+    counts: dict[str, Any] = {}
+    accepted_nodes: list[str] = []
+
+
+class GraphNodeOutput(BaseModel):
+    kg: str
+    type: str
+    id: str
+    name: str
+    source: str = ""

@@ -6,9 +6,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import Response
 
-from app.api.deps import get_document_ingest_pipeline_service, get_document_service
+from app.api.deps import get_document_graph_service, get_document_ingest_pipeline_service, get_document_service
 from app.dto.common import ApiResponse
-from app.dto.request.document import RunStageInput, DocumentSettings, TocUpdate
+from app.dto.request.document import RunStageInput, DocumentSettings, TocUpdate, TripleUpdate
 from app.dto.response.document import (
     SourcePageOutput,
     TocOutput,
@@ -16,7 +16,10 @@ from app.dto.response.document import (
     DocumentSummary,
     ChunkListOutput,
     FigureOutput,
+    GraphNodeOutput,
+    TripleListOutput,
 )
+from app.services.document_graph_service import DocumentGraphService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
 from app.services.document_service import DocumentService
 
@@ -26,6 +29,7 @@ Service = Annotated[
     DocumentIngestPipelineService, Depends(get_document_ingest_pipeline_service)
 ]
 Documents = Annotated[DocumentService, Depends(get_document_service)]
+Graph = Annotated[DocumentGraphService, Depends(get_document_graph_service)]
 
 
 async def _call(fn: Any, *args: Any) -> Any:
@@ -265,3 +269,44 @@ async def export_chunks(document_id: str, documents: Documents) -> Response:
             "Content-Disposition": f'attachment; filename="{document_id}-chunks.jsonl"'
         },
     )
+
+
+# ------------------------------------------------------------------ quan hệ trích từ sách (graph)
+@router.get(
+    "/documents/{document_id}/triples",
+    response_model=ApiResponse[TripleListOutput],
+    operation_id="listDocumentTriples",
+)
+async def list_triples(
+    document_id: str,
+    graph: Graph,
+    q: str = "",
+    status: str = "",
+    relation: str = "",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> ApiResponse[TripleListOutput]:
+    return ApiResponse(data=await _call(graph.list_triples, document_id, q, status, relation, page, page_size))
+
+
+@router.patch(
+    "/documents/{document_id}/triples",
+    response_model=ApiResponse[DocumentOutput],
+    operation_id="updateDocumentTriples",
+)
+async def update_triples(document_id: str, body: TripleUpdate, svc: Service) -> ApiResponse[DocumentOutput]:
+    return ApiResponse(data=await _call(svc.update_triples, document_id, body))
+
+
+@router.get(
+    "/graph/nodes",
+    response_model=ApiResponse[list[GraphNodeOutput]],
+    operation_id="searchGraphNodes",
+)
+async def search_graph_nodes(
+    graph: Graph,
+    type: str,
+    q: str = "",
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> ApiResponse[list[GraphNodeOutput]]:
+    return ApiResponse(data=await _call(graph.search_nodes, type, q, limit))

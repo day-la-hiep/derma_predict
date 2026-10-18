@@ -40,6 +40,12 @@ class IndexingConfig(_Model):
     text_language: Literal["vi", "en", "mixed"] = "mixed"
 
 
+class GraphConfig(_Model):
+    # Thực thể sách nhắc tới nhưng không có trong PrimeKG/DermO: đề xuất làm nút mới (người duyệt vẫn phải chấp nhận từng cái).
+    allow_new_entities: bool = False
+    chunks_per_call: int = Field(default=3, ge=1, le=10)  # số chunk cùng mục gửi chung một lần gọi LLM
+
+
 class Profile(_Model):
     document_id: str
     language: str = "en"
@@ -47,3 +53,4 @@ class Profile(_Model):
     llm: LLMConfig = LLMConfig()
     chunking: ChunkingConfig = ChunkingConfig()
     indexing: IndexingConfig = IndexingConfig()
+    graph: GraphConfig = GraphConfig()
