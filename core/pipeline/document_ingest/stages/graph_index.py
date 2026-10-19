@@ -53,9 +53,9 @@ def run(ctx: StageContext) -> dict:
     pages_of: dict[tuple[str, str, str | None, str, str | None], set[int]] = {}
     merged = 0
     for t in ok:
-        rel = relation_of(t)
+        rel = relation_of(t, ctx.schema)
         if rel is None:
-            skipped["không rõ quan hệ"] += 1
+            skipped["quan hệ đã bị xoá khỏi danh mục"] += 1
             continue
         if t.subject.node_id == t.object.node_id and t.subject.type == t.object.type:
             skipped["hai đầu trùng nút (tự trỏ về chính nó)"] += 1

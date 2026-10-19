@@ -30,7 +30,9 @@ from app.repositories.medical_record_repository import MedicalRecordRepository
 from app.repositories.patient_profile_repository import PatientProfileRepository
 from app.services.file_store_service import FileStoreService
 from app.repositories.document_repository import DocumentRepository
+from app.repositories.graph_schema_repository import GraphSchemaRepository
 from app.services.document_graph_service import DocumentGraphService
+from app.services.graph_schema_service import GraphSchemaService
 from app.services.document_service import DocumentService
 from app.services.conversation_service import ConversationService
 from app.services.knowledge_base_service import KnowledgeBaseService
@@ -150,10 +152,20 @@ def get_document_repository() -> DocumentRepository:
     return _singleton("document_repository", lambda: DocumentRepository(get_document_file_store(), get_postgres_client().sync_session_factory))
 
 
+def get_graph_schema_service() -> GraphSchemaService:
+    return _singleton(
+        "graph_schema_service",
+        lambda: GraphSchemaService(GraphSchemaRepository(get_postgres_client().sync_session_factory)),
+    )
+
+
 def get_document_graph_service() -> DocumentGraphService:
     return _singleton(
         "document_graph_service",
-        lambda: DocumentGraphService(get_document_repository(), get_neo4j_client(), Path(settings.GRAPH_LEXICON_DIR)),
+        lambda: DocumentGraphService(
+            get_document_repository(), get_neo4j_client(), Path(settings.GRAPH_LEXICON_DIR),
+            schema=lambda: get_graph_schema_service().schema(include_disabled=True),
+        ),
     )
 
 
@@ -180,6 +192,7 @@ def get_document_ingest_pipeline_service() -> DocumentIngestPipelineService:
             rabbitmq=get_rabbitmq_client(),
             redis=get_redis_client(),
             graph=get_document_graph_service(),
+            graph_schema=get_graph_schema_service(),
         ),
     )
 

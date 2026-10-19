@@ -32,8 +32,9 @@ PDF → ingest (text/page)  → toc (LLM reads TOC, human reviews) → mapping (
 | `graph` | `stages/graph.py` + `graph_schema.py` + `graph_link.py` | `graph/topics.json`, `graph/unmapped.json`, `triples.auto.jsonl` (machine), `triples.jsonl` (+ overrides) | classify TOC topics, slot-filling, pick among match candidates |
 | `graph_index` | `stages/graph_index.py` (+ `DocumentGraphService`) | `graph_index.json` + edges `source='DOC'` in Neo4j | no |
 
-`graph`/`graph_index` run parallel to `index` (both depend on `chunks`). Only PrimeKG/DermO relation types are
-extracted; the registry `pipeline/document_ingest/graph_schema.py` (`ENTITY_TYPES`, `SLOTS`) drives the prompt,
+`graph`/`graph_index` run parallel to `index` (both depend on `chunks`). Core relation types are PrimeKG/DermO; doctors add their own via `/doctor/graph-schema` (`GraphSchemaService`, tables
+`graph_relations`/`graph_entity_types`, `kg="doc"`) — the stage reads the merged `ctx.schema` (`GraphSchema`, CORE_SCHEMA by default;
+`graph` gets enabled relations only, `graph_index` all). The registry `pipeline/document_ingest/graph_schema.py` (`ENTITY_TYPES`, `SLOTS`) drives the prompt,
 entity matching, Neo4j loading and the FE labels — **to add an entity type or relation, add it there** (plus
 `RELATION_LABELS`/`ENTITY_LABELS` in FE `constants.ts`). Names are matched against `EntityLexicon` (full PrimeKG
 `entity_lexicon.csv` + DermO, loaded by `DocumentGraphService.lexicon()` from `settings.GRAPH_LEXICON_DIR`).

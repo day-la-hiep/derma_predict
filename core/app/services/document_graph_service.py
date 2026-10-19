@@ -3,6 +3,7 @@ import csv
 import json
 import threading
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any, LiteralString, cast
 
 from app.dto.base.document import DocumentTriple, GraphNodeRef
@@ -12,7 +13,7 @@ from app.exception.errors import ConflictError, InvalidError, NotFoundError
 from app.infra.neo4j_client import Neo4jClient
 from app.repositories.document_repository import DocumentRepository
 from pipeline.document_ingest.graph_link import EntityLexicon, LexEntry
-from pipeline.document_ingest.graph_schema import ENTITY_TYPES, relation_types
+from pipeline.document_ingest.graph_schema import CORE_SCHEMA, GraphSchema
 
 
 def load_lexicon(kg_dir: Path) -> EntityLexicon:
@@ -43,7 +44,7 @@ def load_lexicon(kg_dir: Path) -> EntityLexicon:
 
 
 def _cypher(q: str) -> LiteralString:
-    # label / relationship type ghép vào câu lệnh chỉ lấy từ registry cố định `graph_schema.py`, không từ người dùng
+    # label / relationship type ghép vào câu lệnh lấy từ schema (registry `graph_schema.py` + định nghĩa của bác sĩ đã validate regex)
     return cast(LiteralString, q)
 
 
@@ -52,11 +53,13 @@ def _label(type_: str) -> str:
 
 
 class DocumentGraphService:
-    def __init__(self, repository: DocumentRepository, neo4j: Neo4jClient | None, lexicon_dir: Path) -> None:
+    def __init__(self, repository: DocumentRepository, neo4j: Neo4jClient | None, lexicon_dir: Path,
+                 schema: Callable[[], GraphSchema] = lambda: CORE_SCHEMA) -> None:
         self._repo, self._neo4j, self._lexicon_dir = repository, neo4j, lexicon_dir
+        self._schema = schema  # luôn gồm cả quan hệ đang tắt: cạnh đã lưu của chúng vẫn phải xoá/đếm được
         self._lexicon: EntityLexicon | None = None
         self._lock = threading.Lock()
-        self._indexed = False
+        self._indexed: set[str] = set()
 
     def lexicon(self) -> EntityLexicon:
         with self._lock:
@@ -89,17 +92,15 @@ class DocumentGraphService:
         return {r["id"]: r["type"] for r in rows}
 
     def _ensure_indexes(self) -> None:
-        if self._indexed:
-            return
         # xoá theo tài liệu không được quét toàn bộ cạnh (có ~2,6 triệu DRUG_DRUG) -> index document_id theo từng loại cạnh
-        for t in relation_types():
-            self.neo4j.run_sync(_cypher(f"CREATE INDEX doc_rel_{t.lower()} IF NOT EXISTS FOR ()-[r:{t}]-() ON (r.document_id)"))
-        self._indexed = True
+        for t in self._schema().relation_types():
+            if t not in self._indexed:
+                self.neo4j.run_sync(_cypher(f"CREATE INDEX doc_rel_{t.lower()} IF NOT EXISTS FOR ()-[r:{t}]-() ON (r.document_id)"))
+                self._indexed.add(t)
 
-    @staticmethod
-    def _delete_statements(document_id: str) -> list[tuple[LiteralString, dict[str, Any]]]:
+    def _delete_statements(self, document_id: str) -> list[tuple[LiteralString, dict[str, Any]]]:
         out: list[tuple[LiteralString, dict[str, Any]]] = [
-            (_cypher(f"MATCH ()-[r:{t} {{document_id: $d}}]->() DELETE r"), {"d": document_id}) for t in relation_types()
+            (_cypher(f"MATCH ()-[r:{t} {{document_id: $d}}]->() DELETE r"), {"d": document_id}) for t in self._schema().relation_types()
         ]
         # nút do tài liệu thêm (thực thể mới, hoặc nút PrimeKG chưa có trong subgraph): gỡ tài liệu, hết tài liệu + hết cạnh thì xoá
         for label in ("Entity", "DermoTerm"):
@@ -112,6 +113,7 @@ class DocumentGraphService:
     def replace_document(self, document_id: str, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> None:
         self._ensure_indexes()
         stmts = self._delete_statements(document_id)
+        entity_types = self._schema().entity_types
         for type_ in {n["type"] for n in nodes}:
             rows = [n for n in nodes if n["type"] == type_]
             if type_ == "dermo":
@@ -120,7 +122,7 @@ class DocumentGraphService:
                      "ON MATCH SET n.added_by = CASE WHEN n.added_by IS NULL THEN NULL ELSE n.added_by + $d END")
             else:
                 q = (f"UNWIND $rows AS row MERGE (n:Entity {{id: row.id}}) "
-                     f"ON CREATE SET n:{ENTITY_TYPES[type_].label}, n.name = row.name, n.type = row.type, n.source = row.source, "
+                     f"ON CREATE SET n:{entity_types[type_].label}, n.name = row.name, n.type = row.type, n.source = row.source, "
                      "n.added_by = [$d] "
                      "ON MATCH SET n.added_by = CASE WHEN n.added_by IS NULL THEN NULL ELSE n.added_by + $d END")
             stmts.append((_cypher(q), {"rows": rows, "d": document_id}))
@@ -137,7 +139,11 @@ class DocumentGraphService:
 
     def count_edges(self, document_id: str) -> int:
         return sum(self.neo4j.run_sync(_cypher(f"MATCH ()-[r:{t} {{document_id: $d}}]->() RETURN count(r) AS c"), d=document_id)[0]["c"]
-                   for t in relation_types())
+                   for t in self._schema().relation_types())
+
+    def delete_relation_edges(self, relation_type: str) -> None:
+        # chỉ cạnh từ tài liệu; cạnh gốc PrimeKG/DermO cùng loại (nếu có) không bị đụng
+        self.neo4j.run_sync(_cypher(f"MATCH ()-[r:{relation_type} {{source: 'DOC'}}]->() DELETE r"))
 
     def delete_document(self, document_id: str) -> None:
         """Gỡ mọi cạnh/nút tài liệu đã nạp; tài liệu chưa từng nạp graph thì không đụng tới Neo4j."""
@@ -216,7 +222,7 @@ class DocumentGraphService:
         self._repo.overrides.write(document_id, "graph", ov)
 
     def search_nodes(self, type_: str, q: str, limit: int) -> list[GraphNodeOutput]:
-        if type_ not in ENTITY_TYPES:
+        if type_ not in self._schema().entity_types:
             raise InvalidError(f"Loại thực thể không hợp lệ: {type_}")
         if not q.strip():
             return []

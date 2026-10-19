@@ -2,7 +2,8 @@
 from dataclasses import dataclass
 from typing import Literal
 
-# Thêm loại thực thể / quan hệ mới: khai báo ở đây (prompt, khớp, nạp Neo4j và UI đều đọc từ bảng này).
+# Loại thực thể / quan hệ core khai báo ở đây (prompt, khớp, nạp Neo4j và UI đều đọc từ bảng này). Bác sĩ thêm loại riêng qua
+# `GraphSchemaService` (Postgres); bước graph luôn đọc `GraphSchema` gộp cả hai.
 # Quan hệ phải là loại đã có trong PrimeKG/DermO để template của agent (`kg_templates.py`) dùng được ngay.
 
 KG = Literal["primekg", "dermo", "doc"]
@@ -93,3 +94,25 @@ def relation_types() -> list[str]:
 
 def relation(kg: str, type_: str) -> Relation | None:
     return next((r for s in SLOTS for r in s.relations if r.kg == kg and r.type == type_), None)
+
+
+@dataclass(frozen=True)
+class GraphSchema:
+    entity_types: dict[str, EntityType]
+    slots: list[Slot]
+
+    def slot(self, id_: str) -> Slot | None:
+        return next((s for s in self.slots if s.id == id_), None)
+
+    def slots_for(self, topic: str) -> list[Slot]:
+        return [s for s in self.slots if s.topic == topic]
+
+    def relation_types(self) -> list[str]:
+        return sorted({r.type for s in self.slots for r in s.relations})
+
+    def relation_of(self, slot_id: str, type_: str) -> Relation | None:
+        slot = self.slot(slot_id)
+        return next((r for r in slot.relations if r.type == type_), None) if slot else None
+
+
+CORE_SCHEMA = GraphSchema(ENTITY_TYPES, SLOTS)

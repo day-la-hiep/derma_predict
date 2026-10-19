@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { Chips, EmptyState, Pager, SearchBox, selectCls } from "./bits";
 import { PageChip } from "./PagePreview";
 import { documentApi } from "../api";
-import { ENTITY_LABELS, RELATION_LABELS } from "../constants";
+import { useSchemaLabels } from "@/features/graph-schema/hooks";
 import { useData, usePage, useUpdateTriples } from "../hooks";
 import type { GraphNodeRef, Triple, TripleUpdate } from "../types";
 
@@ -76,10 +76,11 @@ function NodePicker({ side, onPick, onClose }: { side: GraphNodeRef; onPick: (id
 }
 
 function Side({ r, picking, onPick, accepted }: { r: GraphNodeRef; picking: boolean; onPick: () => void; accepted: boolean }) {
+  const labels = useSchemaLabels();
   const isNew = r.link_method === "new";
   return (
     <div className="min-w-0 flex-1 space-y-0.5">
-      <p className="text-[10px] text-muted-foreground">{ENTITY_LABELS[r.type] ?? r.type}</p>
+      <p className="text-[10px] text-muted-foreground">{labels.entity(r.type)}</p>
       <p className="truncate text-xs font-medium text-foreground" title={r.text}>
         {r.text || r.en}
       </p>
@@ -88,7 +89,7 @@ function Side({ r, picking, onPick, accepted }: { r: GraphNodeRef; picking: bool
           <Hint content={`${METHOD_HINT[r.link_method] ?? ""} ${r.node_id}`}>
             <span className={cn("inline-flex min-w-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px]", KG_TONE[r.kg])}>
               <span className="truncate">{r.name}</span>
-              {isNew && <span className="shrink-0 font-semibold">{accepted ? "mới ✓" : "mới"}</span>}
+              {isNew && <span className="shrink-0 font-semibold">{accepted || labels.custom(r.type) ? "mới ✓" : "mới"}</span>}
               {r.link_method === "llm" && <span className="shrink-0 opacity-70">AI</span>}
             </span>
           </Hint>
@@ -118,9 +119,10 @@ function TripleCard({
   onUpdate: (b: TripleUpdate) => void;
   onPreview: (p: number) => void;
 }) {
+  const labels = useSchemaLabels();
   const [picking, setPicking] = useState<"subject" | "object" | null>(null);
   const sides = { subject: t.subject, object: t.object };
-  const newIds = [t.subject, t.object].filter((s) => s.link_method === "new" && s.node_id).map((s) => s.node_id as string);
+  const newIds = [t.subject, t.object].filter((s) => s.link_method === "new" && s.node_id && !labels.custom(s.type)).map((s) => s.node_id as string);
   const manual = (["subject", "object"] as const).filter((k) => sides[k].link_method === "manual");
   return (
     <article className={cn("space-y-2 rounded-2xl border bg-card p-3", t.status === "rejected" ? "border-border opacity-60" : t.status === "unlinked" ? "border-amber-500/40" : "border-border")}>
@@ -128,7 +130,7 @@ function TripleCard({
         <Side r={t.subject} accepted={accepted.has(t.subject.node_id ?? "")} picking={picking === "subject"} onPick={() => setPicking(picking === "subject" ? null : "subject")} />
         <div className="flex shrink-0 flex-col items-center px-1 pt-3">
           <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium whitespace-nowrap text-foreground" title={t.relation}>
-            {RELATION_LABELS[t.relation] ?? t.relation}
+            {labels.relation(t.relation)}
           </span>
           <ArrowRight className="size-3.5 text-muted-foreground" />
         </div>
@@ -182,6 +184,7 @@ function TripleCard({
 }
 
 export function TripleBrowser({ documentId, onPreview }: { documentId: string; onPreview: (p: number) => void }) {
+  const labels = useSchemaLabels();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("all");
   const [relation, setRelation] = useState("");
@@ -216,7 +219,7 @@ export function TripleBrowser({ documentId, onPreview }: { documentId: string; o
             <option value="">Mọi quan hệ</option>
             {Object.entries(counts.by_relation ?? {}).map(([r, n]) => (
               <option key={r} value={r}>
-                {RELATION_LABELS[r] ?? r} ({n})
+                {labels.relation(r)} ({n})
               </option>
             ))}
           </select>
