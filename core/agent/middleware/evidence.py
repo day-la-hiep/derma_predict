@@ -28,16 +28,12 @@ _RETRIEVAL_TOOLS = {"hybrid_retrieval", "semantic_search", "keyword_search", "kn
 _JSON_RESULT_TOOLS = {"hybrid_retrieval", "semantic_search", "keyword_search", "knowledge_graph_query"}
 _WEB_MARKER = "[DỮ LIỆU NGOÀI TỪ WEB"
 
+from agent.common.text_utils import tokenize
+
 # Dữ kiện "user" phải trùng ít nhất chừng này từ khoá với lời người dùng (kể cả câu trả lời `ask_user`) — đủ rộng cho cách diễn
 # đạt lại, đủ chặt để bắt chi tiết chưa từng được nói.
 _MIN_OVERLAP = 0.5
-_WORD = re.compile(r"\w+", re.UNICODE)
-_STOP = {
-    "có", "không", "và", "của", "là", "bị", "ở", "cũng", "đang", "với", "một", "các", "những", "này", "khi", "để", "đã", "rất", "thì",
-    "mà", "cho", "từ", "tại", "ra", "vào", "nhưng", "hoặc", "nên", "như", "được", "tôi", "em", "anh", "chị", "bác", "sĩ", "ơi",
-    # từ "kể lại" (model hay viết "người dùng trả lời ... khi được hỏi ...") — không mang thông tin y khoa nên không tính
-    "người", "dùng", "trả", "lời", "hỏi", "nói", "biết", "về", "mô", "tả",
-}
+_tokens = tokenize
 
 Status = Literal["untried", "none", "found"]
 
@@ -73,8 +69,6 @@ def evidence_status(turn: list[AnyMessage]) -> Status:
     return "none" if tried else "untried"
 
 
-def _tokens(text: str) -> set[str]:
-    return {w for w in _WORD.findall(text.lower()) if len(w) >= 2 and w not in _STOP}
 
 
 def user_text(messages: list[AnyMessage]) -> str:

@@ -283,8 +283,9 @@ from app.services.consultation_service import ConsultationService
 def get_consultation_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     redis: Annotated[RedisClient, Depends(get_redis_client)],
+    rabbitmq: Annotated[RabbitMQClient, Depends(get_rabbitmq_client)],
 ) -> ConsultationService:
-    return ConsultationService(db, redis)
+    return ConsultationService(db, redis, rabbitmq)
 
 
 def get_user_repository(

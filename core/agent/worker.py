@@ -7,6 +7,7 @@ from collections import defaultdict
 from aio_pika.abc import AbstractIncomingMessage
 
 from agent.dto.schemas import TurnRequest
+from agent.handler.consultation_report import handle_consultation_report
 from agent.turn import handle_resume, handle_turn
 from app.config.log import request_id_var, setup_logging
 from app.config.settings import log_startup_infra, settings
@@ -33,7 +34,9 @@ async def _on_message(message: AbstractIncomingMessage) -> None:
         async with _conversation_locks[req.conversation_id]:
             try:
                 logger.info("turn bắt đầu: type=%s conversation=%s", req.type, req.conversation_id)
-                if req.type == "resume":
+                if req.type == "consultation_report":
+                    await handle_consultation_report(req)
+                elif req.type == "resume":
                     await handle_resume(req)
                 else:
                     await handle_turn(req)
