@@ -10,6 +10,7 @@ from agent.dto.schemas import AgentResponseMessage
 from app.config.constants import AGENT_ACTIVE_TURN_KEY, AGENT_RESPONSE_QUEUE
 from app.api.deps import get_postgres_client, get_rabbitmq_client, get_redis_client
 from app.repositories.message_repository import MessageRepository
+from app.services.consultation_service import ConsultationService
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,19 @@ async def _on_message(message: AbstractIncomingMessage) -> None:
             msg = AgentResponseMessage.model_validate(payload)
         except Exception as exc:  # noqa: BLE001
             logger.warning("message không hợp lệ: %s", exc)
+            return
+
+        # Task sinh báo cáo tiền tư vấn (không phải assistant turn thông thường)
+        if msg.status in ("report_ready", "report_failed"):
+            if msg.session_id:
+                async with get_postgres_client().session_factory() as db:
+                    service = ConsultationService(db, get_redis_client(), get_rabbitmq_client())
+                    await service.save_generated_report(
+                        session_id=msg.session_id,
+                        summary=msg.report_summary or "",
+                        facts=msg.facts or [],
+                        provenance_pairs=msg.provenance_pairs or [],
+                    )
             return
 
         # `Message.extra` cho row assistant CHỈ gồm 2 field này (`reasoning`/`choice`,

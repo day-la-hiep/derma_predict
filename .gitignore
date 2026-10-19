@@ -3,10 +3,27 @@
 /data
 # secrets compose prod (mẫu: .env.prod.example)
 /.env
-/cli_input
 .vscode
 reference
 .env
 draft.md
 .agents
-/tmp
+
+# Virtual environments & Python cache
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# Node & Next.js builds
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+
+# Backup / duplicate directory
+derma_hospital/
+
+# PDF assets
+*.pdf

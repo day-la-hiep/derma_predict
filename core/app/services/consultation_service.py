@@ -2,14 +2,16 @@
 import json
 from dataclasses import dataclass
 import logging
+from typing import Any
 import uuid
 from datetime import UTC, datetime
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent.common.llm import get_model
+from agent.dto.schemas import TurnRequest
+from app.api.deps import get_rabbitmq_client
 from app.common.constant import MessageSender, MessageType
+from app.config.constants import AGENT_REQUEST_QUEUE
 from app.dto.consultation import (
     ClinicalFactOutput,
     ConsultationSessionOutput,
@@ -18,6 +20,7 @@ from app.dto.consultation import (
 )
 from app.dto.response.message import MessageMetadataDto, MessageOutput
 from app.exception.errors import ConflictError, ForbiddenError, NotFoundError
+from app.infra.rabbitmq_client import RabbitMQClient
 from app.infra.redis_client import RedisClient
 from app.models.clinical import (
     ClinicalFact,
@@ -36,39 +39,6 @@ from app.services.room_events import publish_inbox, publish_room
 
 logger = logging.getLogger(__name__)
 
-REPORT_SYSTEM_PROMPT = """Bạn là trợ lý y khoa chuyên sâu da liễu.
-Nhiệm vụ của bạn là phân tích các nguồn dữ liệu lâm sàng của bệnh nhân (dữ kiện lâm sàng đã biết, tóm tắt các lần khám trước, và đoạn hội thoại đợt khám hiện tại giữa bệnh nhân và trợ lý AI), sau đó:
-1. Rút trích các DỮ KIỆN LÂM SÀNG (clinical facts) mới hoặc cập nhật từ đoạn hội thoại hiện tại.
-2. Soạn một BÁO CÁO TIỀN TƯ VẤN (Pre-consultation Report) súc tích, chuyên nghiệp cho Bác sĩ da liễu đọc trước khi nhận ca, kết hợp tiền sử bệnh nhân và diễn biến đợt khám này.
-
-Mỗi tin trong đoạn hội thoại hiện tại có số thứ tự dạng `[#3][PATIENT]: ...`.
-
-BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON SAU (không kèm markdown code block hoặc text thừa):
-{
-  "facts": [
-    {
-      "template_label": "Tên chuẩn của triệu chứng/tổn thương/thuốc",
-      "fact_type": "symptom | lesion | history | medication | allergy | image_finding | other",
-      "detail": "Mô tả chi tiết cụ thể của bệnh nhân",
-      "source_messages": [3]
-    }
-  ],
-  "summary": "Nội dung tóm tắt lâm sàng (định dạng Markdown)"
-}
-
-Yêu cầu cho phần `summary` (dùng Markdown chuyên nghiệp):
-- ## Tiền sử & Cơ địa đã biết: Tóm tắt ngắn gọn dị ứng, bệnh nền, thuốc đã/đang dùng từ dữ kiện trước đây (nếu có).
-- ## Diễn biến các lần khám trước: Tóm tắt chẩn đoán hoặc diễn biến từ lần khám trước (nếu có).
-- ## Lý do khám & Bệnh sử đợt này: Tóm tắt triệu chứng chính, thời gian khởi phát ghi nhận từ hội thoại đợt này.
-- ## Vị trí & Đặc điểm tổn thương: Mô tả hình thái, vị trí vùng da bị bệnh đợt này.
-- ## Đánh giá sơ bộ của AI: 1–3 bệnh nghi ngờ xếp theo độ phù hợp, độ tin cậy (Cao/Vừa/Thấp), có đối chiếu với tiền sử/diễn biến cũ nếu liên quan.
-- ## Dấu hiệu cờ đỏ (Red Flags): Đã kiểm tra loại trừ hay nghi ngờ có cờ đỏ gì.
-- ## Đề xuất cho Bác sĩ tiếp quản: Gợi ý câu hỏi lâm sàng cần làm rõ hoặc cận lâm sàng nên chỉ định.
-- Lưu ý: Ghi rõ 'Kết luận AI chỉ mang tính chất tham khảo hỗ trợ tiền lâm sàng' ở cuối.
-
-Yêu cầu cho `source_messages`: số thứ tự các tin trong đoạn hội thoại hiện tại chứa bằng chứng cho fact đó (ưu tiên tin của bệnh nhân); không bịa số không có trong hội thoại.
-"""
-
 
 @dataclass(frozen=True)
 class RoomAccess:
@@ -78,9 +48,12 @@ class RoomAccess:
 
 
 class ConsultationService:
-    def __init__(self, db: AsyncSession, redis: RedisClient) -> None:
+    def __init__(
+        self, db: AsyncSession, redis: RedisClient, rabbitmq: RabbitMQClient | None = None
+    ) -> None:
         self._db = db
         self._redis = redis
+        self._rabbitmq = rabbitmq or get_rabbitmq_client()
         self._repo = ConsultationRepository(db)
         self._conv_repo = ConversationRepository(db)
         self._msg_repo = MessageRepository(db)
@@ -154,7 +127,7 @@ class ConsultationService:
 
     async def _post_marker(
         self, session: ConsultationSession, message_type: MessageType, sender: MessageSender, actor_id: str
-    ) -> None:
+    ) -> Message:
         """Tin mốc đầu/cuối phiên tư vấn: hiện thành đường chia trong luồng chat của cả 3 bên."""
         user = await self._db.get(User, actor_id)
         name = user.full_name if user else "Bác sĩ"
@@ -188,6 +161,7 @@ class ConsultationService:
             msg.conversation_id,
             {"type": "message.created", "message": out.model_dump(mode="json")},
         )
+        return msg
 
     async def room_access(self, conversation_id: str, user_id: str) -> "RoomAccess":
         """Ai được xem hội thoại và tới đâu: chủ hội thoại xem hết; bác sĩ xem từ đầu tới hết phiên gần nhất của mình."""
@@ -284,7 +258,7 @@ class ConsultationService:
     async def request_consultation(
         self, conversation_id: str, user_id: str, reason: str = "Bệnh nhân yêu cầu bác sĩ tư vấn"
     ) -> ConsultationSessionOutput:
-        """Kích hoạt tạo phiên tư vấn & gọi LLM sinh báo cáo tiền tư vấn AI."""
+        """Kích hoạt tạo phiên tư vấn & gửi task qua RabbitMQ cho Agent Worker sinh báo cáo bất đồng bộ."""
         conv = await self._conv_repo.get(conversation_id)
         if conv is None:
             raise NotFoundError("Không tìm thấy hội thoại.")
@@ -299,7 +273,7 @@ class ConsultationService:
             rep = await self._repo.get_report(existing.id)
             return self._to_output(existing, conv_title, rep, patient=patient)
 
-        # 2. Tạo session mới
+        # 2. Tạo session mới (trạng thái pending)
         session_id = f"cs-{uuid.uuid4()}"
         session = ConsultationSession(
             id=session_id,
@@ -309,141 +283,108 @@ class ConsultationService:
             requested_at=datetime.now(UTC),
         )
         await self._repo.create_session(session)
-        await self._post_marker(session, MessageType.CONSULTATION_REQUESTED, MessageSender.PATIENT, user_id)
-
-        # 3. Lấy dữ liệu đa nguồn: Dữ kiện lâm sàng đã biết, báo cáo lần khám trước, và hội thoại hiện tại
-        patient_profile_id = conv.patient_profile_id
-
-        # 3.1. Dữ kiện lâm sàng / tiền sử tích luỹ
-        past_facts_data = await self._repo.get_active_facts_with_provenance(patient_profile_id)
-        if past_facts_data:
-            past_facts_text = "\n".join(
-                f"- [{tpl.fact_type.upper()}] {tpl.label}: {fact.detail}"
-                for fact, tpl, _ in past_facts_data
-            )
-        else:
-            past_facts_text = "Chưa ghi nhận dữ kiện lâm sàng tiền sử nào trước đó."
-
-        # 3.2. Báo cáo lần khám gần nhất trước đó
-        latest_past_report = await self._repo.get_latest_past_report(
-            patient_profile_id, exclude_session_id=session.id
+        marker_msg = await self._post_marker(
+            session, MessageType.CONSULTATION_REQUESTED, MessageSender.PATIENT, user_id
         )
-        if latest_past_report and latest_past_report.summary:
-            past_report_text = latest_past_report.summary
-        else:
-            past_report_text = "Chưa có báo cáo khám trước đó (đây là lần đầu hoặc chưa có phiên tư vấn nào)."
 
-        # 3.3. Lịch sử hội thoại đợt khám hiện tại (bỏ tin mốc hệ thống, không phải lời của ai)
-        messages = [
-            m
-            for m in await self._msg_repo.list_by_conversation(conversation_id)
-            if m.content and not m.message_type.startswith("consultation_")
-        ]
-        # đánh số để LLM chỉ ra tin nguồn của từng fact → ghi `clinical_provenances`
-        chat_transcript = "\n".join(
-            f"[#{i}][{m.sender.upper()}]: {m.content}" for i, m in enumerate(messages, start=1)
+        # 3. Gửi task sang RabbitMQ để Agent Worker xử lý
+        turn_req = TurnRequest(
+            type="consultation_report",
+            conversation_id=conversation_id,
+            message_id=marker_msg.id,
+            session_id=session_id,
+            patient_profile_id=conv.patient_profile_id,
+            reason=reason,
         )
-        provenance_pairs: list[tuple[str, str]] = []
+        await self._rabbitmq.publish(
+            AGENT_REQUEST_QUEUE,
+            turn_req.model_dump_json().encode("utf-8"),
+        )
 
-        # 4. Gọi LLM sinh báo cáo & bóc tách dữ kiện lâm sàng
-        facts_to_save: list[ClinicalFact] = []
-        facts_dto: list[ClinicalFactOutput] = []
-        summary_text = ""
+        out = self._to_output(session, conv_title, report=None, facts=[], patient=patient)
+        await self._announce(out)
+        return out
 
-        try:
-            llm = get_model()
-            prompt = [
-                SystemMessage(content=REPORT_SYSTEM_PROMPT),
-                HumanMessage(
-                    content=(
-                        "DƯỚI ĐÂY LÀ CÁC NGUỒN DỮ LIỆU CỦA BỆNH NHÂN:\n\n"
-                        "=== 1. DỮ KIỆN LÂM SÀNG / TIỀN SỬ ĐÃ GHI NHẬN TỪ TRƯỚC ===\n"
-                        f"{past_facts_text}\n\n"
-                        "=== 2. TÓM TẮT LẦN KHÁM GẦN NHẤT TRƯỚC ĐÓ ===\n"
-                        f"{past_report_text}\n\n"
-                        "=== 3. ĐOẠN HỘI THOẠI ĐỢT KHÁM HIỆN TẠI ===\n"
-                        f"{chat_transcript}\n\n"
-                        "Hãy phân tích và sinh báo cáo JSON:"
-                    )
-                ),
-            ]
-            response = await llm.ainvoke(prompt)
-            raw_content = response.content
-            if isinstance(raw_content, list):
-                raw_content = "\n".join(str(c) for c in raw_content)
+    async def save_generated_report(
+        self,
+        session_id: str,
+        summary: str,
+        facts: list[dict[str, Any]],
+        provenance_pairs: list[list[str]],
+    ) -> None:
+        """Được gọi bởi agent_response_consumer khi Worker sinh xong báo cáo tiền tư vấn."""
+        session = await self._repo.get_session(session_id)
+        if session is None:
+            logger.warning("Không tìm thấy session %s để lưu báo cáo từ worker", session_id)
+            return
 
-            # Làm sạch JSON nếu model bọc trong ```json
-            cleaned = str(raw_content).strip()
-            if cleaned.startswith("```"):
-                lines = cleaned.split("\n")
-                if lines[0].startswith("```"):
-                    lines = lines[1:]
-                if lines and lines[-1].startswith("```"):
-                    lines = lines[:-1]
-                cleaned = "\n".join(lines).strip()
+        conv = await self._conv_repo.get(session.conversation_id)
+        patient_profile_id = conv.patient_profile_id if conv else ""
 
-            parsed = json.loads(cleaned)
-            summary_text = parsed.get("summary", "")
-            raw_facts = parsed.get("facts", [])
-
-            for rf in raw_facts:
-                f_type = rf.get("fact_type", "symptom")
-                f_label = rf.get("template_label", "Dữ kiện lâm sàng")
-                f_detail = rf.get("detail", "")
-                tpl = await self._repo.get_or_create_template(f_type, f_label)
-                fact_id = f"cf-{uuid.uuid4()}"
-                now = datetime.now(UTC)
-                for idx in rf.get("source_messages") or []:
-                    if isinstance(idx, int) and 1 <= idx <= len(messages):
-                        provenance_pairs.append((fact_id, messages[idx - 1].id))
-                facts_to_save.append(
-                    ClinicalFact(
-                        id=fact_id,
-                        patient_profile_id=patient_profile_id,
-                        template_id=tpl.id,
-                        detail=f_detail,
-                        status="active",
-                        created_at=now,
-                    )
-                )
-                facts_dto.append(
-                    ClinicalFactOutput(
-                        id=fact_id,
-                        template_label=tpl.label,
-                        fact_type=tpl.fact_type,
-                        detail=f_detail,
-                        status="active",
-                        created_at=now.isoformat(),
-                    )
-                )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Lỗi khi gọi LLM sinh báo cáo: %s", exc)
-            summary_text = (
-                f"## Tóm tắt phiên tư vấn\n"
-                f"- **Lý do khám**: {reason}\n"
-                f"- **Tiền sử ghi nhận**: {past_facts_text if past_facts_data else 'Chưa có'}\n"
-                f"- **Ghi nhận**: Bệnh nhân yêu cầu bác sĩ tư vấn trực tiếp.\n"
-                f"- *Hệ thống đang đồng bộ dữ kiện lâm sàng.*"
-            )
-
-        # 5. Lưu Report và Facts
+        # 1. Lưu Report
         report = PreConsultationReport(
             id=f"rep-{uuid.uuid4()}",
             consultation_session_id=session_id,
-            summary=summary_text,
+            summary=summary,
             created_at=datetime.now(UTC),
         )
         await self._repo.create_report(report)
+
+        # 2. Lưu Facts
+        facts_to_save: list[ClinicalFact] = []
+        facts_dto: list[ClinicalFactOutput] = []
+        now = datetime.now(UTC)
+
+        for rf in facts:
+            f_type = rf.get("fact_type", "symptom")
+            f_label = rf.get("template_label", "Dữ kiện lâm sàng")
+            f_detail = rf.get("detail", "")
+            f_id = rf.get("id") or f"cf-{uuid.uuid4()}"
+
+            tpl = await self._repo.get_or_create_template(f_type, f_label)
+            facts_to_save.append(
+                ClinicalFact(
+                    id=f_id,
+                    patient_profile_id=patient_profile_id,
+                    template_id=tpl.id,
+                    detail=f_detail,
+                    status="active",
+                    created_at=now,
+                )
+            )
+            facts_dto.append(
+                ClinicalFactOutput(
+                    id=f_id,
+                    template_label=tpl.label,
+                    fact_type=tpl.fact_type,
+                    detail=f_detail,
+                    status="active",
+                    created_at=now.isoformat(),
+                )
+            )
+
         if facts_to_save:
             await self._repo.add_clinical_facts(facts_to_save)
-        saved_ids = {f.id for f in facts_to_save}
-        provenance_pairs = [p for p in provenance_pairs if p[0] in saved_ids]
-        if provenance_pairs:
-            await self._repo.add_provenances(provenance_pairs)
 
+        # 3. Lưu Provenances
+        saved_fact_ids = {f.id for f in facts_to_save}
+        valid_pairs = [
+            (p[0], p[1])
+            for p in provenance_pairs
+            if len(p) >= 2 and p[0] in saved_fact_ids
+        ]
+        if valid_pairs:
+            await self._repo.add_provenances(valid_pairs)
+
+        await self._db.commit()
+
+        # 4. Broadcast realtime kết quả qua SSE cho Bác sĩ và Bệnh nhân
+        conv_title = conv.title if conv else "Hội thoại tư vấn"
+        patient = await self._patient_dto(patient_profile_id)
         out = self._to_output(session, conv_title, report, facts_dto, patient)
         await self._announce(out)
-        return out
+        logger.info("Đã lưu báo cáo tiền tư vấn và phát event cập nhật cho session=%s", session_id)
+
 
     async def send_doctor_reply(
         self, session_id: str, content: str, doctor_id: str

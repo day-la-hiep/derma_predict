@@ -225,6 +225,7 @@ async def list_patient_medical_records(
 @router.post(
     "/conversations/{conversation_id}/request-consultation",
     response_model=ApiResponse[ConsultationSessionOutput],
+    status_code=status.HTTP_202_ACCEPTED,
     operation_id="requestConsultation",
 )
 async def request_consultation(
