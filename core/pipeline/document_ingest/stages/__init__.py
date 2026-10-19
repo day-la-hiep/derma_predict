@@ -13,6 +13,7 @@ from app.models.document_profile import Profile
 
 from .. import mapping
 from ..graph_link import EntityLexicon
+from ..graph_schema import CORE_SCHEMA, GraphSchema
 
 if TYPE_CHECKING:  # chỉ để khai báo kiểu; bước không gọi gì của app ngoài các client được truyền vào
     from app.services.file_store_service import FileStoreService
@@ -66,6 +67,7 @@ class StageContext:
     vectors: ChunkIndex | None = None
     lexicon: EntityLexicon | None = None  # từ điển PrimeKG + DermO để khớp thực thể
     graph: GraphStore | None = None
+    schema: GraphSchema = CORE_SCHEMA  # loại thực thể + quan hệ được phép trích (core + bác sĩ định nghĩa)
     # trả về bản sao `source.pdf` trên đĩa cho công cụ cần file thật (pdftotext, Docling, pypdf)
     pdf: Callable[[], Path] | None = None
     options: dict[str, Any] = field(default_factory=dict)

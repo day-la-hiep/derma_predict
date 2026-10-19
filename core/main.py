@@ -16,6 +16,7 @@ from app.api.deps import (
 )
 from app.api.health import router as health_router
 from app.api.document_api import router as document_router
+from app.api.graph_schema_api import router as graph_schema_router
 from app.api.upload_api import router as upload_router
 from app.api.doctor_api import router as doctor_router
 from app.api.patient_profile_api import router as patient_profile_router
@@ -81,6 +82,7 @@ app.include_router(
     document_router,
     prefix=settings.API_V1_PREFIX,
 )
+app.include_router(graph_schema_router, prefix=settings.API_V1_PREFIX)
 app.include_router(
     upload_router,
     prefix=settings.API_V1_PREFIX,
