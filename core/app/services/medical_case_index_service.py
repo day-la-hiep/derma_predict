@@ -3,6 +3,7 @@
 import asyncio
 from datetime import UTC, date, datetime
 from typing import Any
+from typing import Any
 import uuid
 
 from qdrant_client.models import (
@@ -55,6 +56,7 @@ class MedicalCaseIndexService:
         self,
         record: MedicalRecord,
         profile: PatientProfile | None = None,
+        images: list[tuple[Any, Any]] | None = None,
     ) -> tuple[str, dict[str, Any]]:
         """Tổng hợp thông tin ca bệnh lâm sàng (đã ẩn danh họ tên, sđt) thành văn bản để embedding và payload."""
         snapshot = record.snapshot or {}
@@ -120,6 +122,35 @@ class MedicalCaseIndexService:
         if record.notes:
             lines.append(f"Ghi chú bổ sung: {record.notes}")
 
+        # Ảnh bệnh đã gắn vào bệnh án (bác sĩ chọn từ đoạn chat) — đưa nhãn + mô tả vào văn bản để semantic search theo ảnh
+        image_infos: list[dict[str, Any]] = []
+        if images:
+            labels: list[str] = []
+            for img, f in images:
+                confirmed = getattr(img, "confirmed_label", None)
+                storage_key = getattr(f, "storage_key", None)
+                info = {
+                    "confirmed_label": confirmed,
+                    "body_site": getattr(img, "body_site", "") or "",
+                    "description": getattr(img, "description", "") or "",
+                    "storage_key": storage_key,
+                    "file_name": getattr(f, "file_name", "") or "",
+                }
+                image_infos.append(info)
+                if confirmed:
+                    labels.append(confirmed)
+                if info["description"]:
+                    labels.append(info["description"])
+                if info["body_site"]:
+                    labels.append(info["body_site"])
+            if labels:
+                lines.append("Ảnh bệnh đã lưu: " + "; ".join(dict.fromkeys(labels)))
+            if any(i.get("confirmed_label") for i in image_infos):
+                lines.append(
+                    "Nhãn ảnh xác nhận: "
+                    + ", ".join({i["confirmed_label"] for i in image_infos if i.get("confirmed_label")})
+                )
+
         text = "\n".join(lines)
 
         payload: dict[str, Any] = {
@@ -137,6 +168,7 @@ class MedicalCaseIndexService:
             "is_reference_case": bool(record.is_reference_case),
             "text": text,
             "created_at": record.created_at.isoformat() if record.created_at else None,
+            "images": image_infos,
         }
         return text, payload
 
@@ -144,10 +176,11 @@ class MedicalCaseIndexService:
         self,
         record: MedicalRecord,
         profile: PatientProfile | None = None,
+        images: list[tuple[Any, Any]] | None = None,
     ) -> None:
         """Đồng bộ một ca bệnh vào Qdrant (dùng trong script hoặc thread đồng bộ)."""
         self.ensure_collection()
-        text, payload = self.build_case_text(record, profile)
+        text, payload = self.build_case_text(record, profile, images=images)
         vectors, _, _ = self._embedding.embed([text])
         dense_vec = vectors[0]
         sparse_vec = encode_document(text, "mixed")
@@ -163,9 +196,10 @@ class MedicalCaseIndexService:
         self,
         record: MedicalRecord,
         profile: PatientProfile | None = None,
+        images: list[tuple[Any, Any]] | None = None,
     ) -> None:
         """Bất đồng bộ nạp ca bệnh vào Qdrant."""
-        await asyncio.to_thread(self.index_record_sync, record, profile)
+        await asyncio.to_thread(self.index_record_sync, record, profile, images)
 
     def delete_record_sync(self, case_id: str) -> None:
         """Xoá ca bệnh khỏi Qdrant."""
@@ -186,23 +220,29 @@ class MedicalCaseIndexService:
         if not await self._qdrant.collection_exists(self._collection):
             return []
 
-        # Gọi embed query qua embedding model
-        vector = await asyncio.to_thread(
-            lambda: self._embedding.model.embed_query(query)
-        )
-        scored_points: list[ScoredPoint] = await self._qdrant.search(
-            self._collection,
-            vector,
-            limit=limit,
-        )
+        try:
+            # Gọi embed query qua embedding model
+            vector = await asyncio.to_thread(
+                lambda: self._embedding.model.embed_query(query)
+            )
+            scored_points: list[ScoredPoint] = await self._qdrant.search(
+                self._collection,
+                vector,
+                limit=limit,
+            )
+        except Exception:  # noqa: BLE001
+            # Embedding/DB lỗi (mạng) → fallback: đọc toàn bộ collection và lọc theo từ khoá
+            # trong chẩn đoán/nhãn ảnh, để tra cứu vẫn hoạt động offline.
+            scored_points = await self._fallback_search(query, limit)
 
         results: list[dict[str, Any]] = []
         for p in scored_points:
             payload = p.payload or {}
+            score = payload.get("_score", getattr(p, "score", 0.0))
             results.append({
                 "case_id": payload.get("case_id", str(p.id)),
                 "diagnosis": payload.get("diagnosis", ""),
-                "score": round(float(p.score), 3),
+                "score": round(float(score), 3) if score else 0.0,
                 "gender": payload.get("gender"),
                 "age": payload.get("age"),
                 "allergies": payload.get("allergies"),
@@ -213,5 +253,43 @@ class MedicalCaseIndexService:
                 "treatment_instructions": payload.get("instructions", []),
                 "doctor_notes": payload.get("notes", ""),
                 "summary": payload.get("text", ""),
+                "images": payload.get("images", []),
             })
         return results
+
+    async def _fallback_search(self, query: str, limit: int) -> list[ScoredPoint]:
+        """Fallback không cần embedding: scroll toàn bộ collection, lọc theo từ khoá."""
+        try:
+            records = await self._qdrant.scroll_all(self._collection)
+        except Exception:  # noqa: BLE001
+            return []
+        q = (query or "").strip().lower()
+        scored: list[tuple[float, Any]] = []
+        for r in records:
+            payload = r.payload or {}
+            text = (payload.get("text") or "").lower()
+            diagnosis = (payload.get("diagnosis") or "").lower()
+            labels = " ".join(
+                (img.get("confirmed_label") or "") for img in (payload.get("images") or [])
+            ).lower()
+            score = 0.0
+            if q and q in diagnosis:
+                score += 2.0
+            if q and q in labels:
+                score += 2.0
+            if q and q in text:
+                score += 1.0
+            if score <= 0 and not q:
+                score = 0.5
+            if score > 0 or not q:
+                scored.append((score, r))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        out = []
+        for score, r in scored[:limit]:
+            # gắn score vào payload? ScoredPoint có score field; r là Record. Chuyển sang ScoredPoint-like? 
+            # search_cases đọc p.payload và p.score. Record không có score. Set attribute.
+            payload = r.payload if isinstance(r.payload, dict) else {}
+            payload["_score"] = score
+            r.payload = payload
+            out.append(r)
+        return out

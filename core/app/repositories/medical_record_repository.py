@@ -1,10 +1,12 @@
 """Truy vấn DB cho `MedicalRecord` (`app/models/medical_record.py`)."""
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.medical_record import MedicalRecord
+from app.models.file import File
+from app.models.medical_record import MedicalRecord, PatientImage
 from app.models.patient_profile import PatientProfile
 from app.models.user import User
 
@@ -59,3 +61,50 @@ class MedicalRecordRepository:
         await self._db.flush()
         await self._db.refresh(record)
         return record
+
+    async def add_patient_image(
+        self,
+        *,
+        medical_record_id: str,
+        file_id: str,
+        body_site: str = "",
+        description: str = "",
+        confirmed_label: str | None = None,
+        captured_at: Any = None,
+    ) -> PatientImage:
+        image = PatientImage(
+            medical_record_id=medical_record_id,
+            file_id=file_id,
+            body_site=body_site,
+            description=description,
+            confirmed_label=confirmed_label,
+            captured_at=captured_at,
+        )
+        self._db.add(image)
+        await self._db.flush()
+        await self._db.refresh(image)
+        return image
+
+    async def list_images(self, medical_record_id: str) -> list[tuple[PatientImage, File]]:
+        stmt = (
+            select(PatientImage, File)
+            .join(File, File.id == PatientImage.file_id)
+            .where(PatientImage.medical_record_id == medical_record_id)
+            .order_by(PatientImage.captured_at.asc().nulls_last(), PatientImage.id.asc())
+        )
+        return [(img, f) for img, f in (await self._db.execute(stmt)).all()]
+
+    async def list_images_for_records(
+        self, record_ids: list[str]
+    ) -> dict[str, list[tuple[PatientImage, File]]]:
+        if not record_ids:
+            return {}
+        stmt = (
+            select(PatientImage, File)
+            .join(File, File.id == PatientImage.file_id)
+            .where(PatientImage.medical_record_id.in_(record_ids))
+        )
+        out: dict[str, list[tuple[PatientImage, File]]] = {rid: [] for rid in record_ids}
+        for img, f in (await self._db.execute(stmt)).all():
+            out.setdefault(img.medical_record_id, []).append((img, f))
+        return out

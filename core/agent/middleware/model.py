@@ -67,7 +67,13 @@ async def inject_long_term_memory(
         "",
     )
     ctx: AgentContext = request.runtime.context  # type: ignore[assignment]
-    memories = await search_memories(request.runtime.store, ctx.user_id, query)  # type: ignore[arg-type]
+    memories: list[str] = []
+    try:
+        memories = await search_memories(request.runtime.store, ctx.user_id, query)  # type: ignore[arg-type]
+    except Exception:  # noqa: BLE001
+        # Bộ nhớ dài hạn không bắt buộc cho một lượt trả lời; nếu embedding/DB lỗi
+        # thì bỏ qua thay vì làm hỏng cả lượt hội thoại.
+        memories = []
 
     if memories:
         memory_text = "\n".join(f"- {m}" for m in memories)

@@ -6,7 +6,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from app.api.deps import get_medical_case_index_service
+from app.api.deps import get_file_store_service, get_medical_case_index_service
 
 logger = logging.getLogger("agent.tools.search_medical_case")
 
@@ -61,8 +61,25 @@ async def search_medical_case(query: str, limit: int = 3) -> str:
     )
 
     # Lọc và định dạng các ca tìm thấy
+    file_store = get_file_store_service()
     formatted_cases = []
     for c in cases:
+        images_out = []
+        for img in (c.get("images") or []):
+            storage_key = img.get("storage_key")
+            url = None
+            if storage_key:
+                try:
+                    url = file_store.presigned_url(storage_key)
+                except Exception:  # noqa: BLE001
+                    url = None
+            images_out.append({
+                "confirmed_label": img.get("confirmed_label"),
+                "body_site": img.get("body_site"),
+                "description": img.get("description"),
+                "storage_key": storage_key,
+                "url": url,
+            })
         formatted_cases.append({
             "case_id": c.get("case_id"),
             "diagnosis": c.get("diagnosis"),
@@ -79,6 +96,7 @@ async def search_medical_case(query: str, limit: int = 3) -> str:
             "treatment_instructions": c.get("treatment_instructions"),
             "doctor_notes": c.get("doctor_notes"),
             "case_summary": c.get("summary"),
+            "images": images_out,
         })
 
     return _dumps({

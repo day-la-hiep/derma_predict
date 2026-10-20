@@ -1,3 +1,5 @@
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.constant import ClinicalFactType, FactOrigin, Gender, MessageSender, ProfileRelationship
@@ -5,6 +7,7 @@ from app.dto.base import (
     Assessment,
     File as FileEntity,
     MedicalRecordSnapshot,
+    PatientImage as PatientImageEntity,
     SnapshotClinicalFact,
     SnapshotMessage,
     SnapshotPatientProfile,
@@ -12,13 +15,14 @@ from app.dto.base import (
 )
 from app.dto.common import FileDto
 from app.dto.consultation import PatientProfileDto
-from app.dto.request.medical_record import CreateDoctorMedicalRecordInput, FactInput, FinalizeMedicalRecordInput
+from app.dto.request.medical_record import CreateDoctorMedicalRecordInput, FactInput, FinalizeMedicalRecordInput, PatientImageInput
 from app.dto.response.medical_record import (
     DoctorMedicalRecordItemOutput,
     DoctorMedicalRecordOutput,
     DraftFactOutput,
     FinalizeDraftOutput,
     MedicalRecordSnapshotOutput,
+    PatientImageOutput,
     SnapshotClinicalFactOutput,
     SnapshotMessageOutput,
     SnapshotProvenanceOutput,
@@ -145,9 +149,10 @@ class DoctorMedicalRecordService:
     async def list_mine(self, doctor_id: str, doctor_name: str, q: str) -> list[DoctorMedicalRecordItemOutput]:
         rows = await self._records.list_for_doctor(doctor_id, q.strip())
         conv_ids = await self._conversation_ids([r for r, _ in rows])
+        images_map = await self._records.list_images_for_records([r.id for r, _ in rows])
         return [
             DoctorMedicalRecordItemOutput(
-                **self._record_output(r, doctor_name, conv_ids).model_dump(), patient=to_patient_profile_dto(p)
+                **self._record_output(r, doctor_name, conv_ids, images_map.get(r.id, [])).model_dump(), patient=to_patient_profile_dto(p)
             )
             for r, p in rows
         ]
@@ -198,7 +203,8 @@ class DoctorMedicalRecordService:
         profile = await self._profile_of(session)
         record = await self._create(profile, doctor_id, body, session.id)
         await self._consultations.resolve_session(session)
-        return self._record_output(record, doctor_name, {session.id: session.conversation_id})
+        images = await self._records.list_images(record.id)
+        return self._record_output(record, doctor_name, {session.id: session.conversation_id}, images)
 
     async def create(
         self, doctor_id: str, doctor_name: str, body: CreateDoctorMedicalRecordInput
@@ -208,8 +214,9 @@ class DoctorMedicalRecordService:
         if profile is None:
             raise NotFoundError(f"hồ sơ bệnh nhân id={body.patient_profile_id}")
         record = await self._create(profile, doctor_id, body, None)
+        images = await self._records.list_images(record.id)
         return DoctorMedicalRecordItemOutput(
-            **self._record_output(record, doctor_name, {}).model_dump(), patient=to_patient_profile_dto(profile)
+            **self._record_output(record, doctor_name, {}, images).model_dump(), patient=to_patient_profile_dto(profile)
         )
 
     async def _create(
@@ -227,9 +234,24 @@ class DoctorMedicalRecordService:
             consultation_session_id=session_id,
             snapshot=snapshot.model_dump(mode="json"),
         )
+        # Gắn ảnh bệnh bác sĩ chọn từ đoạn chat vào bệnh án
+        attached_images: list[tuple[Any, Any]] = []
+        for img_input in body.images:
+            file_row = await self._files.get(img_input.file_id)
+            if file_row is None:
+                continue
+            patient_image = await self._records.add_patient_image(
+                medical_record_id=record.id,
+                file_id=img_input.file_id,
+                body_site=img_input.body_site,
+                description=img_input.description,
+                confirmed_label=img_input.confirmed_label,
+            )
+            attached_images.append((patient_image, file_row))
+        # Nạp ca bệnh vào Qdrant (kèm ảnh đã gắn) để chatbot tra cứu theo ảnh
         if self._case_index_service:
             try:
-                await self._case_index_service.index_record(record, profile)
+                await self._case_index_service.index_record(record, profile, images=attached_images)
             except Exception:  # noqa: BLE001
                 # Không chặn hoàn tất hồ sơ nếu lỗi kết nối vector DB
                 pass
@@ -280,7 +302,8 @@ class DoctorMedicalRecordService:
     async def _history(self, profile_id: str) -> list[DoctorMedicalRecordOutput]:
         rows = await self._records.list_for_profile(profile_id)
         conv_ids = await self._conversation_ids([r for r, _ in rows])
-        return [self._record_output(r, name, conv_ids) for r, name in rows]
+        images_map = await self._records.list_images_for_records([r.id for r, _ in rows])
+        return [self._record_output(r, name, conv_ids, images_map.get(r.id, [])) for r, name in rows]
 
     async def _conversation_ids(self, records: list[MedicalRecord]) -> dict[str, str]:
         return await self._consultations.conversation_ids(
@@ -317,9 +340,27 @@ class DoctorMedicalRecordService:
         )
 
     def _record_output(
-        self, record: MedicalRecord, doctor_name: str | None, conv_ids: dict[str, str]
+        self, record: MedicalRecord, doctor_name: str | None, conv_ids: dict[str, str],
+        images: list[tuple[Any, Any]] | None = None,
     ) -> DoctorMedicalRecordOutput:
         session_id = record.consultation_session_id
+        image_outputs: list[PatientImageOutput] = []
+        for img, f in (images or []):
+            image_outputs.append(
+                PatientImageOutput(
+                    id=img.id,
+                    file=FileDto(
+                        file_name=f.file_name,
+                        content_type=f.content_type,
+                        storage_key=f.storage_key,
+                        url=self._file_store.presigned_url(f.storage_key),
+                    ),
+                    body_site=img.body_site or "",
+                    description=img.description or "",
+                    confirmed_label=img.confirmed_label,
+                    captured_at=img.captured_at.isoformat() if img.captured_at else None,
+                )
+            )
         return DoctorMedicalRecordOutput(
             id=record.id,
             diagnosis=record.diagnosis,
@@ -330,4 +371,5 @@ class DoctorMedicalRecordService:
             consultation_session_id=session_id,
             conversation_id=conv_ids.get(session_id) if session_id else None,
             snapshot=self._snapshot_output(record.snapshot),
+            images=image_outputs,
         )

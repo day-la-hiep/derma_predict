@@ -54,6 +54,15 @@ export interface MedicalRecordSnapshot {
   clinicalFacts: SnapshotFact[];
 }
 
+export interface MedicalRecordImage {
+  id: string;
+  file: { fileName: string; contentType: string | null; storageKey: string; url: string | null };
+  bodySite: string;
+  description: string;
+  confirmedLabel: string | null;
+  capturedAt: string | null;
+}
+
 export interface MedicalRecord {
   id: string;
   diagnosis: string;
@@ -65,6 +74,7 @@ export interface MedicalRecord {
   conversationId: string | null;
   /** null với bệnh án ghi trước khi có snapshot */
   snapshot: MedicalRecordSnapshot | null;
+  images: MedicalRecordImage[];
 }
 
 /** Một dòng ở màn Lịch sử khám: bệnh án kèm hồ sơ bệnh nhân */
@@ -98,6 +108,7 @@ export interface FinalizeInput {
   urgency: Urgency;
   instructions: string[];
   facts: FactDraft[];
+  images: { fileId: string; bodySite: string; description: string; confirmedLabel: string | null }[];
 }
 
 /* ────────── Clinical Facts ────────── */

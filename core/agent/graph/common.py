@@ -24,6 +24,7 @@ TOOL_DISPLAY_NAMES: dict[str, str] = {
     "keyword_search": "Tra cứu sách giáo khoa (theo từ khoá)",
     "knowledge_graph_query": "Tra cứu đồ thị tri thức",
     "search_medical_case": "Tra cứu ca bệnh tương tự (bệnh án)",
+    "search_medical_case_by_image": "Tra cứu ca bệnh tương tự theo ảnh",
     "classify_skin_image": "Phân tích ảnh tổn thương da",
     "analyze_skin_image_multimodal": "Mô tả tổn thương bằng AI đa phương thức",
     "search_trusted_web": "Tra cứu nguồn web uy tín",

@@ -1,3 +1,5 @@
+import time
+
 import httpx
 from langchain_core.embeddings import Embeddings
 
@@ -18,15 +20,25 @@ def _embed(texts: list[str]) -> list[list[float]]:
     texts = [clean_text(t) for t in texts]
     vectors: list[list[float]] = []
     for i in range(0, len(texts), _BATCH):
-        resp = httpx.post(
-            f"{settings.OPENROUTER_BASE_URL}/embeddings",
-            headers={"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}"},
-            json={"model": EMBEDDING_MODEL_NAME, "input": texts[i : i + _BATCH], "encoding_format": "float"},
-            timeout=120,
-        )
-        resp.raise_for_status()
-        data = sorted(resp.json()["data"], key=lambda d: d["index"])
-        vectors += [d["embedding"] for d in data]
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                resp = httpx.post(
+                    f"{settings.OPENROUTER_BASE_URL}/embeddings",
+                    headers={"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}"},
+                    json={"model": EMBEDDING_MODEL_NAME, "input": texts[i : i + _BATCH], "encoding_format": "float"},
+                    timeout=120,
+                )
+                resp.raise_for_status()
+                data = sorted(resp.json()["data"], key=lambda d: d["index"])
+                vectors += [d["embedding"] for d in data]
+                last_exc = None
+                break
+            except (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError) as exc:
+                last_exc = exc
+                time.sleep(1.0 * (attempt + 1))
+        if last_exc is not None:
+            raise last_exc
     if vectors and len(vectors[0]) != EMBEDDING_DIM:
         raise RuntimeError(f"{EMBEDDING_MODEL_NAME} trả {len(vectors[0])} chiều, khác EMBEDDING_DIM={EMBEDDING_DIM}.")
     return vectors
