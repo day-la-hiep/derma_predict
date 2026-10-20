@@ -55,6 +55,23 @@ function SummaryTab({ record }: { record: DoctorMedicalRecordItem }) {
         </section>
       )}
 
+      {record.images && record.images.length > 0 && (
+        <section>
+          <SectionTitle>Ảnh bệnh đã lưu</SectionTitle>
+          <div className="flex flex-wrap gap-2 rounded-xl border border-border p-4">
+            {record.images.map((img) => (
+              <div key={img.id} className="space-y-1">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={img.file.url ?? ""} alt={img.file.fileName} className="size-24 rounded-lg object-cover" />
+                {img.confirmedLabel && (
+                  <p className="text-[10px] text-muted-foreground">{img.confirmedLabel}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {!!snap?.assessment.instructions.length && (
         <section>
           <SectionTitle>Dặn dò bệnh nhân</SectionTitle>

@@ -3,7 +3,7 @@ và snapshot với bệnh nhân)."""
 from pydantic import BaseModel
 
 from app.common.constant import ClinicalFactType, FactOrigin
-from app.dto.base import MedicalRecordSnapshot, SnapshotClinicalFact, SnapshotMessage
+from app.dto.base import MedicalRecordSnapshot, PatientImage, SnapshotClinicalFact, SnapshotMessage
 from app.dto.common import FileDto
 from app.dto.consultation import PatientProfileDto
 
@@ -25,6 +25,15 @@ class MedicalRecordSnapshotOutput(MedicalRecordSnapshot):
     clinical_facts: list[SnapshotClinicalFactOutput] = []
 
 
+class PatientImageOutput(BaseModel):
+    id: str
+    file: FileDto
+    body_site: str = ""
+    description: str = ""
+    confirmed_label: str | None = None
+    captured_at: str | None = None
+
+
 class DoctorMedicalRecordOutput(BaseModel):
     id: str
     diagnosis: str
@@ -35,6 +44,7 @@ class DoctorMedicalRecordOutput(BaseModel):
     consultation_session_id: str | None = None
     conversation_id: str | None = None
     snapshot: MedicalRecordSnapshotOutput | None = None
+    images: list[PatientImageOutput] = []
 
 
 class DoctorMedicalRecordItemOutput(DoctorMedicalRecordOutput):

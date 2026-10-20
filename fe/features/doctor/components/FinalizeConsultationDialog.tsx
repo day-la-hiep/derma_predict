@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useFinalizeDraft, useFinalizeSession } from "../hooks";
+import { useConversationMessages, useFinalizeDraft, useFinalizeSession } from "../hooks";
 import { useDoctorStore } from "../store";
 import type { ConsultationSession, FinalizeDraft, FinalizeInput } from "../types";
 import { patientSubtitle } from "./PatientProfileDetails";
@@ -26,6 +26,27 @@ function FinalizeForm({ session, draft, onDone }: { session: ConsultationSession
   const resolveSession = useDoctorStore((s) => s.resolveSession);
   const markResolved = useDoctorStore((s) => s.markSessionResolved);
   const [closingOnly, setClosingOnly] = useState(false);
+  const { data: messages } = useConversationMessages(session.conversationId);
+
+  // Ảnh đính kèm trong đoạn chat để bác sĩ chọn gắn vào bệnh án
+  const chatImages = (messages ?? []).flatMap((m) =>
+    (m.attachments ?? [])
+      .filter((a) => a.contentType?.startsWith("image/") && a.url)
+      .map((a) => ({ messageId: m.id, id: a.id, name: a.name, url: a.url!, contentType: a.contentType }))
+  );
+
+  const toggleImage = (img: { id: string; url: string }) => {
+    setValue((prev) => {
+      const exists = prev.images.some((i) => i.fileId === img.id);
+      if (exists) {
+        return { ...prev, images: prev.images.filter((i) => i.fileId !== img.id) };
+      }
+      return {
+        ...prev,
+        images: [...prev.images, { fileId: img.id, bodySite: "", description: "", confirmedLabel: null }],
+      };
+    });
+  };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,8 +70,62 @@ function FinalizeForm({ session, draft, onDone }: { session: ConsultationSession
 
   return (
     <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 space-y-4">
         <RecordForm value={value} onChange={setValue} />
+        {chatImages.length > 0 && (
+          <section className="space-y-2">
+            <div className="text-xs font-semibold text-foreground">Ảnh bệnh từ đoạn chat (chọn để gắn vào bệnh án)</div>
+            <div className="flex flex-wrap gap-2">
+              {chatImages.map((img) => {
+                const selected = value.images.some((i) => i.fileId === img.id);
+                return (
+                  <button
+                    key={img.id}
+                    type="button"
+                    onClick={() => toggleImage(img)}
+                    className={`relative rounded-lg border overflow-hidden ${selected ? "border-brand ring-2 ring-brand" : "border-border"}`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.url} alt={img.name} className="size-20 object-cover" />
+                    {selected && (
+                      <span className="absolute top-1 right-1 rounded-full bg-brand text-white text-[10px] px-1.5 py-0.5">✓</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {value.images.length > 0 && (
+              <div className="space-y-2">
+                {value.images.map((img, idx) => (
+                  <div key={img.fileId} className="flex gap-2 items-center">
+                    <input
+                      className="flex-1 rounded-md border border-border px-2 py-1 text-xs"
+                      placeholder="Vị trí trên cơ thể (body site)"
+                      value={img.bodySite}
+                      onChange={(e) =>
+                        setValue((prev) => ({
+                          ...prev,
+                          images: prev.images.map((x, j) => (j === idx ? { ...x, bodySite: e.target.value } : x)),
+                        }))
+                      }
+                    />
+                    <input
+                      className="flex-1 rounded-md border border-border px-2 py-1 text-xs"
+                      placeholder="Mô tả ảnh"
+                      value={img.description}
+                      onChange={(e) =>
+                        setValue((prev) => ({
+                          ...prev,
+                          images: prev.images.map((x, j) => (j === idx ? { ...x, description: e.target.value } : x)),
+                        }))
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
       </div>
       <DialogFooter className="flex-row items-center justify-between gap-2 border-t border-border px-6 py-3.5 sm:justify-between">
         <Hint side="top" content="Đóng ca mà không tạo phiếu bệnh án (vd bệnh nhân chỉ hỏi thông tin chung).">

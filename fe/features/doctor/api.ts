@@ -164,6 +164,19 @@ function adaptMedicalRecord(raw: any): MedicalRecord {
     consultationSessionId: raw.consultation_session_id ?? null,
     conversationId: raw.conversation_id ?? null,
     snapshot: adaptSnapshot(raw.snapshot),
+  images: (raw.images ?? []).map((img: any) => ({
+    id: img.id ?? "",
+    file: {
+      fileName: img.file?.file_name ?? img.file?.fileName ?? "",
+      contentType: img.file?.content_type ?? img.file?.contentType ?? null,
+      storageKey: img.file?.storage_key ?? img.file?.storageKey ?? "",
+      url: img.file?.url ?? null,
+    },
+    bodySite: img.body_site ?? img.bodySite ?? "",
+    description: img.description ?? "",
+    confirmedLabel: img.confirmed_label ?? img.confirmedLabel ?? null,
+    capturedAt: img.captured_at ?? img.capturedAt ?? null,
+  })),
   };
 }
 
@@ -205,6 +218,12 @@ function toFinalizeBody(body: FinalizeInput) {
         label: f.label.trim(),
         detail: f.detail.trim(),
       })),
+    images: (body.images ?? []).map((img) => ({
+      file_id: img.fileId,
+      body_site: img.bodySite,
+      description: img.description,
+      confirmed_label: img.confirmedLabel,
+    })),
   };
 }
 

@@ -22,6 +22,7 @@ export const EMPTY_FINALIZE: FinalizeInput = {
   urgency: "monitor",
   instructions: [""],
   facts: [],
+  images: [],
 };
 
 /** Khớp cách server gán origin lúc chốt: sửa dữ kiện có sẵn → bác sĩ sửa; tự thêm → bác sĩ ghi nhận */

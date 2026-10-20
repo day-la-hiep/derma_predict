@@ -14,6 +14,15 @@ class FactInput(BaseModel):
     detail: str = ""
 
 
+class PatientImageInput(BaseModel):
+    """Ảnh bệnh bác sĩ chọn từ đoạn chat để gắn vào bệnh án (file đã nằm trong `files`/MinIO)."""
+
+    file_id: str = Field(min_length=1)
+    body_site: str = ""
+    description: str = ""
+    confirmed_label: str | None = None  # nhãn bác sĩ xác nhận — nên khớp 22 lớp CNN
+
+
 class FinalizeMedicalRecordInput(BaseModel):
     diagnosis: str = Field(min_length=1)
     notes: str = ""
@@ -22,6 +31,7 @@ class FinalizeMedicalRecordInput(BaseModel):
     urgency: Urgency
     instructions: list[str] = []
     facts: list[FactInput] = []
+    images: list[PatientImageInput] = []
 
 
 class CreateDoctorMedicalRecordInput(FinalizeMedicalRecordInput):
