@@ -8,6 +8,7 @@ from app.api.deps import (
     get_consultation_service,
     get_current_user,
     get_doctor_medical_record_service,
+    get_patient_graph_service,
     get_redis_client,
     require_role,
 )
@@ -27,12 +28,18 @@ from app.dto.response.medical_record import (
     FinalizeDraftOutput,
 )
 from app.dto.response.message import MessageOutput
+from app.dto.response.patient_graph import PatientJourneyGraphOutput
 from app.infra.redis_client import RedisClient
 from app.models.user import User
 from app.services.consultation_service import ConsultationService
 from app.services.doctor_medical_record_service import DoctorMedicalRecordService
+from app.services.patient_graph_service import PatientGraphService
 
 router = APIRouter(tags=["doctor"])
+
+PatientGraphServiceDep = Annotated[
+    PatientGraphService, Depends(get_patient_graph_service)
+]
 
 ConsultationServiceDep = Annotated[
     ConsultationService, Depends(get_consultation_service)
@@ -220,6 +227,21 @@ async def list_patient_medical_records(
 ) -> ApiResponse[list[DoctorMedicalRecordOutput]]:
     """Toàn bộ lịch sử khám của một bệnh nhân (mọi bác sĩ)."""
     return ApiResponse(data=await service.list_for_patient(profile_id))
+
+
+@router.get(
+    "/doctor/patient-profiles/{profile_id}/journey-graph",
+    response_model=ApiResponse[PatientJourneyGraphOutput],
+    operation_id="getPatientJourneyGraph",
+)
+async def get_patient_journey_graph(
+    profile_id: str,
+    graph_service: PatientGraphServiceDep,
+    _doctor: DoctorDep,
+) -> ApiResponse[PatientJourneyGraphOutput]:
+    """Truy vấn đồ thị hành trình tư vấn của bệnh nhân (PJKG) từ Neo4j."""
+    graph = await graph_service.get_patient_journey_graph(profile_id)
+    return ApiResponse(data=graph)
 
 
 @router.post(

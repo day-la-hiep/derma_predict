@@ -42,6 +42,7 @@ from app.services.patient_profile_service import PatientProfileService
 from app.services.doctor_medical_record_service import DoctorMedicalRecordService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
 from app.services.medical_case_index_service import MedicalCaseIndexService
+from app.services.patient_graph_service import PatientGraphService
 
 T = TypeVar("T")
 
@@ -128,6 +129,13 @@ def get_knowledge_graph_service() -> KnowledgeGraphService:
     return _singleton(
         "knowledge_graph_service",
         lambda: KnowledgeGraphService(get_neo4j_client()),
+    )
+
+
+def get_patient_graph_service() -> PatientGraphService:
+    return _singleton(
+        "patient_graph_service",
+        lambda: PatientGraphService(get_neo4j_client()),
     )
 
 
@@ -240,7 +248,9 @@ def get_patient_profile_service(
 def get_doctor_medical_record_service(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> DoctorMedicalRecordService:
-    return DoctorMedicalRecordService(db, get_file_store_service(), get_medical_case_index_service())
+    return DoctorMedicalRecordService(
+        db, get_file_store_service(), get_medical_case_index_service(), get_patient_graph_service()
+    )
 
 
 def get_message_repository(
@@ -298,7 +308,7 @@ def get_consultation_service(
     redis: Annotated[RedisClient, Depends(get_redis_client)],
     rabbitmq: Annotated[RabbitMQClient, Depends(get_rabbitmq_client)],
 ) -> ConsultationService:
-    return ConsultationService(db, redis, rabbitmq)
+    return ConsultationService(db, redis, rabbitmq, get_patient_graph_service())
 
 
 def get_user_repository(

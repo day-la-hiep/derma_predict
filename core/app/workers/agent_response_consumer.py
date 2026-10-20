@@ -8,7 +8,12 @@ from aio_pika.abc import AbstractIncomingMessage
 
 from agent.dto.schemas import AgentResponseMessage
 from app.config.constants import AGENT_ACTIVE_TURN_KEY, AGENT_RESPONSE_QUEUE
-from app.api.deps import get_postgres_client, get_rabbitmq_client, get_redis_client
+from app.api.deps import (
+    get_patient_graph_service,
+    get_postgres_client,
+    get_rabbitmq_client,
+    get_redis_client,
+)
 from app.repositories.message_repository import MessageRepository
 from app.services.consultation_service import ConsultationService
 
@@ -28,7 +33,12 @@ async def _on_message(message: AbstractIncomingMessage) -> None:
         if msg.status in ("report_ready", "report_failed"):
             if msg.session_id:
                 async with get_postgres_client().session_factory() as db:
-                    service = ConsultationService(db, get_redis_client(), get_rabbitmq_client())
+                    service = ConsultationService(
+                        db,
+                        get_redis_client(),
+                        get_rabbitmq_client(),
+                        get_patient_graph_service(),
+                    )
                     await service.save_generated_report(
                         session_id=msg.session_id,
                         summary=msg.report_summary or "",

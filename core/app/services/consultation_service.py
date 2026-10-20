@@ -35,6 +35,7 @@ from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.message_repository import MessageRepository
 from app.services.doctor_medical_record_service import to_patient_profile_dto
 from app.repositories.user_repository import UserRepository
+from app.services.patient_graph_service import PatientGraphService
 from app.services.room_events import publish_inbox, publish_room
 
 logger = logging.getLogger(__name__)
@@ -49,11 +50,16 @@ class RoomAccess:
 
 class ConsultationService:
     def __init__(
-        self, db: AsyncSession, redis: RedisClient, rabbitmq: RabbitMQClient | None = None
+        self,
+        db: AsyncSession,
+        redis: RedisClient,
+        rabbitmq: RabbitMQClient | None = None,
+        patient_graph_service: PatientGraphService | None = None,
     ) -> None:
         self._db = db
         self._redis = redis
         self._rabbitmq = rabbitmq or get_rabbitmq_client()
+        self._patient_graph = patient_graph_service
         self._repo = ConsultationRepository(db)
         self._conv_repo = ConversationRepository(db)
         self._msg_repo = MessageRepository(db)
@@ -384,6 +390,22 @@ class ConsultationService:
         out = self._to_output(session, conv_title, report, facts_dto, patient)
         await self._announce(out)
         logger.info("Đã lưu báo cáo tiền tư vấn và phát event cập nhật cho session=%s", session_id)
+
+        # 5. Đồng bộ đồ thị hành trình bệnh nhân (Patient Journey Knowledge Graph) trên Neo4j
+        if self._patient_graph and patient_profile_id:
+            try:
+                await self._patient_graph.sync_pre_consultation(
+                    patient_id=patient_profile_id,
+                    session_id=session_id,
+                    session_date=session.requested_at,
+                    summary=summary,
+                    reason=session.reason or "Bệnh nhân yêu cầu bác sĩ tư vấn",
+                    facts=facts,
+                    gender=patient.gender if patient else "unknown",
+                    dob=patient.dob if patient else "",
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Không thể đồng bộ session %s sang Neo4j: %s", session_id, exc)
 
 
     async def send_doctor_reply(
