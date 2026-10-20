@@ -120,6 +120,7 @@ def build_snapshot(
 
 
 from app.services.medical_case_index_service import MedicalCaseIndexService
+from app.services.patient_graph_service import PatientGraphService
 
 
 class DoctorMedicalRecordService:
@@ -128,6 +129,7 @@ class DoctorMedicalRecordService:
         db: AsyncSession,
         file_store: FileStoreService,
         case_index_service: MedicalCaseIndexService | None = None,
+        patient_graph_service: PatientGraphService | None = None,
     ) -> None:
         self._records = MedicalRecordRepository(db)
         self._profiles = PatientProfileRepository(db)
@@ -136,6 +138,7 @@ class DoctorMedicalRecordService:
         self._files = FileRepository(db)
         self._file_store = file_store
         self._case_index_service = case_index_service
+        self._patient_graph = patient_graph_service
 
     # ---------------------------------------------------------------- đọc
 
@@ -229,6 +232,18 @@ class DoctorMedicalRecordService:
                 await self._case_index_service.index_record(record, profile)
             except Exception:  # noqa: BLE001
                 # Không chặn hoàn tất hồ sơ nếu lỗi kết nối vector DB
+                pass
+        if self._patient_graph and session_id:
+            try:
+                await self._patient_graph.sync_finalized_session(
+                    session_id=session_id,
+                    doctor_id=doctor_id,
+                    suspected_condition=body.diagnosis,
+                    notes=body.notes,
+                    instructions=body.instructions,
+                )
+            except Exception:  # noqa: BLE001
+                # Không chặn hoàn tất hồ sơ nếu lỗi kết nối Graph DB
                 pass
         return record
 

@@ -27,8 +27,9 @@ import type {
   ProfileRelationship,
   SnapshotMessage,
   Urgency,
+  PatientJourneyGraph,
 } from "./types";
-import { MOCK_SESSIONS, MOCK_MESSAGES } from "./mockData";
+import { MOCK_SESSIONS, MOCK_MESSAGES, getMockPatientJourneyGraph } from "./mockData";
 
 /** Trích xuất thông báo lỗi chuẩn từ FastAPI detail */
 export function errorMessage(e: unknown): string {
@@ -393,5 +394,34 @@ export const doctorApi = {
       })
     );
     return adaptSession(raw);
+  },
+
+  /** Lấy đồ thị hành trình bệnh nhân (Personal Knowledge Graph qua các phiên) */
+  async getPatientJourneyGraph(patientId: string): Promise<PatientJourneyGraph> {
+    if (USE_MOCK) {
+      return getMockPatientJourneyGraph(patientId);
+    }
+    const raw = await unwrap<any>(
+      api.get(`/doctor/patient-profiles/${encodeURIComponent(patientId)}/journey-graph`)
+    );
+    return {
+      patientId: raw?.patient_id ?? patientId,
+      nodes: Array.isArray(raw?.nodes)
+        ? raw.nodes.map((n: any) => ({
+            id: String(n.id),
+            label: String(n.label),
+            name: String(n.name ?? ""),
+            properties: n.properties ?? {},
+          }))
+        : [],
+      edges: Array.isArray(raw?.edges)
+        ? raw.edges.map((e: any) => ({
+            source: String(e.source),
+            target: String(e.target),
+            type: String(e.type),
+            properties: e.properties ?? {},
+          }))
+        : [],
+    };
   },
 };

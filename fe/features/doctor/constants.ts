@@ -10,6 +10,12 @@ import {
   ImageIcon,
   HelpCircle,
   HandHelping,
+  User,
+  Calendar,
+  HeartPulse,
+  Sparkles,
+  Stethoscope,
+  Network,
   type LucideIcon,
 } from "lucide-react";
 import type { ClinicalFactType, ConsultationStatus, FactOrigin, Urgency } from "./types";
@@ -212,3 +218,119 @@ export const TIME_FILTERS: { days: number | null; label: string }[] = [
   { days: 90, label: "90 ngày" },
   { days: null, label: "Tất cả" },
 ];
+
+/* ────────── Patient Journey Graph Config ────────── */
+
+export interface JourneyNodeConfig {
+  label: string;
+  hint: string;
+  icon: LucideIcon;
+  badgeClass: string;
+  colorClass: string;
+  dotColor: string;
+}
+
+export const DEFAULT_JOURNEY_NODE_CONFIG: JourneyNodeConfig = {
+  label: "Thực thể",
+  hint: "Nút dữ liệu trên đồ thị tri thức",
+  icon: CircleDot,
+  badgeClass: "border-border bg-muted text-muted-foreground",
+  colorClass: "border-border bg-muted text-muted-foreground",
+  dotColor: "#64748b",
+};
+
+export const JOURNEY_NODE_CONFIG: Record<string, JourneyNodeConfig> = {
+  Patient: {
+    label: "Bệnh nhân",
+    hint: "Hồ sơ bệnh nhân là nút trung tâm của đồ thị",
+    icon: User,
+    badgeClass: "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/60 dark:bg-sky-950/50 dark:text-sky-400",
+    colorClass: "border-sky-400/40 bg-sky-500/10 text-sky-600 dark:text-sky-400",
+    dotColor: "#0284c7",
+  },
+  ConsultationSession: {
+    label: "Phiên tư vấn",
+    hint: "Phiên tư vấn giữa bệnh nhân, AI và bác sĩ",
+    icon: Calendar,
+    badgeClass: "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/50 dark:text-indigo-400",
+    colorClass: "border-indigo-400/40 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
+    dotColor: "#6366f1",
+  },
+  Symptom: {
+    label: "Triệu chứng",
+    hint: "Dữ kiện triệu chứng ghi nhận trong phiên",
+    icon: Activity,
+    badgeClass: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/50 dark:text-amber-400",
+    colorClass: "border-amber-400/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    dotColor: "#d97706",
+  },
+  Lesion: {
+    label: "Tổn thương da",
+    hint: "Dữ kiện tổn thương da ghi nhận trong phiên",
+    icon: Microscope,
+    badgeClass: "border-pink-200 bg-pink-50 text-pink-700 dark:border-pink-900/60 dark:bg-pink-950/50 dark:text-pink-400",
+    colorClass: "border-pink-400/40 bg-pink-500/10 text-pink-600 dark:text-pink-400",
+    dotColor: "#db2777",
+  },
+  ClinicalFact: {
+    label: "Dữ kiện lâm sàng",
+    hint: "Dữ kiện ghi nhận từ phiên tư vấn",
+    icon: Activity,
+    badgeClass: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/50 dark:text-amber-400",
+    colorClass: "border-amber-400/40 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+    dotColor: "#d97706",
+  },
+  Condition: {
+    label: "Chẩn đoán",
+    hint: "Bệnh lý / Tình trạng được bác sĩ chẩn đoán sau khám",
+    icon: HeartPulse,
+    badgeClass: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/50 dark:text-rose-400",
+    colorClass: "border-rose-400/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
+    dotColor: "#e11d48",
+  },
+  SuspectedCondition: {
+    label: "Chẩn đoán nghi ngờ",
+    hint: "Bệnh lý / Tình trạng được bác sĩ chẩn đoán sau phiên",
+    icon: HeartPulse,
+    badgeClass: "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/50 dark:text-rose-400",
+    colorClass: "border-rose-400/40 bg-rose-500/10 text-rose-600 dark:text-rose-400",
+    dotColor: "#e11d48",
+  },
+  Advice: {
+    label: "Dặn dò",
+    hint: "Lời dặn, đơn thuốc và hướng dẫn điều trị của bác sĩ",
+    icon: Sparkles,
+    badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/50 dark:text-emerald-400",
+    colorClass: "border-emerald-400/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    dotColor: "#059669",
+  },
+  Doctor: {
+    label: "Bác sĩ",
+    hint: "Bác sĩ phụ trách và chốt bệnh án cho phiên",
+    icon: Stethoscope,
+    badgeClass: "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900/60 dark:bg-purple-950/50 dark:text-purple-400",
+    colorClass: "border-purple-400/40 bg-purple-500/10 text-purple-600 dark:text-purple-400",
+    dotColor: "#9333ea",
+  },
+  DermoTerm: {
+    label: "Ontology DermO",
+    hint: "Thuật ngữ chuẩn hoá trong Ontology da liễu DermO",
+    icon: Network,
+    badgeClass: "border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-900/60 dark:bg-teal-950/50 dark:text-teal-400",
+    colorClass: "border-teal-400/40 bg-teal-500/10 text-teal-600 dark:text-teal-400",
+    dotColor: "#0d9488",
+  },
+};
+
+export const JOURNEY_EDGE_CONFIG: Record<string, { label: string; strokeColor: string; dashed?: boolean }> = {
+  HAD_SESSION: { label: "Phiên tư vấn", strokeColor: "#0284c7" },
+  NEXT: { label: "Tiếp theo", strokeColor: "#6366f1", dashed: true },
+  HAS_SYMPTOM: { label: "Triệu chứng", strokeColor: "#d97706" },
+  REPORTED_FACT: { label: "Dữ kiện", strokeColor: "#d97706" },
+  MAPS_TO: { label: "Chuẩn hoá DermO", strokeColor: "#0d9488", dashed: true },
+  CONDUCTED_BY: { label: "Bác sĩ", strokeColor: "#9333ea" },
+  HAS_CONDITION: { label: "Chẩn đoán", strokeColor: "#e11d48" },
+  SUSPECTED_CONDITION: { label: "Chẩn đoán", strokeColor: "#e11d48" },
+  RECEIVED_ADVICE: { label: "Dặn dò", strokeColor: "#059669" },
+  RECOMMENDED_ADVICE: { label: "Dặn dò", strokeColor: "#059669" },
+};

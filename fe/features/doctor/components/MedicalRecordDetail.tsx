@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ClipboardList, ExternalLink, History, Printer, TriangleAlert } from "lucide-react";
+import { ClipboardList, ExternalLink, History, Printer, TriangleAlert, Network } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,8 +14,9 @@ import type { DoctorMedicalRecordItem, PatientProfile } from "../types";
 import { ChatBubble } from "./ChatViewer";
 import { FactSources } from "./FactSources";
 import { MedicalRecordCard, ReferenceBadge, formatDate } from "./MedicalRecordCard";
-import { patientSubtitle } from "./PatientProfileDetails";
+import { PatientProfileDetails, patientSubtitle } from "./PatientProfileDetails";
 import { OriginBadge, UrgencyBadge } from "./RecordBadges";
+import { PatientJourneyDialog } from "./PatientJourneyDialog";
 
 type Tab = "summary" | "facts" | "conversation";
 
@@ -196,6 +197,17 @@ export function MedicalRecordDetail({ record }: { record: DoctorMedicalRecordIte
                 <Printer className="size-3.5" /> Xuất PDF
               </Button>
             </Hint>
+            {record.patient?.id && (
+              <PatientJourneyDialog
+                patientId={record.patient.id}
+                patientName={patient.fullName}
+                trigger={
+                  <Button variant="outline" size="sm" className="gap-1.5 border-brand/30 text-brand hover:bg-brand/10">
+                    <Network className="size-3.5" /> Hành trình bệnh
+                  </Button>
+                }
+              />
+            )}
             {hasSource && (
               <Hint side="bottom" content="Mở ca tư vấn gốc ở màn Ca tư vấn.">
                 <Button variant="outline" size="sm" asChild className="gap-1.5">

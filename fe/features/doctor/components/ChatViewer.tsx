@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bot, User, Stethoscope, CornerDownLeft, Brain, FileText } from "lucide-react";
+import { Bot, User, Stethoscope, CornerDownLeft, Brain, FileText, Network } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDoctorStore } from "../store";
 import type { DoctorViewMessage } from "../types";
@@ -14,6 +14,7 @@ import { MarkdownMessage } from "@/features/chat/components/MarkdownMessage";
 import { ImageThumbnail } from "@/features/chat/components/ImageThumbnail";
 import { ConsultationDivider } from "@/features/chat/components/ConsultationDivider";
 import { PatientProfileSheet } from "./PatientProfileSheet";
+import { PatientJourneyDialog } from "./PatientJourneyDialog";
 import { ReportPanel } from "./ReportPanel";
 
 const SENDER_CONFIG = {
@@ -189,6 +190,17 @@ export function ChatViewer() {
                 </SheetContent>
               </Sheet>
             </div>
+            {activeSession.patient?.id && (
+              <PatientJourneyDialog
+                patientId={activeSession.patient.id}
+                patientName={activeSession.patient.fullName}
+                trigger={
+                  <Button variant="outline" size="sm" className="gap-1.5 border-brand/30 text-brand hover:bg-brand/10">
+                    <Network className="size-3.5" /> Hành trình bệnh
+                  </Button>
+                }
+              />
+            )}
             <PatientProfileSheet session={activeSession} />
           </div>
         )}
