@@ -234,6 +234,12 @@ async def list_patient_medical_records(
     response_model=ApiResponse[PatientJourneyGraphOutput],
     operation_id="getPatientJourneyGraph",
 )
+@router.get(
+    "/doctor/patients/{profile_id}/journey-graph",
+    response_model=ApiResponse[PatientJourneyGraphOutput],
+    operation_id="getPatientJourneyGraphAlias",
+    include_in_schema=False,
+)
 async def get_patient_journey_graph(
     profile_id: str,
     graph_service: PatientGraphServiceDep,

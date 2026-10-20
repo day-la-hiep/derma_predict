@@ -174,7 +174,11 @@ class PatientGraphService:
         OPTIONAL MATCH (s)-[r_adv:RECOMMENDED_ADVICE]->(a:Advice)
         RETURN p, s, s_next, f, d, c, a, r_sess, r_next, r_fact, r_dermo, r_cond, r_adv
         """
-        records = await self._neo4j.run(query, patient_id=patient_id)
+        try:
+            records = await self._neo4j.run(query, patient_id=patient_id)
+        except Exception as e:
+            logger.warning("Lỗi truy vấn đồ thị bệnh nhân %s từ Neo4j: %s", patient_id, e)
+            records = []
 
         node_map: dict[str, GraphNodeOutput] = {}
         edge_map: dict[str, GraphEdgeOutput] = {}

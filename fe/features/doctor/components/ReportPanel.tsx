@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Brain, CheckCircle2, FileText, Loader2 } from "lucide-react";
+import { Brain, CheckCircle2, FileText, Loader2, Network } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDoctorStore } from "../store";
 import { STATUS_ACTION_CONFIG } from "../constants";
@@ -12,6 +12,7 @@ import { PatientInfoCard } from "./PatientInfoCard";
 import { ClinicalFactList } from "./ClinicalFactList";
 import { AiSummaryView } from "./AiSummaryView";
 import { FinalizeConsultationDialog } from "./FinalizeConsultationDialog";
+import { PatientJourneyDialog } from "./PatientJourneyDialog";
 
 export function ReportPanel() {
   const activeSessionId = useDoctorStore((s) => s.activeSessionId);
@@ -52,9 +53,24 @@ export function ReportPanel() {
   return (
     <div className="flex h-full flex-col">
       <div className="space-y-3 border-b border-border px-4 py-3">
-        <Hint side="left" content={reportTime ? `Báo cáo AI tạo lúc ${reportTime}` : "Chưa có báo cáo AI cho ca này"}>
-          <h3 className="w-fit font-serif text-lg font-bold tracking-tight text-foreground">Báo cáo</h3>
-        </Hint>
+        <div className="flex items-center justify-between">
+          <Hint side="left" content={reportTime ? `Báo cáo AI tạo lúc ${reportTime}` : "Chưa có báo cáo AI cho ca này"}>
+            <h3 className="w-fit font-serif text-lg font-bold tracking-tight text-foreground">Báo cáo</h3>
+          </Hint>
+          {session.patient?.id && (
+            <PatientJourneyDialog
+              patientId={session.patient.id}
+              patientName={session.patient.fullName}
+              trigger={
+                <Button variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-brand">
+                  <Hint side="left" content="Xem đồ thị hành trình bệnh">
+                    <Network className="size-4" />
+                  </Hint>
+                </Button>
+              }
+            />
+          )}
+        </div>
         <PatientInfoCard patient={session.patient} reason={session.reason} />
       </div>
 

@@ -13,6 +13,7 @@ export const qk = {
   patientSearch: (q: string) => ["doctor", "patient-search", q] as const,
   finalizeDraft: (sessionId: string) => ["doctor", "finalize-draft", sessionId] as const,
   conversation: (conversationId: string) => ["doctor", "conversation", conversationId] as const,
+  patientJourneyGraph: (patientId: string) => ["doctor", "patient-journey-graph", patientId] as const,
 };
 
 export function useSessionMedicalRecords(sessionId: string | null) {
@@ -93,5 +94,13 @@ export function useConversationMessages(conversationId: string | null) {
     queryKey: qk.conversation(conversationId ?? ""),
     queryFn: () => doctorApi.getMessages(conversationId!),
     enabled: !!conversationId,
+  });
+}
+
+export function usePatientJourneyGraph(patientId: string | null) {
+  return useQuery({
+    queryKey: qk.patientJourneyGraph(patientId ?? ""),
+    queryFn: () => doctorApi.getPatientJourneyGraph(patientId!),
+    enabled: !!patientId,
   });
 }

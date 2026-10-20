@@ -158,3 +158,45 @@ export interface DoctorViewMessage {
   createdAt: string;
   attachments?: { id: string; name: string; url?: string; contentType?: string }[];
 }
+
+/* ────────── Patient Journey Graph ────────── */
+
+export type PatientJourneyNodeType =
+  | "Patient"
+  | "ConsultationSession"
+  | "Symptom"
+  | "Condition"
+  | "Advice"
+  | "Doctor"
+  | string;
+
+export type PatientJourneyEdgeType =
+  | "HAD_SESSION"
+  | "HAS_SYMPTOM"
+  | "HAS_CONDITION"
+  | "RECEIVED_ADVICE"
+  | "NEXT"
+  | "CONDUCTED_BY"
+  | string;
+
+export interface PatientJourneyNode {
+  id: string;
+  label: PatientJourneyNodeType;
+  name: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  properties: Record<string, any>;
+}
+
+export interface PatientJourneyEdge {
+  source: string;
+  target: string;
+  type: PatientJourneyEdgeType;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  properties: Record<string, any>;
+}
+
+export interface PatientJourneyGraph {
+  patientId: string;
+  nodes: PatientJourneyNode[];
+  edges: PatientJourneyEdge[];
+}

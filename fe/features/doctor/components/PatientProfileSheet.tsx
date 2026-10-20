@@ -15,6 +15,7 @@ import { useSessionMedicalRecords } from "../hooks";
 import type { ConsultationSession } from "../types";
 import { MedicalRecordCard } from "./MedicalRecordCard";
 import { PatientProfileDetails, patientSubtitle } from "./PatientProfileDetails";
+import { PatientJourneyDialog } from "./PatientJourneyDialog";
 
 export function PatientProfileSheet({ session }: { session: ConsultationSession }) {
   const [open, setOpen] = useState(false);
@@ -36,6 +37,20 @@ export function PatientProfileSheet({ session }: { session: ConsultationSession 
 
         <div className="space-y-4 px-4 pb-4">
           {patient && <PatientProfileDetails patient={patient} />}
+
+          {patient?.id && (
+            <div className="pt-1">
+              <PatientJourneyDialog
+                patientId={patient.id}
+                patientName={patient.fullName}
+                trigger={
+                  <Button variant="outline" className="w-full gap-2 border-brand/40 bg-brand/5 text-brand hover:bg-brand/10">
+                    Xem đồ thị hành trình bệnh
+                  </Button>
+                }
+              />
+            </div>
+          )}
 
           <div>
             <Hint side="left" content="Bệnh án được ghi khi bác sĩ chốt lúc đóng ca, hoặc ở màn Lịch sử khám cho ca khám trực tiếp.">
