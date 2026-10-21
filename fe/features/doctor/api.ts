@@ -405,7 +405,7 @@ export const doctorApi = {
   /** Bệnh nhân gửi yêu cầu bác sĩ tư vấn & AI tự động bóc tách dữ kiện sinh báo cáo */
   async requestConsultation(
     conversationId: string,
-    reason: string = "Bệnh nhân yêu cầu bác sĩ tư vấn"
+    reason: string
   ): Promise<ConsultationSession> {
     const raw = await unwrap<any>(
       api.post(`/conversations/${encodeURIComponent(conversationId)}/request-consultation`, {

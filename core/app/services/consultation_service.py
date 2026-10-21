@@ -261,9 +261,7 @@ class ConsultationService:
         await self._announce(out)
         return out
 
-    async def request_consultation(
-        self, conversation_id: str, user_id: str, reason: str = "Bệnh nhân yêu cầu bác sĩ tư vấn"
-    ) -> ConsultationSessionOutput:
+    async def request_consultation(self, conversation_id: str, user_id: str, reason: str) -> ConsultationSessionOutput:
         """Kích hoạt tạo phiên tư vấn & gửi task qua RabbitMQ cho Agent Worker sinh báo cáo bất đồng bộ."""
         conv = await self._conv_repo.get(conversation_id)
         if conv is None:

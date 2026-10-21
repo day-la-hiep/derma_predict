@@ -263,9 +263,7 @@ async def request_consultation(
     current_user: CurrentUserDep,
 ) -> ApiResponse[ConsultationSessionOutput]:
     """Bệnh nhân yêu cầu kết nối Bác sĩ -> Tự động kích hoạt LLM sinh báo cáo tiền tư vấn AI."""
-    session = await service.request_consultation(
-        conversation_id, current_user.id, body.reason or "Bệnh nhân yêu cầu bác sĩ tư vấn"
-    )
+    session = await service.request_consultation(conversation_id, current_user.id, body.reason)
     return ApiResponse(data=session)
 
 
