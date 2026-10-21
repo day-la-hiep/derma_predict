@@ -1,4 +1,4 @@
-.PHONY: infra infra-down backend worker ingest-worker migrate migrate-new init-db load-primekg load-dermo load-kg kg-download kg-build kg-load kg-verify frontend
+.PHONY: infra infra-down backend worker ingest-worker migrate migrate-new init-db load-primekg load-dermo load-kg kg-download kg-build kg-load kg-verify data-export data-restore frontend
 
 infra:
 	docker compose up -d
@@ -48,6 +48,13 @@ kg-load:
 
 kg-verify:
 	cd core && uv run python -m graph_base.verify
+
+# xuất / khôi phục 4 volume (postgres, minio, qdrant, neo4j) vào ./backup; tắt stack trước (docker compose down); prod: make data-export VOL_PREFIX=derma-hospital-prod_
+data-export:
+	$(if $(VOL_PREFIX),VOL_PREFIX=$(VOL_PREFIX)) ./scripts/transfer-data.sh export
+
+data-restore:
+	$(if $(VOL_PREFIX),VOL_PREFIX=$(VOL_PREFIX)) ./scripts/transfer-data.sh restore
 
 frontend:
 	cd fe && pnpm dev
