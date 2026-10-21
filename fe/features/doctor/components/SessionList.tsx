@@ -36,10 +36,10 @@ function SessionRow({ session, active, onSelect }: { session: ConsultationSessio
       <span className={cn("size-2 shrink-0 rounded-full", cfg.dotClass, session.status === "pending" && "animate-pulse")} />
       <span className="min-w-0 flex-1">
         <span className={cn("block truncate text-sm", active ? "font-semibold text-brand" : "font-medium text-foreground")}>
-          {session.patient?.fullName ?? "Bệnh nhân"}
+          {session.reason || "Chưa có mô tả"}
         </span>
         <span className="block truncate text-[11px] text-muted-foreground">
-          {gender}, {calculateAge(session.patient?.dob)}t · {formatRelativeTime(session.requestedAt)}
+          {session.patient?.fullName ?? "Bệnh nhân"} · {gender}, {calculateAge(session.patient?.dob)}t · {formatRelativeTime(session.requestedAt)}
         </span>
       </span>
       {facts > 0 && (
