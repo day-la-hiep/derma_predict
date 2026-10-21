@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +42,8 @@ from app.repositories.file_repository import FileRepository
 from app.repositories.finalize_report_repository import FinalizeReportRepository
 from app.repositories.patient_profile_repository import PatientProfileRepository
 from app.services.file_store_service import FileStoreService
+
+logger = logging.getLogger(__name__)
 
 FactRow = tuple[ClinicalFact, ClinicalFactTemplate, list[Message]]
 
@@ -269,8 +272,8 @@ class FinalizeReportService:
             try:
                 await self._index_service.index_report(report, profile, images=attached_images)
             except Exception:  # noqa: BLE001
-                # Không chặn hoàn tất hồ sơ nếu lỗi kết nối vector DB
-                pass
+                # Không chặn chốt báo cáo; báo cáo này sẽ thiếu trong Qdrant tới khi chạy scripts/reindex_finalize_reports.py
+                logger.warning("Không nạp được báo cáo %s vào Qdrant", report.id, exc_info=True)
         if self._patient_graph:
             try:
                 await self._patient_graph.sync_finalized_session(
@@ -281,8 +284,7 @@ class FinalizeReportService:
                     instructions=body.instructions,
                 )
             except Exception:  # noqa: BLE001
-                # Không chặn hoàn tất hồ sơ nếu lỗi kết nối Graph DB
-                pass
+                logger.warning("Không đồng bộ phiên %s vào đồ thị bệnh nhân", session_id, exc_info=True)
         return report
 
     # ---------------------------------------------------------------- tiện ích
