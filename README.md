@@ -50,6 +50,7 @@ core/
   pipeline/document_ingest/   stages/, mapping.py, tests/
   migrations/            Alembic
   data_ingest/           dữ liệu guideline / KG và script nạp
+scripts/                 script gốc repo (transfer-data.sh; scripts/backup/ gitignore)
 docs/module/             tài liệu từng module
 docker-compose.yml       hạ tầng dev
 docker-compose.prod.yml  stack production (xem DEPLOY.md)
@@ -84,6 +85,27 @@ make kg-verify
 Chi tiết: [core/graph_base/README.md](core/graph_base/README.md). (Script cũ trong `core/data_ingest/` chưa dọn, không dùng cho đồ thị nền nữa.)
 
 Tool `classify_skin_image` cần checkpoint CNN tại `SKIN_CNN_CHECKPOINT_PATH`.
+
+### Chuyển dữ liệu sang máy khác
+
+Dữ liệu sách BYT nằm ở Postgres, MinIO, Qdrant và Neo4j nên phải chuyển cả 4. Script đóng gói 4 volume vào `scripts/backup/` (gitignore):
+
+```bash
+# máy cũ: tắt stack (không -v) rồi export
+docker compose down
+make data-export
+
+# copy thư mục scripts/backup/ sang cùng vị trí ở máy mới (USB, scp -r, ...)
+
+# máy mới: clone repo, tạo core/.env, stack đang tắt
+make data-restore          # hỏi 'yes' vì ghi đè 4 volume
+docker compose up -d       # KHÔNG chạy make migrate / make init-db
+```
+
+- Copy **toàn bộ** 4 volume (cả chat, bệnh án, ảnh đính kèm), không chỉ sách BYT; Redis/RabbitMQ không theo sang.
+- Máy mới dùng cùng phiên bản image và cùng model embedding / tên collection Qdrant.
+- Prod: thêm `VOL_PREFIX=derma-hospital-prod_` (ví dụ `make data-export VOL_PREFIX=derma-hospital-prod_`).
+- Xuất từng phần, dựng lại thay vì chuyển, kiểm tra sau khi chuyển: [docs/module/chuyen-du-lieu-sang-may-khac.md](docs/module/chuyen-du-lieu-sang-may-khac.md).
 
 ### Biến môi trường chính
 

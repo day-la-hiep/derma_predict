@@ -1,6 +1,8 @@
 .idea
 # chỉ ignore thư mục data dev ở root (2GB+ raw PrimeKG/dermnet/epfl), KHÔNG ignore core/data/ (data deploy)
 /data
+# bản export dữ liệu để chuyển máy (transfer-data.sh)
+/scripts/backup/
 # secrets compose prod (mẫu: .env.prod.example)
 /.env
 .vscode

@@ -96,6 +96,8 @@ Script chạy trong container `derma-core-api`, nạp đồ thị tri thức và
 - `./reset-and-gen-data.sh --reset` — **xoá sạch** rồi nạp lại từ đầu (dùng khi đổi dữ liệu/model embedding).
 - Mất khoảng 1–2 phút. Phải chạy **sau khi** `derma-core-api` đã start.
 
+Chuyển dữ liệu sách đã nạp (Postgres, MinIO, Qdrant, Neo4j) sang máy khác: xem `docs/module/chuyen-du-lieu-sang-may-khac.md`.
+
 Nếu thiếu bước này agent vẫn chạy nhưng các tool tra cứu trả về rỗng, câu trả lời sẽ nghèo/sai.
 
 ## 5. Kiểm tra sau khi chạy
