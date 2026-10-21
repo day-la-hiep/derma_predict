@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import type { MedicalRecord } from "../types";
+import type { FinalizeReport } from "../types";
 
 export function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("vi-VN");
@@ -18,16 +18,16 @@ export function ReferenceBadge({ className }: { className?: string }) {
   );
 }
 
-export function MedicalRecordCard({ record }: { record: MedicalRecord }) {
+export function FinalizeReportCard({ report }: { report: FinalizeReport }) {
   return (
     <li className="rounded-xl border border-border/60 px-3 py-2.5">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-sm font-medium text-foreground">{record.diagnosis}</span>
-        {record.isReferenceCase && <ReferenceBadge />}
+        <span className="text-sm font-medium text-foreground">{report.diagnosis}</span>
+        {report.isReferenceCase && <ReferenceBadge />}
       </div>
-      {record.notes && <p className="mt-1 whitespace-pre-line text-xs text-muted-foreground">{record.notes}</p>}
+      {report.notes && <p className="mt-1 whitespace-pre-line text-xs text-muted-foreground">{report.notes}</p>}
       <p className="mt-1.5 text-[11px] text-muted-foreground/70">
-        {record.doctorName ?? "Bác sĩ"} · {formatDate(record.createdAt)}
+        {report.doctorName ?? "Bác sĩ"} · {formatDate(report.createdAt)}
       </p>
     </li>
   );

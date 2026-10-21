@@ -19,7 +19,7 @@ Trạng thái được đối chiếu với code ngày **2026-10-05** (nhánh `f
 | Tác nhân | Mô tả | Hiện trạng trong code |
 |---|---|---|
 | **Người dùng** | người đã đăng ký và đăng nhập; quản lý tài khoản của mình, đăng xuất | đã có đăng ký / đăng nhập / đăng xuất / làm mới token (JWT, `/auth/*`). Các route nghiệp vụ chưa kiểm tra token và chưa phân quyền phía server (chat vẫn nhận `user_id` từ client) |
-| **Bệnh nhân** | dùng hệ thống để tiền chẩn đoán và trao đổi về bệnh da liễu: chat với chatbot (gửi ảnh, mô tả triệu chứng), tra cứu bệnh và ca bệnh từ KB, đặt lịch khám, quản lý hồ sơ bệnh án / lịch sử khám / ảnh, trao đổi với bác sĩ qua chat hoặc video call (bác sĩ chưa tiếp nhận thì tiếp tục hỏi chatbot). Cuộc trò chuyện được tổng hợp thành clinical fact và báo cáo cho bác sĩ | bảng `patient_profiles` (một user có nhiều hồ sơ). Phần chat với chatbot đã chạy |
+| **Bệnh nhân** | dùng hệ thống để tiền chẩn đoán và trao đổi về bệnh da liễu: chat với chatbot (gửi ảnh, mô tả triệu chứng), tra cứu bệnh và ca bệnh từ KB, đặt lịch khám, quản lý báo cáo kết luận / lịch sử khám / ảnh, trao đổi với bác sĩ qua chat hoặc video call (bác sĩ chưa tiếp nhận thì tiếp tục hỏi chatbot). Cuộc trò chuyện được tổng hợp thành clinical fact và báo cáo cho bác sĩ | bảng `patient_profiles` (một user có nhiều hồ sơ). Phần chat với chatbot đã chạy |
 | **Bác sĩ** | xem báo cáo tổng hợp, clinical fact, nguồn lập luận từ KB, lịch sử và hồ sơ bệnh nhân; cập nhật hồ sơ sau khám; lưu ca bệnh và ảnh đã xác nhận (làm dữ liệu tham khảo, huấn luyện CNN); chat / video call với bệnh nhân và truy xuất tin nhắn nguồn làm bằng chứng; trực quan hoá Knowledge Graph; tải giáo trình / guideline lên để bổ sung KB | bảng `doctors` có, seed 1 bác sĩ. **Chưa có màn hình nào cho bác sĩ** |
 | *(Admin — có trong code, không có trong yêu cầu)* | hiện là người dùng màn `/doctor/documents` để nạp sách | bảng `admins`. Theo yêu cầu thì việc tải tài liệu là của **bác sĩ**, cần thống nhất lại vai trò |
 
@@ -32,7 +32,7 @@ Trạng thái được đối chiếu với code ngày **2026-10-05** (nhánh `f
 | M3 | Clinical fact & báo cáo tiền tư vấn | Bệnh nhân → Bác sĩ | 🟡 mới có schema | — |
 | M4 | Tư vấn trực tiếp với bác sĩ (chat / video) | Bệnh nhân, Bác sĩ | 🟡 mới có schema | — |
 | M5 | Đặt lịch khám | Bệnh nhân, Bác sĩ | ⏸ hoãn (ngoài scope hiện tại) | — |
-| M6 | Hồ sơ bệnh nhân & bệnh án | Bệnh nhân, Bác sĩ | 🟡 bệnh nhân quản lý hồ sơ + xem bệnh án; phía bác sĩ chưa có | — |
+| M6 | Hồ sơ bệnh nhân & báo cáo kết luận | Bệnh nhân, Bác sĩ | 🟡 bệnh nhân quản lý hồ sơ + xem báo cáo kết luận; phía bác sĩ chưa có | — |
 | M7 | Ca bệnh & ảnh đã xác nhận (dữ liệu CNN) | Bác sĩ | 🟡 mới có cột nhãn ảnh | — |
 | M8 | Knowledge Graph | Bác sĩ, Chatbot | 🟡 agent tra được, chưa trực quan hoá | — |
 | M9 | Quản lý Knowledge Base (tài liệu y khoa) | Bác sĩ (hiện là Admin) | 🟡 nạp sách PDF xong, chatbot chưa dùng | [book-ingest-pipeline.md](../module/book-ingest-pipeline.md) |
@@ -92,21 +92,21 @@ Trạng thái được đối chiếu với code ngày **2026-10-05** (nhánh `f
 | M5.2 | Bệnh nhân đặt lịch khám | ⏸ | hoãn |
 | M5.3 | Xem / huỷ / đổi lịch (cả hai phía) | ⏸ | hoãn |
 
-### M6 — Hồ sơ bệnh nhân & bệnh án
+### M6 — Hồ sơ bệnh nhân & báo cáo kết luận
 
 | Mã | Chức năng | Trạng thái | Hiện trạng / việc cần làm |
 |---|---|---|---|
-| M6.1 | Quản lý hồ sơ bệnh nhân (một tài khoản nhiều hồ sơ, ví dụ cho người nhà) | ✅ | API `/patient-profiles` (CRUD theo tài khoản trong JWT; chặn xoá hồ sơ cuối / hồ sơ đã có hội thoại hoặc bệnh án). Hồ sơ có quan hệ, SĐT, dị ứng và tiền sử tự khai. UI: dialog "Hồ sơ" ở menu tài khoản + chọn hồ sơ cho cuộc trò chuyện mới ở sidebar chat |
-| M6.2 | Bệnh án / lịch sử khám | 🟡 | bệnh nhân xem bệnh án của từng hồ sơ (chỉ đọc, `GET /patient-profiles/{id}/medical-records`, tab "Bệnh án": nhận định + ghi chú). Bác sĩ có màn **Lịch sử khám** (`/doctor/records`): bảng phiếu do mình chốt (lọc thời gian / mức khẩn cấp, tìm kiếm), chi tiết 3 tab Tóm tắt / Dữ kiện / Hội thoại và ảnh, Xuất PDF (in trình duyệt), Mở ca gốc. Mỗi phiếu có cột `snapshot` (JSONB) — bản chụp bất biến lúc chốt: hồ sơ bệnh nhân, cơ sở nhận định, mức khẩn cấp, dặn dò, dữ kiện kèm `origin` và tin nhắn nguồn. Ảnh bệnh trong `patient_images` chưa có API. Hạn chế: dữ kiện sinh trước khi ghi `clinical_provenances` không có nguồn; bệnh án cũ (`snapshot = null`) chỉ hiện nhận định/ghi chú |
-| M6.3 | Thư viện ảnh bệnh đã lưu của bệnh nhân | 🟡 | ảnh chat nằm trong `files` + `message_files`; ảnh đã gắn bệnh án nằm trong `patient_images`. Chưa có màn xem tập trung |
-| M6.4 | Bác sĩ xem hồ sơ + lịch sử bệnh án của bệnh nhân | ✅ | `ConsultationSessionOutput.patient` có thêm quan hệ/SĐT/dị ứng/tiền sử; `GET /doctor/consultations/{id}/medical-records` trả lịch sử bệnh án của bệnh nhân thuộc phiên. UI: `PatientInfoCard` hiện quan hệ + cảnh báo dị ứng, panel "Bệnh án" trong `ReportPanel` |
-| M6.5 | Bác sĩ cập nhật hồ sơ / bệnh án sau mỗi lượt khám | 🟡 | bác sĩ **chốt** bệnh án khi bấm "Đóng ca": form điền sẵn dữ kiện đang hiệu lực kèm nguồn (`GET /doctor/consultations/{id}/finalize-draft`), chốt + đóng ca trong một request (`POST .../finalize`); hoặc đóng ca không ghi bệnh án. Ca khám trực tiếp chốt ở màn Lịch sử khám (`POST /doctor/medical-records`, chọn hồ sơ qua `GET /doctor/patient-profiles?q=`). Phiếu đã chốt không sửa. Hồ sơ (dị ứng/tiền sử/SĐT) vẫn chỉ bệnh nhân tự sửa. Hạn chế: bác sĩ tìm được mọi hồ sơ bệnh nhân (chưa phân quyền theo bệnh nhân phụ trách) |
+| M6.1 | Quản lý hồ sơ bệnh nhân (một tài khoản nhiều hồ sơ, ví dụ cho người nhà) | ✅ | API `/patient-profiles` (CRUD theo tài khoản trong JWT; chặn xoá hồ sơ cuối / hồ sơ đã có hội thoại hoặc báo cáo kết luận). Hồ sơ có quan hệ, SĐT, dị ứng và tiền sử tự khai. UI: dialog "Hồ sơ" ở menu tài khoản + chọn hồ sơ cho cuộc trò chuyện mới ở sidebar chat |
+| M6.2 | Báo cáo kết luận / lịch sử khám | 🟡 | bệnh nhân xem báo cáo kết luận của từng hồ sơ (chỉ đọc, `GET /patient-profiles/{id}/finalize-reports`, tab "Báo cáo kết luận": nhận định + ghi chú). Bác sĩ có màn **Lịch sử khám** (`/doctor/records`): bảng phiếu do mình chốt (lọc thời gian / mức khẩn cấp, tìm kiếm), chi tiết 3 tab Tóm tắt / Dữ kiện / Hội thoại và ảnh, Xuất PDF (in trình duyệt), Mở ca gốc. Mỗi phiếu có cột `snapshot` (JSONB) — bản chụp bất biến lúc chốt: hồ sơ bệnh nhân, cơ sở nhận định, mức khẩn cấp, dặn dò, dữ kiện kèm `origin` và tin nhắn nguồn. Ảnh bệnh trong `patient_images` chưa có API. Hạn chế: dữ kiện sinh trước khi ghi `clinical_provenances` không có nguồn; báo cáo kết luận cũ (`snapshot = null`) chỉ hiện nhận định/ghi chú |
+| M6.3 | Thư viện ảnh bệnh đã lưu của bệnh nhân | 🟡 | ảnh chat nằm trong `files` + `message_files`; ảnh đã gắn báo cáo kết luận nằm trong `patient_images`. Chưa có màn xem tập trung |
+| M6.4 | Bác sĩ xem hồ sơ + lịch sử báo cáo kết luận của bệnh nhân | ✅ | `ConsultationSessionOutput.patient` có thêm quan hệ/SĐT/dị ứng/tiền sử; `GET /doctor/consultations/{id}/finalize-reports` trả lịch sử báo cáo kết luận của bệnh nhân thuộc phiên. UI: `PatientInfoCard` hiện quan hệ + cảnh báo dị ứng, panel "Báo cáo kết luận" trong `ReportPanel` |
+| M6.5 | Bác sĩ cập nhật hồ sơ / báo cáo kết luận sau mỗi lượt khám | 🟡 | bác sĩ **chốt** báo cáo kết luận khi bấm "Đóng ca": form điền sẵn dữ kiện đang hiệu lực kèm nguồn (`GET /doctor/consultations/{id}/finalize-draft`), chốt + đóng ca trong một request (`POST .../finalize`); hoặc đóng ca không ghi báo cáo kết luận. Form chốt có khối **gợi ý từ đồ thị** (nhận định/lời khuyên các phiên trước từ PJKG, bệnh ứng viên và cờ đỏ từ KG) để bác sĩ bấm chọn; không còn luồng khám trực tiếp. Phiếu đã chốt không sửa. Hồ sơ (dị ứng/tiền sử/SĐT) vẫn chỉ bệnh nhân tự sửa. Hạn chế: bác sĩ tìm được mọi hồ sơ bệnh nhân (chưa phân quyền theo bệnh nhân phụ trách) |
 
 ### M7 — Ca bệnh & ảnh đã xác nhận
 
 | Mã | Chức năng | Trạng thái | Hiện trạng / việc cần làm |
 |---|---|---|---|
-| M7.1 | Bác sĩ lưu ca bệnh (chẩn đoán đã xác nhận + ảnh + mô tả) | 🟡 | cờ `is_reference_case` trong form chốt bệnh án (`RecordForm`); phiếu đã có snapshot dữ kiện + tin/ảnh nguồn. Chưa đưa ca tham khảo vào KB (M7.3), chưa gắn ảnh vào `patient_images` |
+| M7.1 | Bác sĩ lưu ca bệnh (chẩn đoán đã xác nhận + ảnh + mô tả) | 🟡 | cờ `is_reference_case` trong form chốt báo cáo kết luận (`RecordForm`); phiếu đã có snapshot dữ kiện + tin/ảnh nguồn. Chưa đưa ca tham khảo vào KB (M7.3), chưa gắn ảnh vào `patient_images` |
 | M7.2 | Xác nhận / gán nhãn ảnh để làm dữ liệu huấn luyện CNN | 🟡 | đã có cột `patient_images.confirmed_label`; nhãn nên khớp 22 lớp hiện tại của CNN. Chưa có API / UI |
 | M7.3 | Ca bệnh đã xác nhận được nạp vào KB để chatbot tra (cho M2.8) | 🔲 | — |
 
@@ -138,7 +138,7 @@ Các module có phụ thuộc, nên làm theo thứ tự sau để mỗi bước
 | 2 | **M9.3** (tool tra chunk sách), **M2.11** (sources) | công sức thấp, dùng ngay được dữ liệu đã có |
 | 3 | **M3.1–M3.3** (clinical fact + báo cáo) | đầu vào cho màn bác sĩ và trực quan hoá KG |
 | 4 | **M4.1–M4.4, M4.6** (tư vấn qua chat), **M3.4** (màn bác sĩ xem báo cáo) | luồng chính bệnh nhân ↔ bác sĩ |
-| 5 | **M6.2–M6.5** (bệnh án), **M7** (ca bệnh), **M2.8** | cần bác sĩ đã dùng được hệ thống |
+| 5 | **M6.2–M6.5** (báo cáo kết luận), **M7** (ca bệnh), **M2.8** | cần bác sĩ đã dùng được hệ thống |
 | 6 | **M8.3** (trực quan hoá KG), **M4.5** (video call), **M9.4** | tính năng mở rộng |
 | — | **M5** (đặt lịch) | hoãn, ngoài scope đồ án hiện tại |
 

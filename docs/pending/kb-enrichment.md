@@ -12,7 +12,7 @@ KB hiện chỉ được bổ sung theo 2 cách, đều là nạp nguyên lô:
 Chưa có cách bổ sung **từng mẩu tri thức nhỏ** phát hiện trong lúc dùng hệ thống, ví dụ:
 - Chatbot không tìm được guideline cho một bệnh, phải dùng web.
 - Bác sĩ thấy câu trả lời thiếu ý hoặc lỗi thời.
-- Một ca bệnh tham khảo (`medical_records.is_reference_case`) cần được tóm tắt thành tri thức tra cứu được.
+- Một ca bệnh tham khảo (`finalize_reports.is_reference_case`) cần được tóm tắt thành tri thức tra cứu được.
 
 ## 2. Luồng đề xuất
 
@@ -44,7 +44,7 @@ class KnowledgeSuggestion(BaseModel):
     sources: list[Source] = []      # căn cứ (web, guideline, sách...) — dùng lại `Source` của `dto/common/chat.py`
     origin: Literal["chatbot", "doctor", "reference_case"]
     origin_message: Message | None = None        # câu trả lời / tin nhắn sinh ra đề xuất
-    origin_record: MedicalRecord | None = None   # ca bệnh tham khảo, nếu có
+    origin_record: FinalizeReport | None = None   # ca bệnh tham khảo, nếu có
     proposed_by: User | None = None              # None khi chatbot tự đề xuất
     status: Literal["pending", "approved", "rejected"] = "pending"
     reviewed_by: Doctor | None = None
@@ -53,7 +53,7 @@ class KnowledgeSuggestion(BaseModel):
     reviewed_at: datetime | None = None
 ```
 
-Bảng `knowledge_suggestions` tương ứng: FK `origin_message_id` → `messages`, `origin_record_id` → `medical_records`,
+Bảng `knowledge_suggestions` tương ứng: FK `origin_message_id` → `messages`, `origin_record_id` → `finalize_reports`,
 `proposed_by_id` → `users`, `reviewed_by_id` → `doctors` (đều `SET NULL`); `sources` để JSONB.
 
 ## 4. Câu hỏi cần chốt

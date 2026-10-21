@@ -1,4 +1,4 @@
-"""Bounded context Bệnh án: bệnh án do bác sĩ ghi và ảnh bệnh kèm theo."""
+"""Bounded context Báo cáo kết luận: báo cáo kết luận do bác sĩ ghi và ảnh bệnh kèm theo."""
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -14,22 +14,22 @@ if TYPE_CHECKING:
     from app.dto.base.shared import File
 
 
-class MedicalRecord(BaseModel):
-    """Phiếu bệnh án bác sĩ chốt sau một lần khám hoặc tư vấn (`PatientProfile.medical_records`). Không sửa sau khi chốt."""
+class FinalizeReport(BaseModel):
+    """báo cáo kết luận bác sĩ chốt sau một lần khám hoặc tư vấn (`PatientProfile.finalize_reports`). Không sửa sau khi chốt."""
 
     id: str
     diagnosis: str  # nhận định của bác sĩ
     notes: str = ""  # ghi chú chung (hướng điều trị, tái khám) — bệnh nhân cũng xem được
     doctor: Doctor | None = None
     consultation_session: ConsultationSession | None = None  # ca tư vấn gốc; None = khám trực tiếp
-    snapshot: MedicalRecordSnapshot | None = None  # None với bệnh án ghi trước khi có snapshot
+    snapshot: FinalizeReportSnapshot | None = None  # None với báo cáo kết luận ghi trước khi có snapshot
     images: list[PatientImage] = []
     # ca bệnh tham khảo: bác sĩ xác nhận dùng làm dữ liệu cho KB / chatbot tra ca tương tự (ẩn định danh khi đưa vào KB)
     is_reference_case: bool = False
     created_at: datetime | None = None  # thời điểm chốt
 
 
-class MedicalRecordSnapshot(BaseModel):
+class FinalizeReportSnapshot(BaseModel):
     """Bản chụp bất biến của kết quả bác sĩ đã sửa và chốt. Phiếu hiển thị hoàn toàn từ đây, không đọc lại hồ sơ/dữ kiện
     đang sống — bệnh nhân sửa dị ứng hay fact bị thay sau này thì phiếu vẫn giữ đúng nội dung lúc chốt."""
 
@@ -76,7 +76,7 @@ class SnapshotMessage(BaseModel):
 
 
 class PatientImage(BaseModel):
-    """Ảnh bệnh được bác sĩ gắn vào bệnh án. `file` có thể dùng lại file bệnh nhân đã gửi trong chat (cùng dòng `files`)."""
+    """Ảnh bệnh được bác sĩ gắn vào báo cáo kết luận. `file` có thể dùng lại file bệnh nhân đã gửi trong chat (cùng dòng `files`)."""
 
     id: str
     file: File

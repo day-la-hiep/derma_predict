@@ -156,7 +156,7 @@ export function PatientJourneyTimeline({
 
                   {/* Bác sĩ phụ trách */}
                   {step.doctors.map((doc) => (
-                    <Hint key={doc.id} side="left" content="Bác sĩ phụ trách và chốt bệnh án cho phiên này">
+                    <Hint key={doc.id} side="left" content="Bác sĩ phụ trách và chốt báo cáo kết luận cho phiên này">
                       <button
                         type="button"
                         onClick={() => onSelectNode(selectedNodeId === doc.id ? null : doc)}

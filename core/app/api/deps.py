@@ -26,7 +26,7 @@ from app.repositories.consultation_repository import ConsultationRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.file_repository import FileRepository
 from app.repositories.message_repository import MessageRepository
-from app.repositories.medical_record_repository import MedicalRecordRepository
+from app.repositories.finalize_report_repository import FinalizeReportRepository
 from app.repositories.patient_profile_repository import PatientProfileRepository
 from app.services.file_store_service import FileStoreService
 from app.repositories.document_repository import DocumentRepository
@@ -39,9 +39,9 @@ from app.services.knowledge_base_service import KnowledgeBaseService
 from app.services.knowledge_graph_service import KnowledgeGraphService
 from app.services.message_service import MessageService
 from app.services.patient_profile_service import PatientProfileService
-from app.services.doctor_medical_record_service import DoctorMedicalRecordService
+from app.services.finalize_report_service import FinalizeReportService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
-from app.services.medical_case_index_service import MedicalCaseIndexService
+from app.services.finalize_report_index_service import FinalizeReportIndexService
 from app.services.patient_graph_service import PatientGraphService
 
 T = TypeVar("T")
@@ -139,10 +139,10 @@ def get_patient_graph_service() -> PatientGraphService:
     )
 
 
-def get_medical_case_index_service() -> MedicalCaseIndexService:
+def get_finalize_report_index_service() -> FinalizeReportIndexService:
     return _singleton(
-        "medical_case_index_service",
-        lambda: MedicalCaseIndexService(get_qdrant_client(), get_embedding_client()),
+        "finalize_report_index_service",
+        lambda: FinalizeReportIndexService(get_qdrant_client(), get_embedding_client()),
     )
 
 
@@ -228,28 +228,28 @@ def get_patient_profile_repository(
     return PatientProfileRepository(db)
 
 
-def get_medical_record_repository(
+def get_finalize_report_repository(
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> MedicalRecordRepository:
-    return MedicalRecordRepository(db)
+) -> FinalizeReportRepository:
+    return FinalizeReportRepository(db)
 
 
 def get_patient_profile_service(
     patient_profile_repository: Annotated[
         PatientProfileRepository, Depends(get_patient_profile_repository)
     ],
-    medical_record_repository: Annotated[
-        MedicalRecordRepository, Depends(get_medical_record_repository)
+    finalize_report_repository: Annotated[
+        FinalizeReportRepository, Depends(get_finalize_report_repository)
     ],
 ) -> PatientProfileService:
-    return PatientProfileService(patient_profile_repository, medical_record_repository)
+    return PatientProfileService(patient_profile_repository, finalize_report_repository)
 
 
-def get_doctor_medical_record_service(
+def get_finalize_report_service(
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> DoctorMedicalRecordService:
-    return DoctorMedicalRecordService(
-        db, get_file_store_service(), get_medical_case_index_service(), get_patient_graph_service()
+) -> FinalizeReportService:
+    return FinalizeReportService(
+        db, get_file_store_service(), get_finalize_report_index_service(), get_patient_graph_service()
     )
 
 

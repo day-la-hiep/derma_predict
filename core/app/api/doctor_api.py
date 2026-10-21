@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from app.api.deps import (
     get_consultation_service,
     get_current_user,
-    get_doctor_medical_record_service,
+    get_finalize_report_service,
     get_patient_graph_service,
     get_redis_client,
     require_role,
@@ -21,10 +21,10 @@ from app.dto.consultation import (
     PatientProfileDto,
     RequestConsultationInput,
 )
-from app.dto.request.medical_record import CreateDoctorMedicalRecordInput, FinalizeMedicalRecordInput
-from app.dto.response.medical_record import (
-    DoctorMedicalRecordItemOutput,
-    DoctorMedicalRecordOutput,
+from app.dto.request.finalize_report import FinalizeReportInput
+from app.dto.response.finalize_report import (
+    FinalizeReportItemOutput,
+    FinalizeReportOutput,
     FinalizeDraftOutput,
 )
 from app.dto.response.message import MessageOutput
@@ -32,7 +32,7 @@ from app.dto.response.patient_graph import PatientJourneyGraphOutput
 from app.infra.redis_client import RedisClient
 from app.models.user import User
 from app.services.consultation_service import ConsultationService
-from app.services.doctor_medical_record_service import DoctorMedicalRecordService
+from app.services.finalize_report_service import FinalizeReportService
 from app.services.patient_graph_service import PatientGraphService
 
 router = APIRouter(tags=["doctor"])
@@ -44,8 +44,8 @@ PatientGraphServiceDep = Annotated[
 ConsultationServiceDep = Annotated[
     ConsultationService, Depends(get_consultation_service)
 ]
-MedicalRecordServiceDep = Annotated[
-    DoctorMedicalRecordService, Depends(get_doctor_medical_record_service)
+FinalizeReportServiceDep = Annotated[
+    FinalizeReportService, Depends(get_finalize_report_service)
 ]
 DoctorDep = Annotated[User, Depends(require_role("doctor"))]
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
@@ -125,16 +125,16 @@ async def resolve_consultation(
 
 
 @router.get(
-    "/doctor/consultations/{session_id}/medical-records",
-    response_model=ApiResponse[list[DoctorMedicalRecordOutput]],
-    operation_id="listSessionMedicalRecords",
+    "/doctor/consultations/{session_id}/finalize-reports",
+    response_model=ApiResponse[list[FinalizeReportOutput]],
+    operation_id="listSessionFinalizeReports",
 )
-async def list_session_medical_records(
+async def list_session_finalize_reports(
     session_id: str,
-    service: MedicalRecordServiceDep,
+    service: FinalizeReportServiceDep,
     doctor: DoctorDep,
-) -> ApiResponse[list[DoctorMedicalRecordOutput]]:
-    """Lịch sử bệnh án của bệnh nhân thuộc phiên này (mọi lần khám, không chỉ ca hiện tại)."""
+) -> ApiResponse[list[FinalizeReportOutput]]:
+    """Lịch sử báo cáo kết luận của bệnh nhân thuộc phiên này (mọi lần khám, không chỉ ca hiện tại)."""
     return ApiResponse(data=await service.list_for_session(session_id, doctor.id))
 
 
@@ -145,7 +145,7 @@ async def list_session_medical_records(
 )
 async def get_finalize_draft(
     session_id: str,
-    service: MedicalRecordServiceDep,
+    service: FinalizeReportServiceDep,
     doctor: DoctorDep,
 ) -> ApiResponse[FinalizeDraftOutput]:
     """Dữ liệu điền sẵn form chốt: hồ sơ bệnh nhân + dữ kiện đang hiệu lực kèm tin nguồn."""
@@ -155,76 +155,47 @@ async def get_finalize_draft(
 @router.post(
     "/doctor/consultations/{session_id}/finalize",
     status_code=status.HTTP_201_CREATED,
-    response_model=ApiResponse[DoctorMedicalRecordOutput],
+    response_model=ApiResponse[FinalizeReportOutput],
     operation_id="finalizeConsultation",
 )
 async def finalize_consultation(
     session_id: str,
-    body: FinalizeMedicalRecordInput,
-    service: MedicalRecordServiceDep,
+    body: FinalizeReportInput,
+    service: FinalizeReportServiceDep,
     consultations: ConsultationServiceDep,
     doctor: DoctorDep,
-) -> ApiResponse[DoctorMedicalRecordOutput]:
-    """Bác sĩ chốt bệnh án cho ca đang tư vấn và đóng ca."""
-    record = await service.finalize_session(session_id, doctor.id, doctor.full_name, body)
-    # chốt bệnh án đóng ca trong service riêng, nên phải báo room + inbox ở đây
+) -> ApiResponse[FinalizeReportOutput]:
+    """Bác sĩ chốt báo cáo kết luận cho ca đang tư vấn và đóng ca."""
+    report = await service.finalize_session(session_id, doctor.id, doctor.full_name, body)
+    # chốt báo cáo kết luận đóng ca trong service riêng, nên phải báo room + inbox ở đây
     await consultations.announce_finalized(session_id, doctor.id)
-    return ApiResponse(data=record)
+    return ApiResponse(data=report)
 
 
 @router.get(
-    "/doctor/medical-records",
-    response_model=ApiResponse[list[DoctorMedicalRecordItemOutput]],
-    operation_id="listMyMedicalRecords",
+    "/doctor/finalize-reports",
+    response_model=ApiResponse[list[FinalizeReportItemOutput]],
+    operation_id="listMyFinalizeReports",
 )
-async def list_my_medical_records(
-    service: MedicalRecordServiceDep,
+async def list_my_finalize_reports(
+    service: FinalizeReportServiceDep,
     doctor: DoctorDep,
     q: str = Query(default="", max_length=100),
-) -> ApiResponse[list[DoctorMedicalRecordItemOutput]]:
-    """Lịch sử khám: các bệnh án do chính bác sĩ đang đăng nhập chốt, lọc theo tên bệnh nhân / chẩn đoán."""
+) -> ApiResponse[list[FinalizeReportItemOutput]]:
+    """Lịch sử khám: các báo cáo kết luận do chính bác sĩ đang đăng nhập chốt, lọc theo tên bệnh nhân / chẩn đoán."""
     return ApiResponse(data=await service.list_mine(doctor.id, doctor.full_name, q))
 
 
-@router.post(
-    "/doctor/medical-records",
-    status_code=status.HTTP_201_CREATED,
-    response_model=ApiResponse[DoctorMedicalRecordItemOutput],
-    operation_id="createDoctorMedicalRecord",
-)
-async def create_doctor_medical_record(
-    body: CreateDoctorMedicalRecordInput,
-    service: MedicalRecordServiceDep,
-    doctor: DoctorDep,
-) -> ApiResponse[DoctorMedicalRecordItemOutput]:
-    """Ghi bệnh án cho ca khám trực tiếp (không qua tư vấn online)."""
-    return ApiResponse(data=await service.create(doctor.id, doctor.full_name, body))
-
-
 @router.get(
-    "/doctor/patient-profiles",
-    response_model=ApiResponse[list[PatientProfileDto]],
-    operation_id="searchPatientProfiles",
+    "/doctor/patient-profiles/{profile_id}/finalize-reports",
+    response_model=ApiResponse[list[FinalizeReportOutput]],
+    operation_id="listPatientFinalizeReportsForDoctor",
 )
-async def search_patient_profiles(
-    service: MedicalRecordServiceDep,
-    _doctor: DoctorDep,
-    q: str = Query(default="", max_length=100),
-) -> ApiResponse[list[PatientProfileDto]]:
-    """Tìm hồ sơ bệnh nhân theo tên/SĐT để ghi bệnh án."""
-    return ApiResponse(data=await service.search_patients(q))
-
-
-@router.get(
-    "/doctor/patient-profiles/{profile_id}/medical-records",
-    response_model=ApiResponse[list[DoctorMedicalRecordOutput]],
-    operation_id="listPatientMedicalRecordsForDoctor",
-)
-async def list_patient_medical_records(
+async def list_patient_finalize_reports(
     profile_id: str,
-    service: MedicalRecordServiceDep,
+    service: FinalizeReportServiceDep,
     _doctor: DoctorDep,
-) -> ApiResponse[list[DoctorMedicalRecordOutput]]:
+) -> ApiResponse[list[FinalizeReportOutput]]:
     """Toàn bộ lịch sử khám của một bệnh nhân (mọi bác sĩ)."""
     return ApiResponse(data=await service.list_for_patient(profile_id))
 

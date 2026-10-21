@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Plus, Search } from "lucide-react";
+import { ChevronDown, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -15,11 +15,10 @@ import { Input } from "@/components/ui/input";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { cn } from "@/lib/utils";
 import { TIME_FILTERS, URGENCY_CONFIG, URGENCY_ORDER } from "../constants";
-import { useMyMedicalRecords } from "../hooks";
+import { useMyFinalizeReports } from "../hooks";
 import type { Urgency } from "../types";
-import { CreateMedicalRecordDialog } from "./CreateMedicalRecordDialog";
-import { MedicalRecordDetail } from "./MedicalRecordDetail";
-import { MedicalRecordTable } from "./MedicalRecordTable";
+import { FinalizeReportDetail } from "./FinalizeReportDetail";
+import { FinalizeReportTable } from "./FinalizeReportTable";
 
 const DAY_MS = 24 * 3600 * 1000;
 
@@ -68,19 +67,18 @@ export function MedicalHistoryPage() {
   const [days, setDays] = useState<string>("30");
   const [urgency, setUrgency] = useState<Urgency | "all">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const { data: all = [], isLoading } = useMyMedicalRecords(useDebouncedValue(query.trim()));
+  const { data: all = [], isLoading } = useMyFinalizeReports(useDebouncedValue(query.trim()));
   // mốc "bây giờ" cố định khi mở màn để bộ lọc thời gian không đổi giữa các lần render
   const [now] = useState(() => Date.now());
 
   const since = days === "all" ? null : now - Number(days) * DAY_MS;
-  const records = all.filter(
+  const reports = all.filter(
     (r) =>
       (since === null || new Date(r.createdAt).getTime() >= since) &&
       (urgency === "all" || r.snapshot?.assessment.urgency === urgency)
   );
   // chưa chọn (hoặc bản đang chọn bị lọc mất) thì hiện bản mới nhất
-  const selected = records.find((r) => r.id === selectedId) ?? records[0] ?? null;
+  const selected = reports.find((r) => r.id === selectedId) ?? reports[0] ?? null;
   const timeLabel = TIME_FILTERS.find((t) => String(t.days ?? "all") === days)?.label ?? "";
 
   return (
@@ -110,17 +108,12 @@ export function MedicalHistoryPage() {
             className="h-8 rounded-full pl-8 text-xs"
           />
         </div>
-        <Hint side="bottom" content="Ghi bệnh án cho ca khám trực tiếp: chọn hồ sơ bệnh nhân rồi chốt kết quả.">
-          <Button size="sm" variant="brand" onClick={() => setCreating(true)} className="gap-1 rounded-full">
-            <Plus className="size-3.5" /> Ghi bệnh án
-          </Button>
-        </Hint>
       </div>
 
       <div className="flex min-h-0 flex-1 gap-4 print:block">
         <div className="min-w-0 flex-1 print:hidden">
-          <MedicalRecordTable
-            records={records}
+          <FinalizeReportTable
+            reports={reports}
             total={all.length}
             loading={isLoading}
             selectedId={selected?.id ?? null}
@@ -128,20 +121,9 @@ export function MedicalHistoryPage() {
           />
         </div>
         <div className="w-full max-w-md shrink-0 xl:max-w-lg print:max-w-none">
-          <MedicalRecordDetail record={selected} />
+          <FinalizeReportDetail report={selected} />
         </div>
       </div>
-
-      <CreateMedicalRecordDialog
-        open={creating}
-        onOpenChange={setCreating}
-        onCreated={(r) => {
-          setQuery("");
-          setDays("30");
-          setUrgency("all");
-          setSelectedId(r.id);
-        }}
-      />
     </div>
   );
 }

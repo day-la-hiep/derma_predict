@@ -57,9 +57,9 @@ class KnowledgeBaseService:
                 points.append(p)
         return sorted(points, key=lambda p: p.score, reverse=True)[:limit]
 
-    async def search_medical_cases(self, *, vector: list[float], limit: int) -> list[ScoredPoint]:
+    async def search_finalize_reports(self, *, vector: list[float], limit: int) -> list[ScoredPoint]:
         """Tìm kiếm ca bệnh lâm sàng tương tự trong Qdrant."""
-        name = settings.QDRANT_MEDICAL_CASE_COLLECTION
+        name = settings.QDRANT_FINALIZE_REPORT_COLLECTION
         if not await self._qdrant.collection_exists(name):
             return []
         if await self._qdrant.dense_size(name) != len(vector):

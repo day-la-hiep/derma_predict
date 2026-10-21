@@ -1,4 +1,4 @@
-"""Tool tra cứu ca bệnh tương tự từ kho bệnh án thực tế đã được bác sĩ chẩn đoán và điều trị."""
+"""Tool tra cứu ca bệnh tương tự từ kho báo cáo kết luận thực tế đã được bác sĩ chẩn đoán và điều trị."""
 
 import json
 import logging
@@ -6,9 +6,9 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from app.api.deps import get_file_store_service, get_medical_case_index_service
+from app.api.deps import get_file_store_service, get_finalize_report_index_service
 
-logger = logging.getLogger("agent.tools.search_medical_case")
+logger = logging.getLogger("agent.tools.search_finalize_report")
 
 
 def _dumps(data: Any) -> str:
@@ -16,8 +16,8 @@ def _dumps(data: Any) -> str:
 
 
 @tool
-async def search_medical_case(query: str, limit: int = 3) -> str:
-    """Tra cứu các ca bệnh da liễu thực tế tương tự trong kho hồ sơ bệnh án của bệnh viện (do bác sĩ đã khám, chẩn đoán và xử trí).
+async def search_finalize_report(query: str, limit: int = 3) -> str:
+    """Tra cứu các ca bệnh da liễu thực tế tương tự trong kho báo cáo kết luận của bệnh viện (do bác sĩ đã khám, chẩn đoán và xử trí).
 
     Dùng khi:
     - Cần đối chiếu các triệu chứng, tổn thương da, diễn tiến bệnh của người dùng với các ca bệnh lâm sàng thực tế đã được bác sĩ chẩn đoán xác định.
@@ -29,12 +29,12 @@ async def search_medical_case(query: str, limit: int = 3) -> str:
         limit: Số lượng ca bệnh tương tự tối đa cần lấy (mặc định 3, tối đa 5).
     """
     limit = max(1, min(limit, 5))
-    logger.info("🔍 [search_medical_case] Gọi tool tra cứu ca bệnh | query='%s' | limit=%d", query, limit)
+    logger.info("🔍 [search_finalize_report] Gọi tool tra cứu ca bệnh | query='%s' | limit=%d", query, limit)
     try:
-        service = get_medical_case_index_service()
-        cases = await service.search_cases(query=query, limit=limit)
+        service = get_finalize_report_index_service()
+        cases = await service.search_reports(query=query, limit=limit)
     except Exception as exc:  # noqa: BLE001
-        logger.error("❌ [search_medical_case] Lỗi khi tra cứu ca bệnh: %s", exc, exc_info=True)
+        logger.error("❌ [search_finalize_report] Lỗi khi tra cứu ca bệnh: %s", exc, exc_info=True)
         return _dumps({
             "evidence_found": False,
             "query": query,
@@ -43,18 +43,18 @@ async def search_medical_case(query: str, limit: int = 3) -> str:
         })
 
     if not cases:
-        logger.info("ℹ️ [search_medical_case] Không tìm thấy ca bệnh nào phù hợp cho query='%s'", query)
+        logger.info("ℹ️ [search_finalize_report] Không tìm thấy ca bệnh nào phù hợp cho query='%s'", query)
         return _dumps({
             "evidence_found": False,
             "query": query,
             "cases": [],
-            "note": "Không tìm thấy ca bệnh tương tự trong kho hồ sơ bệnh án tham khảo.",
+            "note": "Không tìm thấy ca bệnh tương tự trong kho báo cáo kết luận tham khảo.",
         })
 
     top_diagnosis = cases[0].get("diagnosis", "N/A")
     top_score = cases[0].get("score", 0.0)
     logger.info(
-        "✅ [search_medical_case] Tìm thấy %d ca bệnh tương tự (Top 1: '%s', điểm=%.3f)",
+        "✅ [search_finalize_report] Tìm thấy %d ca bệnh tương tự (Top 1: '%s', điểm=%.3f)",
         len(cases),
         top_diagnosis,
         top_score,

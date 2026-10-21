@@ -231,14 +231,14 @@ async def _differential_facts(names: list[str]) -> list[dict[str, str]]:
 
 
 async def _resolve(
-    entities: list[str], notes: list[str], translated_out: list[str]
+    entities: list[str], notes: list[str], translated_out: list[str], translate: bool = True
 ) -> tuple[list[dict[str, Any]], set[str]]:
     svc = get_knowledge_graph_service()
     # PrimeKG đảo tên kiểu "dermatitis, atopic" cho "atopic dermatitis" nhưng không phải lúc nào DermO cũng có đồng nghĩa đó.
     flipped = [f"{w[1]}, {w[0]}" for e in entities if len(w := e.split()) == 2 and "," not in e]
     seeds, unmatched, dermo_ids = await svc.resolve_seeds([*entities, *flipped])
     unmatched = [u for u in unmatched if u in entities]
-    if unmatched:
+    if unmatched and translate:
         # Tên không khớp thường là tiếng Việt / viết tắt: nhờ LLM dịch sang tên y khoa chuẩn rồi thử lại một lần.
         try:
             translated = [e.text for e in await extract_entities(", ".join(unmatched)) if e.text]
@@ -256,7 +256,7 @@ async def _resolve(
 
 
 async def run_intent(
-    intent: str, entities: list[str], limit: int
+    intent: str, entities: list[str], limit: int, translate: bool = True
 ) -> tuple[list[dict[str, str]], list[str], dict[str, Any]]:
     """Trả (dữ kiện `{intent, relation, text}` đã xếp theo ưu tiên quan hệ, ghi chú cho agent, thực thể sau khi khớp/dịch)."""
     notes: list[str] = []
@@ -268,7 +268,7 @@ async def run_intent(
         return [], ["Thiếu `entities`: nêu tên bệnh / triệu chứng / thuốc cần tra."], {}
 
     translated: list[str] = []
-    seeds, dermo_ids = await _resolve(names, notes, translated)
+    seeds, dermo_ids = await _resolve(names, notes, translated, translate)
     resolved: dict[str, Any] = {"matched_nodes": [f"{s['name']} ({s['type']})" for s in seeds]}
     if translated:
         resolved["llm_translated"] = translated

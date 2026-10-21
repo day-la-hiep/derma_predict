@@ -9,17 +9,17 @@ import type { PatientProfileInput } from "./types";
 
 export const qk = {
   profiles: ["patient-profiles"] as const,
-  records: (id: string) => ["patient-profiles", id, "medical-records"] as const,
+  reports: (id: string) => ["patient-profiles", id, "finalize-reports"] as const,
 };
 
 export function useProfiles() {
   return useQuery({ queryKey: qk.profiles, queryFn: profileApi.list });
 }
 
-export function useMedicalRecords(profileId: string | null) {
+export function useFinalizeReports(profileId: string | null) {
   return useQuery({
-    queryKey: qk.records(profileId ?? ""),
-    queryFn: () => profileApi.medicalRecords(profileId!),
+    queryKey: qk.reports(profileId ?? ""),
+    queryFn: () => profileApi.finalizeReports(profileId!),
     enabled: !!profileId,
   });
 }

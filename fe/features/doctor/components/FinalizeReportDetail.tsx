@@ -9,13 +9,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ImageThumbnail } from "@/features/chat/components/ImageThumbnail";
 import { cn } from "@/lib/utils";
 import { FACT_TYPE_CONFIG } from "../constants";
-import { useConversationMessages, useProfileMedicalRecords } from "../hooks";
-import type { DoctorMedicalRecordItem, PatientProfile } from "../types";
+import { useConversationMessages, useProfileFinalizeReports } from "../hooks";
+import type { FinalizeReportItem, PatientProfile } from "../types";
 import { ChatBubble } from "./ChatViewer";
 import { FactSources } from "./FactSources";
-import { MedicalRecordCard, ReferenceBadge, formatDate } from "./MedicalRecordCard";
+import { FinalizeReportCard, ReferenceBadge, formatDate } from "./FinalizeReportCard";
 import { PatientProfileDetails, patientSubtitle } from "./PatientProfileDetails";
-import { OriginBadge, UrgencyBadge } from "./RecordBadges";
+import { OriginBadge, UrgencyBadge } from "./FinalizeReportBadges";
 import { PatientJourneyDialog } from "./PatientJourneyDialog";
 
 type Tab = "summary" | "facts" | "conversation";
@@ -26,10 +26,10 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   );
 }
 
-function SummaryTab({ record }: { record: DoctorMedicalRecordItem }) {
-  const snap = record.snapshot;
-  const { data: history, isLoading } = useProfileMedicalRecords(record.patient.id);
-  const others = (history ?? []).filter((r) => r.id !== record.id);
+function SummaryTab({ report }: { report: FinalizeReportItem }) {
+  const snap = report.snapshot;
+  const { data: history, isLoading } = useProfileFinalizeReports(report.patient.id);
+  const others = (history ?? []).filter((r) => r.id !== report.id);
 
   return (
     <div className="space-y-6">
@@ -37,7 +37,7 @@ function SummaryTab({ record }: { record: DoctorMedicalRecordItem }) {
         <SectionTitle>Nhận định của bác sĩ</SectionTitle>
         <div className="space-y-2 rounded-xl border border-border bg-card/60 p-4">
           <div className="flex items-start justify-between gap-3">
-            <p className="text-base font-semibold text-foreground">{record.diagnosis}</p>
+            <p className="text-base font-semibold text-foreground">{report.diagnosis}</p>
             {snap && <UrgencyBadge urgency={snap.assessment.urgency} />}
           </div>
           {snap?.assessment.reasoning && (
@@ -46,20 +46,20 @@ function SummaryTab({ record }: { record: DoctorMedicalRecordItem }) {
         </div>
       </section>
 
-      {record.notes && (
+      {report.notes && (
         <section>
           <SectionTitle>Ghi chú</SectionTitle>
           <p className="whitespace-pre-line rounded-xl border border-border p-4 text-sm leading-relaxed text-foreground">
-            {record.notes}
+            {report.notes}
           </p>
         </section>
       )}
 
-      {record.images && record.images.length > 0 && (
+      {report.images && report.images.length > 0 && (
         <section>
           <SectionTitle>Ảnh bệnh đã lưu</SectionTitle>
           <div className="flex flex-wrap gap-2 rounded-xl border border-border p-4">
-            {record.images.map((img) => (
+            {report.images.map((img) => (
               <div key={img.id} className="space-y-1">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={img.file.url ?? ""} alt={img.file.fileName} className="size-24 rounded-lg object-cover" />
@@ -88,7 +88,7 @@ function SummaryTab({ record }: { record: DoctorMedicalRecordItem }) {
 
       <section className="print:hidden">
         <SectionTitle>
-          <Hint side="right" content="Toàn bộ bệnh án khác của bệnh nhân này, kể cả do bác sĩ khác ghi.">
+          <Hint side="right" content="Toàn bộ báo cáo kết luận khác của bệnh nhân này, kể cả do bác sĩ khác ghi.">
             <span className="inline-flex w-fit items-center gap-1.5">
               <History className="size-3" /> Các lần khám khác <span>{others.length}</span>
             </span>
@@ -101,7 +101,7 @@ function SummaryTab({ record }: { record: DoctorMedicalRecordItem }) {
         ) : (
           <ul className="space-y-2">
             {others.map((r) => (
-              <MedicalRecordCard key={r.id} record={r} />
+              <FinalizeReportCard key={r.id} report={r} />
             ))}
           </ul>
         )}
@@ -110,9 +110,9 @@ function SummaryTab({ record }: { record: DoctorMedicalRecordItem }) {
   );
 }
 
-function FactsTab({ record }: { record: DoctorMedicalRecordItem }) {
-  const facts = record.snapshot?.clinicalFacts ?? [];
-  if (!record.snapshot) {
+function FactsTab({ report }: { report: FinalizeReportItem }) {
+  const facts = report.snapshot?.clinicalFacts ?? [];
+  if (!report.snapshot) {
     return <p className="text-sm text-muted-foreground">Phiếu ghi trước khi có bản chốt dữ kiện.</p>;
   }
   if (!facts.length) return <p className="text-sm text-muted-foreground">Phiếu không có dữ kiện.</p>;
@@ -175,10 +175,10 @@ function ConversationTab({ conversationId }: { conversationId: string }) {
   );
 }
 
-export function MedicalRecordDetail({ record }: { record: DoctorMedicalRecordItem | null }) {
+export function FinalizeReportDetail({ report }: { report: FinalizeReportItem | null }) {
   const [tab, setTab] = useState<Tab>("summary");
 
-  if (!record) {
+  if (!report) {
     return (
       <div className="flex h-full items-center justify-center rounded-2xl border border-border text-muted-foreground">
         <div className="text-center">
@@ -190,15 +190,15 @@ export function MedicalRecordDetail({ record }: { record: DoctorMedicalRecordIte
   }
 
   // hiển thị theo bản chụp lúc chốt; phiếu cũ không có snapshot thì dùng hồ sơ hiện tại
-  const patient: Omit<PatientProfile, "id"> = record.snapshot?.patientProfile ?? record.patient;
-  const hasSource = !!record.consultationSessionId;
-  const activeTab: Tab = tab === "conversation" && !record.conversationId ? "summary" : tab;
+  const patient: Omit<PatientProfile, "id"> = report.snapshot?.patientProfile ?? report.patient;
+  const hasSource = !!report.consultationSessionId;
+  const activeTab: Tab = tab === "conversation" && !report.conversationId ? "summary" : tab;
   const tabs: { id: Tab; label: string; show: boolean }[] = [
     { id: "summary", label: "Tóm tắt", show: true },
     { id: "facts", label: "Dữ kiện", show: true },
-    { id: "conversation", label: "Hội thoại và ảnh", show: !!record.conversationId },
+    { id: "conversation", label: "Hội thoại và ảnh", show: !!report.conversationId },
   ];
-  const finalizedAt = new Date(record.createdAt);
+  const finalizedAt = new Date(report.createdAt);
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-card/40 print:h-auto print:overflow-visible print:border-0">
@@ -214,9 +214,9 @@ export function MedicalRecordDetail({ record }: { record: DoctorMedicalRecordIte
                 <Printer className="size-3.5" /> Xuất PDF
               </Button>
             </Hint>
-            {record.patient?.id && (
+            {report.patient?.id && (
               <PatientJourneyDialog
-                patientId={record.patient.id}
+                patientId={report.patient.id}
                 patientName={patient.fullName}
                 trigger={
                   <Button variant="outline" size="sm" className="gap-1.5 border-brand/30 text-brand hover:bg-brand/10">
@@ -228,7 +228,7 @@ export function MedicalRecordDetail({ record }: { record: DoctorMedicalRecordIte
             {hasSource && (
               <Hint side="bottom" content="Mở ca tư vấn gốc ở màn Ca tư vấn.">
                 <Button variant="outline" size="sm" asChild className="gap-1.5">
-                  <Link href={`/doctor?session=${encodeURIComponent(record.consultationSessionId!)}`}>
+                  <Link href={`/doctor?session=${encodeURIComponent(report.consultationSessionId!)}`}>
                     <ExternalLink className="size-3.5" /> Mở ca gốc
                   </Link>
                 </Button>
@@ -242,11 +242,11 @@ export function MedicalRecordDetail({ record }: { record: DoctorMedicalRecordIte
               <TriangleAlert className="size-3" /> Dị ứng: {patient.allergies}
             </span>
           )}
-          {record.isReferenceCase && <ReferenceBadge className="text-[10px]" />}
+          {report.isReferenceCase && <ReferenceBadge className="text-[10px]" />}
         </div>
         <p className="text-xs text-muted-foreground">
-          Chốt {formatDate(record.createdAt)}{" "}
-          {finalizedAt.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} · {record.doctorName ?? "Bác sĩ"}
+          Chốt {formatDate(report.createdAt)}{" "}
+          {finalizedAt.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} · {report.doctorName ?? "Bác sĩ"}
           {!hasSource && " · Khám trực tiếp"}
         </p>
         <nav className="-mb-px flex gap-1 print:hidden" role="tablist" aria-label="Nội dung phiếu">
@@ -275,14 +275,14 @@ export function MedicalRecordDetail({ record }: { record: DoctorMedicalRecordIte
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 print:overflow-visible">
         {/* khi in: luôn có Tóm tắt + Dữ kiện, không phụ thuộc tab đang mở */}
         <div className={cn(activeTab !== "summary" && "hidden print:block")}>
-          <SummaryTab record={record} />
+          <SummaryTab report={report} />
         </div>
         <div className={cn(activeTab !== "facts" && "hidden print:mt-6 print:block")}>
-          <FactsTab record={record} />
+          <FactsTab report={report} />
         </div>
-        {activeTab === "conversation" && record.conversationId && (
+        {activeTab === "conversation" && report.conversationId && (
           <div className="print:hidden">
-            <ConversationTab conversationId={record.conversationId} />
+            <ConversationTab conversationId={report.conversationId} />
           </div>
         )}
       </div>

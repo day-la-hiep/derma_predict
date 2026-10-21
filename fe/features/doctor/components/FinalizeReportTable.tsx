@@ -3,9 +3,9 @@
 import { ClipboardList } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import type { DoctorMedicalRecordItem } from "../types";
-import { ReferenceBadge } from "./MedicalRecordCard";
-import { UrgencyBadge } from "./RecordBadges";
+import type { FinalizeReportItem } from "../types";
+import { ReferenceBadge } from "./FinalizeReportCard";
+import { UrgencyBadge } from "./FinalizeReportBadges";
 
 function age(dob: string): string {
   const d = new Date(dob);
@@ -18,14 +18,14 @@ function shortDate(iso: string): string {
 
 const TH = "px-4 py-2.5 text-left font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground";
 
-export function MedicalRecordTable({
-  records,
+export function FinalizeReportTable({
+  reports,
   total,
   loading,
   selectedId,
   onSelect,
 }: {
-  records: DoctorMedicalRecordItem[];
+  reports: FinalizeReportItem[];
   total: number;
   loading: boolean;
   selectedId: string | null;
@@ -58,7 +58,7 @@ export function MedicalRecordTable({
                   </td>
                 </tr>
               ))
-            ) : records.length === 0 ? (
+            ) : reports.length === 0 ? (
               <tr>
                 <td colSpan={4} className="py-16 text-center text-muted-foreground">
                   <ClipboardList className="mx-auto mb-2 size-7 opacity-30" />
@@ -66,7 +66,7 @@ export function MedicalRecordTable({
                 </td>
               </tr>
             ) : (
-              records.map((r) => {
+              reports.map((r) => {
                 const active = r.id === selectedId;
                 const urgency = r.snapshot?.assessment.urgency;
                 return (
@@ -106,7 +106,7 @@ export function MedicalRecordTable({
       </div>
       <div className="flex items-center justify-between border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">
         <span>
-          Hiển thị {records.length} / {total} phiếu
+          Hiển thị {reports.length} / {total} phiếu
         </span>
       </div>
     </div>

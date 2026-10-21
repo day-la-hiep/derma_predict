@@ -11,16 +11,16 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { useSessionMedicalRecords } from "../hooks";
+import { useSessionFinalizeReports } from "../hooks";
 import type { ConsultationSession } from "../types";
-import { MedicalRecordCard } from "./MedicalRecordCard";
+import { FinalizeReportCard } from "./FinalizeReportCard";
 import { PatientProfileDetails, patientSubtitle } from "./PatientProfileDetails";
 import { PatientJourneyDialog } from "./PatientJourneyDialog";
 
 export function PatientProfileSheet({ session }: { session: ConsultationSession }) {
   const [open, setOpen] = useState(false);
   const { patient } = session;
-  const { data: records, isLoading } = useSessionMedicalRecords(open ? session.id : null);
+  const { data: reports, isLoading } = useSessionFinalizeReports(open ? session.id : null);
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -53,19 +53,19 @@ export function PatientProfileSheet({ session }: { session: ConsultationSession 
           )}
 
           <div>
-            <Hint side="left" content="Bệnh án được ghi khi bác sĩ chốt lúc đóng ca, hoặc ở màn Lịch sử khám cho ca khám trực tiếp.">
+            <Hint side="left" content="Báo cáo kết luận được ghi khi bác sĩ chốt lúc đóng ca tư vấn.">
               <p className="mb-2 w-fit text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Lịch sử khám <span className="text-brand">{records?.length ?? 0}</span>
+                Lịch sử khám <span className="text-brand">{reports?.length ?? 0}</span>
               </p>
             </Hint>
             {isLoading && <p className="text-xs text-muted-foreground">Đang tải…</p>}
-            {!isLoading && !records?.length && (
+            {!isLoading && !reports?.length && (
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Stethoscope className="size-3.5 opacity-50" /> Chưa có lần khám nào
               </p>
             )}
             <ul className="space-y-2">
-              {records?.map((r) => <MedicalRecordCard key={r.id} record={r} />)}
+              {reports?.map((r) => <FinalizeReportCard key={r.id} report={r} />)}
             </ul>
           </div>
         </div>

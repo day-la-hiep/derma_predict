@@ -18,7 +18,7 @@ Entity nghiệp vụ tương ứng nằm ở `core/app/dto/base/` (mỗi bounded
 |---|---|
 | Người dùng | `users`, `patient_profiles`, `doctors`, `admins` |
 | Hội thoại & tư vấn | `conversations`, `messages`, `message_files`, `consultation_sessions`, `video_calls` |
-| Bệnh án | `medical_records`, `patient_images` |
+| Báo cáo kết luận | `finalize_reports`, `patient_images` |
 | Lâm sàng | `clinical_fact_templates`, `clinical_facts`, `clinical_provenances`, `pre_consultation_reports` |
 | File | `files` |
 | Tài liệu (pipeline số hoá sách) | `documents`, `document_stages`, `document_overrides` |
@@ -31,7 +31,7 @@ users 1─n patient_profiles 1─n conversations 1─n messages n─n files (mes
   ├─1─1 doctors│                    └─1─n consultation_sessions 1─1 pre_consultation_reports
   └─1─1 admins │                                      ├─1─n video_calls
                │                                      │ (messages.consultation_session_id, messages.video_call_id)
-               ├─1─n medical_records 1─n patient_images ─n─1 files
+               ├─1─n finalize_reports 1─n patient_images ─n─1 files
                └─1─n clinical_facts n─1 clinical_fact_templates
                           └─n─n messages (clinical_provenances)
 
@@ -58,7 +58,7 @@ Field chung của mọi loại tài khoản. Vai trò bác sĩ / quản trị l�
 
 ### `patient_profiles` — hồ sơ bệnh nhân
 
-Một tài khoản quản lý được **nhiều hồ sơ** (bản thân, người nhà). Hội thoại, bệnh án và dữ kiện lâm sàng đều gắn vào hồ sơ này, không gắn thẳng vào `users`.
+Một tài khoản quản lý được **nhiều hồ sơ** (bản thân, người nhà). Hội thoại, báo cáo kết luận và dữ kiện lâm sàng đều gắn vào hồ sơ này, không gắn thẳng vào `users`.
 
 | Field | Kiểu | Null | Ý nghĩa |
 |---|---|---|---|
@@ -169,30 +169,32 @@ Cuộc gọi **thuộc về một phiên tư vấn** (một phiên có nhiều c
 
 ---
 
-## 3. Nhóm Bệnh án
+## 3. Nhóm Báo cáo kết luận
 
-### `medical_records` — bệnh án
+### `finalize_reports` — báo cáo kết luận
 
-Bệnh án do **bác sĩ** ghi cho một hồ sơ bệnh nhân; một hồ sơ có nhiều bệnh án. Không gắn với phiên tư vấn cụ thể. Mới có schema.
+Kết luận cuối cùng do **bác sĩ** chốt từ **một phiên tư vấn** (1 báo cáo / `consultation_session`; một hội thoại có nhiều phiên nên có nhiều báo cáo). Nháp được tổng hợp sẵn từ dữ kiện lâm sàng + đồ thị (PJKG, tri thức da liễu) để bác sĩ chỉnh rồi chốt. Khác `pre_consultation_reports` (tóm tắt AI trước tư vấn). Đổi tên từ `medical_records`.
 
 | Field | Kiểu | Null | Ý nghĩa |
 |---|---|---|---|
-| `id` | varchar(64) PK | không | Mã bệnh án. |
+| `id` | varchar(64) PK | không | Mã báo cáo kết luận. |
 | `patient_profile_id` | varchar(64) FK → `patient_profiles.id` | không | Hồ sơ bệnh nhân. `ON DELETE CASCADE`. Có index. |
-| `doctor_id` | varchar(64) FK → `doctors.user_id` | có | Bác sĩ ghi bệnh án. `ON DELETE SET NULL` — bác sĩ bị xoá thì bệnh án vẫn giữ. |
+| `doctor_id` | varchar(64) FK → `doctors.user_id` | có | Bác sĩ ghi báo cáo kết luận. `ON DELETE SET NULL` — bác sĩ bị xoá thì báo cáo kết luận vẫn giữ. |
 | `diagnosis` | text | không | Chẩn đoán của bác sĩ. |
 | `notes` | text | không, mặc định `''` | Ghi chú thêm. |
 | `is_reference_case` | boolean | không, mặc định `false` | Ca bệnh tham khảo: bác sĩ xác nhận dùng làm dữ liệu cho KB / chatbot tra ca tương tự (phải ẩn định danh khi đưa vào KB). |
-| `created_at` | timestamptz | không | Lúc ghi bệnh án. |
+| `consultation_session_id` | varchar(64) FK → `consultation_sessions.id` | có, **unique** | Phiên tư vấn sinh ra báo cáo. `ON DELETE SET NULL`. `NULL` chỉ còn ở dữ liệu cũ (khám trực tiếp, đã bỏ). |
+| `snapshot` | jsonb | có | Bản chụp bất biến lúc chốt (hồ sơ bệnh nhân, mức khẩn cấp, dặn dò, dữ kiện kèm nguồn). `NULL` với báo cáo cũ. |
+| `created_at` | timestamptz | không | Lúc ghi báo cáo kết luận. |
 
 ### `patient_images` — ảnh bệnh
 
-Ảnh bệnh do bác sĩ gắn vào bệnh án. Trỏ FK tới `files` thay vì chép file, nên bác sĩ chọn lại được ảnh bệnh nhân đã gửi trong chat mà không tạo bản sao trong MinIO. Mới có schema.
+Ảnh bệnh do bác sĩ gắn vào báo cáo kết luận. Trỏ FK tới `files` thay vì chép file, nên bác sĩ chọn lại được ảnh bệnh nhân đã gửi trong chat mà không tạo bản sao trong MinIO. Mới có schema.
 
 | Field | Kiểu | Null | Ý nghĩa |
 |---|---|---|---|
 | `id` | varchar(64) PK | không | Mã ảnh. |
-| `medical_record_id` | varchar(64) FK → `medical_records.id` | không | Bệnh án chứa ảnh. `ON DELETE CASCADE`. Có index. |
+| `finalize_report_id` | varchar(64) FK → `finalize_reports.id` | không | Báo cáo kết luận chứa ảnh. `ON DELETE CASCADE`. Có index. |
 | `file_id` | varchar(64) FK → `files.id` | không | File ảnh trong MinIO. `ON DELETE CASCADE`. |
 | `body_site` | varchar(128) | không, mặc định `''` | Vị trí trên cơ thể. |
 | `description` | text | không, mặc định `''` | Mô tả tổn thương. |
@@ -257,7 +259,7 @@ Báo cáo AI tóm tắt cho bác sĩ đọc trước khi nhận ca, **1 báo cá
 
 ### `files` — metadata file trong MinIO
 
-Dùng chung cho ảnh đính kèm tin nhắn, ảnh bệnh trong bệnh án và file của tài liệu. Nội dung file nằm ở MinIO, không nằm trong DB.
+Dùng chung cho ảnh đính kèm tin nhắn, ảnh bệnh trong báo cáo kết luận và file của tài liệu. Nội dung file nằm ở MinIO, không nằm trong DB.
 
 | Field | Kiểu | Null | Ý nghĩa |
 |---|---|---|---|
@@ -324,14 +326,14 @@ Chỉnh sửa tay của người duyệt lên kết quả một bước, **tách
 | Quan hệ | Khi xoá bảng cha |
 |---|---|
 | `users` → `patient_profiles`, `doctors`, `admins` | CASCADE |
-| `patient_profiles` → `medical_records`, `clinical_facts` | CASCADE |
+| `patient_profiles` → `finalize_reports`, `clinical_facts` | CASCADE |
 | `conversations` → `consultation_sessions` | CASCADE |
 | `consultation_sessions` → `pre_consultation_reports`, `video_calls` | CASCADE |
 | `messages` / `files` → `message_files` | CASCADE |
-| `medical_records` / `files` → `patient_images` | CASCADE |
+| `finalize_reports` / `files` → `patient_images` | CASCADE |
 | `clinical_facts` / `messages` → `clinical_provenances` | CASCADE |
 | `documents` → `document_stages` → `document_overrides` | CASCADE |
-| `doctors` → `consultation_sessions.doctor_id`, `medical_records.doctor_id`, `documents.uploaded_by_id` | SET NULL (dữ liệu vẫn giữ) |
+| `doctors` → `consultation_sessions.doctor_id`, `finalize_reports.doctor_id`, `documents.uploaded_by_id` | SET NULL (dữ liệu vẫn giữ) |
 | `video_calls` / `consultation_sessions` → `messages.video_call_id` / `messages.consultation_session_id` | SET NULL |
 | `files` → `documents.source_file_id` / `ingested_file_id` | SET NULL |
 | `clinical_facts` → `clinical_facts.superseded_by_id` | SET NULL |

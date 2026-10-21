@@ -2,6 +2,6 @@
 
 import { MedicalHistoryPage } from "@/features/doctor";
 
-export default function DoctorRecordsPage() {
+export default function DoctorReportsPage() {
   return <MedicalHistoryPage />;
 }

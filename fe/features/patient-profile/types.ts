@@ -16,7 +16,7 @@ export interface PatientProfile {
 
 export type PatientProfileInput = Omit<PatientProfile, "id" | "created_at">;
 
-export interface MedicalRecord {
+export interface FinalizeReport {
   id: string;
   diagnosis: string;
   notes: string;
