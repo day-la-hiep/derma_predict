@@ -1,4 +1,4 @@
-.PHONY: infra infra-down backend worker ingest-worker migrate migrate-new init-db load-primekg load-dermo load-kg frontend
+.PHONY: infra infra-down backend worker ingest-worker migrate migrate-new init-db load-primekg load-dermo load-kg kg-download kg-build kg-load kg-verify frontend
 
 infra:
 	docker compose up -d
@@ -35,6 +35,19 @@ load-dermo:
 
 # nạp đủ knowledge graph cho tool KG: PrimeKG + DermO (thiếu một trong hai thì query báo label không tồn tại)
 load-kg: load-primekg load-dermo
+
+# graph nền (PrimeKG + DermO) dựng từ nguồn gốc: tải -> build -> nạp Neo4j -> kiểm tra; `make kg-load reset=1` xoá :Entity/:DermoTerm (kể cả cạnh DOC) rồi nạp lại
+kg-download:
+	cd core && uv run python -m graph_base.primekg.download && uv run python -m graph_base.dermo.download
+
+kg-build:
+	cd core && uv run python -m graph_base.primekg.build && uv run python -m graph_base.dermo.build
+
+kg-load:
+	cd core && uv run python -m graph_base.primekg.load $(if $(reset),--reset) && uv run python -m graph_base.dermo.load $(if $(reset),--reset)
+
+kg-verify:
+	cd core && uv run python -m graph_base.verify
 
 frontend:
 	cd fe && pnpm dev

@@ -40,6 +40,7 @@ NODES_CSV = DATA_DIR / "derma_nodes.csv"
 EDGES_CSV = DATA_DIR / "derma_edges.csv"
 
 BATCH_SIZE = 5000
+SKIP_SOURCES = {"BYT"}  # tạm bỏ hồ sơ Bộ Y tế: chỉ nạp PrimeKG gốc
 
 
 def to_label(type_str: str) -> str:
@@ -153,8 +154,13 @@ def main() -> None:
     t0 = time.time()
     print("Đọc CSV...")
     nodes = read_csv(NODES_CSV)
-    edges = read_csv(EDGES_CSV)
-    print(f"  {len(nodes)} nodes, {len(edges)} edges")
+    skipped = {(n["type"], n["id"]) for n in nodes if n["source"] in SKIP_SOURCES}
+    nodes = [n for n in nodes if (n["type"], n["id"]) not in skipped]
+    edges = [
+        e for e in read_csv(EDGES_CSV)
+        if (e["x_type"], e["x_id"]) not in skipped and (e["y_type"], e["y_id"]) not in skipped
+    ]
+    print(f"  {len(nodes)} nodes, {len(edges)} edges (bỏ {len(skipped)} nút {'/'.join(SKIP_SOURCES)})")
 
     print("Nạp nodes...")
     load_nodes(driver, nodes)
