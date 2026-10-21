@@ -62,8 +62,8 @@ class Settings(BaseSettings):
     # Collection sách cũ (trước khi đổi Book -> Document, payload `book_id`/`book_title`) vẫn được agent ĐỌC cùng collection mới để
     # không mất dữ liệu đã nạp; pipeline không ghi vào đây. Rỗng = bỏ qua.
     QDRANT_LEGACY_BOOK_COLLECTION: str = "derma_book_chunks"
-    # Collection ca bệnh thực tế (medical records) do bác sĩ chốt, dùng làm nguồn ca tham khảo cho chatbot
-    QDRANT_MEDICAL_CASE_COLLECTION: str = "derma_medical_cases"
+    # Collection ca bệnh thực tế (finalize reports) do bác sĩ chốt, dùng làm nguồn ca tham khảo cho chatbot
+    QDRANT_FINALIZE_REPORT_COLLECTION: str = "derma_finalize_reports"
     # Embedding + reranker Qwen3 gọi qua OpenRouter (cùng OPENROUTER_API_KEY với LLM). Đổi EMBEDDING_MODEL / EMBEDDING_DIM thì phải đổi
     # QDRANT_DOCUMENT_COLLECTION và index lại sách. Reranker lỗi thì tool tự bỏ bước rerank và dùng thứ tự RRF.
     EMBEDDING_MODEL: str = "qwen/qwen3-embedding-8b"

@@ -139,7 +139,7 @@ export const STATUS_ACTION_CONFIG: Record<ConsultationStatus, StatusActionConfig
   },
   active: {
     label: "Đóng ca",
-    hint: "Đóng phiên tư vấn: mở form chốt bệnh án (điền sẵn dữ kiện của ca), chốt xong ca chuyển sang chế độ chỉ xem.",
+    hint: "Đóng phiên tư vấn: mở form chốt báo cáo kết luận (điền sẵn dữ kiện của ca), chốt xong ca chuyển sang chế độ chỉ xem.",
     icon: CheckCircle2,
     buttonClass:
       "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:shadow-lg",
@@ -162,7 +162,7 @@ export const FILTER_OPTIONS: { value: ConsultationStatus | "all"; label: string 
   { value: "resolved", label: "Xong" },
 ];
 
-/** Mức khẩn cấp bác sĩ chốt cho phiếu bệnh án */
+/** Mức khẩn cấp bác sĩ chốt cho báo cáo kết luận */
 export const URGENCY_CONFIG: Record<Urgency, { label: string; hint: string; badgeClass: string }> = {
   emergency: {
     label: "Khẩn",
@@ -306,7 +306,7 @@ export const JOURNEY_NODE_CONFIG: Record<string, JourneyNodeConfig> = {
   },
   Doctor: {
     label: "Bác sĩ",
-    hint: "Bác sĩ phụ trách và chốt bệnh án cho phiên",
+    hint: "Bác sĩ phụ trách và chốt báo cáo kết luận cho phiên",
     icon: Stethoscope,
     badgeClass: "border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900/60 dark:bg-purple-950/50 dark:text-purple-400",
     colorClass: "border-purple-400/40 bg-purple-500/10 text-purple-600 dark:text-purple-400",

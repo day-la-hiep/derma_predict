@@ -1,4 +1,4 @@
-"""DTO Input cho bệnh án do bác sĩ chốt."""
+"""DTO Input cho báo cáo kết luận do bác sĩ chốt."""
 
 from pydantic import BaseModel, Field
 
@@ -15,7 +15,7 @@ class FactInput(BaseModel):
 
 
 class PatientImageInput(BaseModel):
-    """Ảnh bệnh bác sĩ chọn từ đoạn chat để gắn vào bệnh án (file đã nằm trong `files`/MinIO)."""
+    """Ảnh bệnh bác sĩ chọn từ đoạn chat để gắn vào báo cáo kết luận (file đã nằm trong `files`/MinIO)."""
 
     file_id: str = Field(min_length=1)
     body_site: str = ""
@@ -23,7 +23,7 @@ class PatientImageInput(BaseModel):
     confirmed_label: str | None = None  # nhãn bác sĩ xác nhận — nên khớp 22 lớp CNN
 
 
-class FinalizeMedicalRecordInput(BaseModel):
+class FinalizeReportInput(BaseModel):
     diagnosis: str = Field(min_length=1)
     notes: str = ""
     is_reference_case: bool = False
@@ -33,8 +33,3 @@ class FinalizeMedicalRecordInput(BaseModel):
     facts: list[FactInput] = []
     images: list[PatientImageInput] = []
 
-
-class CreateDoctorMedicalRecordInput(FinalizeMedicalRecordInput):
-    """Ca khám trực tiếp (không qua tư vấn online): bác sĩ tự chọn hồ sơ bệnh nhân."""
-
-    patient_profile_id: str = Field(min_length=1)

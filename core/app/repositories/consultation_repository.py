@@ -166,7 +166,7 @@ class ConsultationRepository:
     async def get_active_facts_with_provenance(
         self, patient_profile_id: str
     ) -> list[tuple[ClinicalFact, ClinicalFactTemplate, list[Message]]]:
-        """Fact đang hiệu lực của bệnh nhân + tin nhắn nguồn (cũ trước), để điền sẵn form chốt bệnh án."""
+        """Fact đang hiệu lực của bệnh nhân + tin nhắn nguồn (cũ trước), để điền sẵn form chốt báo cáo kết luận."""
         stmt = (
             select(ClinicalFact, ClinicalFactTemplate)
             .join(ClinicalFactTemplate, ClinicalFact.template_id == ClinicalFactTemplate.id)

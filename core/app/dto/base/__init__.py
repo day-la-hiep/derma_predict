@@ -5,10 +5,10 @@
 - `conversation`   — Conversation, Message
 - `consultation`   — ConsultationSession, VideoCall, PreConsultationReport
 - `clinical`       — ClinicalFactTemplate, ClinicalFact
-- `medical_record` — MedicalRecord (+ snapshot phiếu đã chốt), PatientImage
+- `finalize_report` — FinalizeReport (+ snapshot phiếu đã chốt), PatientImage
 - `document`       — Document và pipeline ingest
 
-Các context tham chiếu vòng nhau (Conversation ↔ ConsultationSession ↔ ClinicalFact, PatientProfile ↔ MedicalRecord), nên
+Các context tham chiếu vòng nhau (Conversation ↔ ConsultationSession ↔ ClinicalFact, PatientProfile ↔ FinalizeReport), nên
 mọi file chỉ import chéo trong `TYPE_CHECKING` và model được rebuild một lần ở đây, không phụ thuộc thứ tự import."""
 from app.dto.base.clinical import ClinicalFact, ClinicalFactTemplate, ClinicalProvenance
 from app.dto.base.consultation import ConsultationSession, PreConsultationReport, VideoCall
@@ -22,10 +22,10 @@ from app.dto.base.document import (
     DocumentStageOverride,
 )
 from app.dto.base.identity import Admin, Doctor, PatientProfile, User
-from app.dto.base.medical_record import (
+from app.dto.base.finalize_report import (
     Assessment,
-    MedicalRecord,
-    MedicalRecordSnapshot,
+    FinalizeReport,
+    FinalizeReportSnapshot,
     PatientImage,
     SnapshotClinicalFact,
     SnapshotMessage,
@@ -37,7 +37,7 @@ from app.dto.base.shared import File
 __all__ = [
     "Admin", "Assessment", "ClinicalFact", "ClinicalFactTemplate", "ClinicalProvenance", "ConsultationSession",
     "Conversation", "Doctor", "Document", "DocumentChunk", "DocumentFigure", "File",
-    "MedicalRecord", "MedicalRecordSnapshot", "Message", "MessageMetadata", "NewDocument", "PatientImage",
+    "FinalizeReport", "FinalizeReportSnapshot", "Message", "MessageMetadata", "NewDocument", "PatientImage",
     "PatientProfile", "PreConsultationReport", "DocumentStage", "DocumentStageOverride", "SnapshotClinicalFact",
     "SnapshotMessage", "SnapshotPatientProfile", "SnapshotProvenance", "User", "VideoCall",
 ]

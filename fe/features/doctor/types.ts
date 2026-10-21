@@ -20,7 +20,7 @@ export interface PatientProfile {
   medicalHistory: string;
 }
 
-/* ────────── Medical Record (bệnh án) ────────── */
+/* ────────── Finalize Report (báo cáo kết luận) ────────── */
 
 export type Urgency = "emergency" | "few_days" | "monitor";
 export type FactOrigin = "patient_reported" | "ai_inferred" | "doctor_observed" | "doctor_corrected";
@@ -47,14 +47,14 @@ export interface SnapshotFact {
   sources: SnapshotMessage[];
 }
 
-/** Bản chụp bất biến của phiếu bác sĩ đã chốt (cột `medical_records.snapshot`) */
-export interface MedicalRecordSnapshot {
+/** Bản chụp bất biến của phiếu bác sĩ đã chốt (cột `finalize_reports.snapshot`) */
+export interface FinalizeReportSnapshot {
   patientProfile: Omit<PatientProfile, "id">;
   assessment: { reasoning: string; urgency: Urgency; instructions: string[] };
   clinicalFacts: SnapshotFact[];
 }
 
-export interface MedicalRecordImage {
+export interface FinalizeReportImage {
   id: string;
   file: { fileName: string; contentType: string | null; storageKey: string; url: string | null };
   bodySite: string;
@@ -63,7 +63,7 @@ export interface MedicalRecordImage {
   capturedAt: string | null;
 }
 
-export interface MedicalRecord {
+export interface FinalizeReport {
   id: string;
   diagnosis: string;
   notes: string;
@@ -72,13 +72,13 @@ export interface MedicalRecord {
   createdAt: string;
   consultationSessionId: string | null;
   conversationId: string | null;
-  /** null với bệnh án ghi trước khi có snapshot */
-  snapshot: MedicalRecordSnapshot | null;
-  images: MedicalRecordImage[];
+  /** null với báo cáo kết luận ghi trước khi có snapshot */
+  snapshot: FinalizeReportSnapshot | null;
+  images: FinalizeReportImage[];
 }
 
-/** Một dòng ở màn Lịch sử khám: bệnh án kèm hồ sơ bệnh nhân */
-export interface DoctorMedicalRecordItem extends MedicalRecord {
+/** Một dòng ở màn Lịch sử khám: báo cáo kết luận kèm hồ sơ bệnh nhân */
+export interface FinalizeReportItem extends FinalizeReport {
   patient: PatientProfile;
 }
 
@@ -95,9 +95,19 @@ export interface FactDraft {
   sources: SnapshotMessage[];
 }
 
+/** Gợi ý tổng hợp từ đồ thị (lịch sử bệnh nhân + tri thức da liễu); chỉ tham khảo, không phải chẩn đoán */
+export interface GraphSuggestions {
+  previousConditions: string[];
+  previousAdvice: string[];
+  candidateDiseases: string[];
+  redFlags: string[];
+  notes: string[];
+}
+
 export interface FinalizeDraft {
   patient: PatientProfile;
   facts: FactDraft[];
+  suggestions: GraphSuggestions;
 }
 
 export interface FinalizeInput {

@@ -102,7 +102,7 @@ make data-restore          # hỏi 'yes' vì ghi đè 4 volume
 docker compose up -d       # KHÔNG chạy make migrate / make init-db
 ```
 
-- Copy **toàn bộ** 4 volume (cả chat, bệnh án, ảnh đính kèm), không chỉ sách BYT; Redis/RabbitMQ không theo sang.
+- Copy **toàn bộ** 4 volume (cả chat, báo cáo kết luận, ảnh đính kèm), không chỉ sách BYT; Redis/RabbitMQ không theo sang.
 - Máy mới dùng cùng phiên bản image và cùng model embedding / tên collection Qdrant.
 - Prod: thêm `VOL_PREFIX=derma-hospital-prod_` (ví dụ `make data-export VOL_PREFIX=derma-hospital-prod_`).
 - Xuất từng phần, dựng lại thay vì chuyển, kiểm tra sau khi chuyển: [docs/module/chuyen-du-lieu-sang-may-khac.md](docs/module/chuyen-du-lieu-sang-may-khac.md).

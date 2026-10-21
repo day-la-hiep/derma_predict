@@ -6,56 +6,46 @@ import { doctorApi, errorMessage } from "./api";
 import type { FinalizeInput } from "./types";
 
 export const qk = {
-  medicalRecords: (sessionId: string) => ["doctor", "medical-records", sessionId] as const,
-  myRecordsAll: ["doctor", "my-records"] as const,
-  myRecords: (q: string) => ["doctor", "my-records", q] as const,
-  profileRecords: (profileId: string) => ["doctor", "profile-records", profileId] as const,
-  patientSearch: (q: string) => ["doctor", "patient-search", q] as const,
+  finalizeReports: (sessionId: string) => ["doctor", "finalize-reports", sessionId] as const,
+  myReportsAll: ["doctor", "my-reports"] as const,
+  myReports: (q: string) => ["doctor", "my-reports", q] as const,
+  profileReports: (profileId: string) => ["doctor", "profile-reports", profileId] as const,
   finalizeDraft: (sessionId: string) => ["doctor", "finalize-draft", sessionId] as const,
   conversation: (conversationId: string) => ["doctor", "conversation", conversationId] as const,
   patientJourneyGraph: (patientId: string) => ["doctor", "patient-journey-graph", patientId] as const,
 };
 
-export function useSessionMedicalRecords(sessionId: string | null) {
+export function useSessionFinalizeReports(sessionId: string | null) {
   return useQuery({
-    queryKey: qk.medicalRecords(sessionId ?? ""),
-    queryFn: () => doctorApi.listMedicalRecords(sessionId!),
+    queryKey: qk.finalizeReports(sessionId ?? ""),
+    queryFn: () => doctorApi.listFinalizeReports(sessionId!),
     enabled: !!sessionId,
   });
 }
 
-// Bệnh án mới (từ ca tư vấn hay khám trực tiếp) phải hiện ở mọi nơi đang xem lịch sử
-function useInvalidateRecords() {
+// Báo cáo kết luận mới phải hiện ở mọi nơi đang xem lịch sử
+function useInvalidateReports() {
   const qc = useQueryClient();
   return () => {
-    qc.invalidateQueries({ queryKey: ["doctor", "medical-records"] });
-    qc.invalidateQueries({ queryKey: qk.myRecordsAll });
-    qc.invalidateQueries({ queryKey: ["doctor", "profile-records"] });
+    qc.invalidateQueries({ queryKey: ["doctor", "finalize-reports"] });
+    qc.invalidateQueries({ queryKey: qk.myReportsAll });
+    qc.invalidateQueries({ queryKey: ["doctor", "profile-reports"] });
   };
 }
 
-export function useMyMedicalRecords(q: string) {
+export function useMyFinalizeReports(q: string) {
   return useQuery({
-    queryKey: qk.myRecords(q),
-    queryFn: () => doctorApi.listMyMedicalRecords(q),
+    queryKey: qk.myReports(q),
+    queryFn: () => doctorApi.listMyFinalizeReports(q),
     placeholderData: (prev) => prev,
   });
 }
 
-export function useProfileMedicalRecords(profileId: string | null) {
+export function useProfileFinalizeReports(profileId: string | null) {
   return useQuery({
-    queryKey: qk.profileRecords(profileId ?? ""),
-    queryFn: () => doctorApi.listProfileMedicalRecords(profileId!),
+    queryKey: qk.profileReports(profileId ?? ""),
+    queryFn: () => doctorApi.listProfileFinalizeReports(profileId!),
     enabled: !!profileId,
-  });
-}
-
-export function usePatientSearch(q: string, enabled: boolean) {
-  return useQuery({
-    queryKey: qk.patientSearch(q),
-    queryFn: () => doctorApi.searchPatientProfiles(q),
-    enabled,
-    placeholderData: (prev) => prev,
   });
 }
 
@@ -71,19 +61,9 @@ export function useFinalizeDraft(sessionId: string | null) {
 }
 
 export function useFinalizeSession(sessionId: string) {
-  const invalidate = useInvalidateRecords();
+  const invalidate = useInvalidateReports();
   return useMutation({
     mutationFn: (body: FinalizeInput) => doctorApi.finalizeSession(sessionId, body),
-    onSuccess: invalidate,
-    onError: (e) => toast.error(errorMessage(e)),
-  });
-}
-
-export function useCreateMedicalRecordForProfile() {
-  const invalidate = useInvalidateRecords();
-  return useMutation({
-    mutationFn: ({ patientProfileId, body }: { patientProfileId: string; body: FinalizeInput }) =>
-      doctorApi.createMedicalRecordForProfile(patientProfileId, body),
     onSuccess: invalidate,
     onError: (e) => toast.error(errorMessage(e)),
   });

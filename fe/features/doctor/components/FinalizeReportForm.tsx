@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { FACT_TYPE_CONFIG, URGENCY_CONFIG, URGENCY_ORDER } from "../constants";
 import type { ClinicalFactType, FactDraft, FactOrigin, FinalizeInput } from "../types";
 import { FactSources } from "./FactSources";
-import { OriginBadge } from "./RecordBadges";
+import { OriginBadge } from "./FinalizeReportBadges";
 
 export const EMPTY_FINALIZE: FinalizeInput = {
   diagnosis: "",
@@ -106,8 +106,8 @@ function FactRow({
   );
 }
 
-/** Thân form chốt bệnh án — dùng chung cho chốt từ ca tư vấn và khám trực tiếp */
-export function RecordForm({ value, onChange }: { value: FinalizeInput; onChange: (v: FinalizeInput) => void }) {
+/** Thân form chốt báo cáo kết luận — chốt từ ca tư vấn */
+export function FinalizeReportForm({ value, onChange }: { value: FinalizeInput; onChange: (v: FinalizeInput) => void }) {
   const set = <K extends keyof FinalizeInput>(k: K, v: FinalizeInput[K]) => onChange({ ...value, [k]: v });
   const setFact = (i: number, f: FactDraft) => set("facts", value.facts.map((x, j) => (j === i ? f : x)));
   const addFact = () =>
@@ -182,7 +182,7 @@ export function RecordForm({ value, onChange }: { value: FinalizeInput; onChange
           </Button>
         </div>
         <div className="space-y-1.5">
-          <Label hint="Hướng điều trị, hẹn tái khám… Bệnh nhân xem được ở tab Bệnh án.">Ghi chú</Label>
+          <Label hint="Hướng điều trị, hẹn tái khám… Bệnh nhân xem được ở tab Kết luận.">Ghi chú</Label>
           <Textarea rows={2} value={value.notes} onChange={(e) => set("notes", e.target.value)} className="text-sm" />
         </div>
         <Hint side="right" content="Đánh dấu ca này để cân nhắc đưa vào kho tri thức tham khảo (ẩn định danh bệnh nhân).">

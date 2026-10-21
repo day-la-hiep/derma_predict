@@ -162,6 +162,21 @@ class PatientGraphService:
                 instructions=clean_instructions,
             )
 
+    async def get_history_hints(self, patient_id: str) -> tuple[list[str], list[str]]:
+        """(nhận định, lời khuyên) bác sĩ đã chốt ở các phiên trước của bệnh nhân, mới nhất trước."""
+        query = """
+        MATCH (:Patient {id: $patient_id})-[:HAD_SESSION]->(s:ConsultationSession)
+        OPTIONAL MATCH (s)-[:SUSPECTED_CONDITION]->(c:SuspectedCondition)
+        OPTIONAL MATCH (s)-[:RECOMMENDED_ADVICE]->(a:Advice)
+        WITH s, collect(DISTINCT c.name) AS conditions, collect(DISTINCT a.content) AS advice
+        ORDER BY s.resolved_at DESC
+        RETURN conditions, advice
+        """
+        rows = await self._neo4j.run(query, patient_id=patient_id)
+        conditions = list(dict.fromkeys(c for r in rows for c in r["conditions"]))
+        advice = list(dict.fromkeys(a for r in rows for a in r["advice"]))
+        return conditions, advice
+
     async def get_patient_journey_graph(self, patient_id: str) -> PatientJourneyGraphOutput:
         """Truy vấn đồ thị hành trình bệnh nhân (nodes và edges) để phục vụ trực quan hoá trên giao diện."""
         query = """

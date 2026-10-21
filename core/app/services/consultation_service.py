@@ -33,7 +33,7 @@ from app.models.patient_profile import PatientProfile
 from app.repositories.consultation_repository import ConsultationRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.message_repository import MessageRepository
-from app.services.doctor_medical_record_service import to_patient_profile_dto
+from app.services.finalize_report_service import to_patient_profile_dto
 from app.repositories.user_repository import UserRepository
 from app.services.patient_graph_service import PatientGraphService
 from app.services.room_events import publish_inbox, publish_room
@@ -126,7 +126,7 @@ class ConsultationService:
         )
 
     async def announce_finalized(self, session_id: str, doctor_id: str) -> None:
-        # chốt bệnh án đã đóng ca ở service khác, nên mốc "kết thúc" và event phải phát ở đây
+        # chốt báo cáo kết luận đã đóng ca ở service khác, nên mốc "kết thúc" và event phải phát ở đây
         session = await self._owned_session(session_id, doctor_id)
         await self._post_marker(session, MessageType.CONSULTATION_RESOLVED, MessageSender.DOCTOR, doctor_id)
         await self._announce(await self.get_session(session_id, doctor_id))

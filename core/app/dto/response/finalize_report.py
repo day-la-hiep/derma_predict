@@ -1,9 +1,9 @@
-"""DTO Output bệnh án phía bác sĩ — khác `response/patient_profile.py::MedicalRecordOutput` (giấu `is_reference_case`
+"""DTO Output báo cáo kết luận phía bác sĩ — khác `response/patient_profile.py::PatientFinalizeReportOutput` (giấu `is_reference_case`
 và snapshot với bệnh nhân)."""
 from pydantic import BaseModel
 
 from app.common.constant import ClinicalFactType, FactOrigin
-from app.dto.base import MedicalRecordSnapshot, PatientImage, SnapshotClinicalFact, SnapshotMessage
+from app.dto.base import FinalizeReportSnapshot, PatientImage, SnapshotClinicalFact, SnapshotMessage
 from app.dto.common import FileDto
 from app.dto.consultation import PatientProfileDto
 
@@ -21,7 +21,7 @@ class SnapshotClinicalFactOutput(SnapshotClinicalFact):
     provenances: list[SnapshotProvenanceOutput] = []
 
 
-class MedicalRecordSnapshotOutput(MedicalRecordSnapshot):
+class FinalizeReportSnapshotOutput(FinalizeReportSnapshot):
     clinical_facts: list[SnapshotClinicalFactOutput] = []
 
 
@@ -34,7 +34,7 @@ class PatientImageOutput(BaseModel):
     captured_at: str | None = None
 
 
-class DoctorMedicalRecordOutput(BaseModel):
+class FinalizeReportOutput(BaseModel):
     id: str
     diagnosis: str
     notes: str
@@ -43,11 +43,11 @@ class DoctorMedicalRecordOutput(BaseModel):
     created_at: str
     consultation_session_id: str | None = None
     conversation_id: str | None = None
-    snapshot: MedicalRecordSnapshotOutput | None = None
+    snapshot: FinalizeReportSnapshotOutput | None = None
     images: list[PatientImageOutput] = []
 
 
-class DoctorMedicalRecordItemOutput(DoctorMedicalRecordOutput):
+class FinalizeReportItemOutput(FinalizeReportOutput):
     patient: PatientProfileDto
 
 
@@ -62,6 +62,17 @@ class DraftFactOutput(BaseModel):
     provenances: list[SnapshotProvenanceOutput] = []
 
 
+class GraphSuggestionOutput(BaseModel):
+    """Gợi ý tổng hợp từ đồ thị (PJKG của bệnh nhân + tri thức da liễu) — chỉ để bác sĩ tham khảo, không phải chẩn đoán."""
+
+    previous_conditions: list[str] = []
+    previous_advice: list[str] = []
+    candidate_diseases: list[str] = []
+    red_flags: list[str] = []
+    notes: list[str] = []
+
+
 class FinalizeDraftOutput(BaseModel):
     patient: PatientProfileDto
     facts: list[DraftFactOutput]
+    suggestions: GraphSuggestionOutput

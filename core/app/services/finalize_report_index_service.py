@@ -1,4 +1,4 @@
-"""Service lập chỉ mục và tìm kiếm ca bệnh thực tế (MedicalRecord) trong Qdrant."""
+"""Service lập chỉ mục và tìm kiếm ca bệnh thực tế (FinalizeReport) trong Qdrant."""
 
 import asyncio
 from datetime import UTC, date, datetime
@@ -21,11 +21,11 @@ from app.config.settings import settings
 from app.infra.bm25 import SPARSE_NAME, encode_document, encode_query
 from app.infra.embedding_client import EmbeddingClient
 from app.infra.qdrant_client import QdrantVectorClient, eq_filter
-from app.models.medical_record import MedicalRecord
+from app.models.finalize_report import FinalizeReport
 from app.models.patient_profile import PatientProfile
 
 
-class MedicalCaseIndexService:
+class FinalizeReportIndexService:
     def __init__(
         self,
         qdrant: QdrantVectorClient,
@@ -33,7 +33,7 @@ class MedicalCaseIndexService:
     ) -> None:
         self._qdrant = qdrant
         self._embedding = embedding
-        self._collection = settings.QDRANT_MEDICAL_CASE_COLLECTION
+        self._collection = settings.QDRANT_FINALIZE_REPORT_COLLECTION
 
     @property
     def collection(self) -> str:
@@ -52,14 +52,14 @@ class MedicalCaseIndexService:
             sparse_names=(SPARSE_NAME,),
         )
 
-    def build_case_text(
+    def build_report_text(
         self,
-        record: MedicalRecord,
+        report: FinalizeReport,
         profile: PatientProfile | None = None,
         images: list[tuple[Any, Any]] | None = None,
     ) -> tuple[str, dict[str, Any]]:
         """Tổng hợp thông tin ca bệnh lâm sàng (đã ẩn danh họ tên, sđt) thành văn bản để embedding và payload."""
-        snapshot = record.snapshot or {}
+        snapshot = report.snapshot or {}
         p_profile = snapshot.get("patient_profile") or {}
         assessment = snapshot.get("assessment") or {}
         facts = snapshot.get("clinical_facts") or []
@@ -89,7 +89,7 @@ class MedicalCaseIndexService:
         instructions = assessment.get("instructions", [])
 
         lines: list[str] = [
-            f"Chẩn đoán ca bệnh: {record.diagnosis}",
+            f"Chẩn đoán ca bệnh: {report.diagnosis}",
         ]
 
         patient_traits: list[str] = []
@@ -119,10 +119,10 @@ class MedicalCaseIndexService:
         if instructions:
             inst_text = "; ".join(instructions) if isinstance(instructions, list) else str(instructions)
             lines.append(f"Dặn dò & Hướng xử trí: {inst_text}")
-        if record.notes:
-            lines.append(f"Ghi chú bổ sung: {record.notes}")
+        if report.notes:
+            lines.append(f"Ghi chú bổ sung: {report.notes}")
 
-        # Ảnh bệnh đã gắn vào bệnh án (bác sĩ chọn từ đoạn chat) — đưa nhãn + mô tả vào văn bản để semantic search theo ảnh
+        # Ảnh bệnh đã gắn vào báo cáo kết luận (bác sĩ chọn từ đoạn chat) — đưa nhãn + mô tả vào văn bản để semantic search theo ảnh
         image_infos: list[dict[str, Any]] = []
         if images:
             labels: list[str] = []
@@ -154,9 +154,9 @@ class MedicalCaseIndexService:
         text = "\n".join(lines)
 
         payload: dict[str, Any] = {
-            "case_id": record.id,
-            "diagnosis": record.diagnosis,
-            "notes": record.notes or "",
+            "case_id": report.id,
+            "diagnosis": report.diagnosis,
+            "notes": report.notes or "",
             "gender": gender,
             "age": age,
             "allergies": allergies,
@@ -165,53 +165,53 @@ class MedicalCaseIndexService:
             "reasoning": reasoning,
             "urgency": urgency,
             "instructions": instructions,
-            "is_reference_case": bool(record.is_reference_case),
+            "is_reference_case": bool(report.is_reference_case),
             "text": text,
-            "created_at": record.created_at.isoformat() if record.created_at else None,
+            "created_at": report.created_at.isoformat() if report.created_at else None,
             "images": image_infos,
         }
         return text, payload
 
-    def index_record_sync(
+    def index_report_sync(
         self,
-        record: MedicalRecord,
+        report: FinalizeReport,
         profile: PatientProfile | None = None,
         images: list[tuple[Any, Any]] | None = None,
     ) -> None:
         """Đồng bộ một ca bệnh vào Qdrant (dùng trong script hoặc thread đồng bộ)."""
         self.ensure_collection()
-        text, payload = self.build_case_text(record, profile, images=images)
+        text, payload = self.build_report_text(report, profile, images=images)
         vectors, _, _ = self._embedding.embed([text])
         dense_vec = vectors[0]
         sparse_vec = encode_document(text, "mixed")
 
         point = PointStruct(
-            id=self.point_id(record.id),
+            id=self.point_id(report.id),
             vector={"": dense_vec, SPARSE_NAME: sparse_vec},
             payload=payload,
         )
         self._qdrant.upsert_points_sync(self._collection, [point])
 
-    async def index_record(
+    async def index_report(
         self,
-        record: MedicalRecord,
+        report: FinalizeReport,
         profile: PatientProfile | None = None,
         images: list[tuple[Any, Any]] | None = None,
     ) -> None:
         """Bất đồng bộ nạp ca bệnh vào Qdrant."""
-        await asyncio.to_thread(self.index_record_sync, record, profile, images)
+        await asyncio.to_thread(self.index_report_sync, report, profile, images)
 
-    def delete_record_sync(self, case_id: str) -> None:
+    def delete_report_sync(self, case_id: str) -> None:
         """Xoá ca bệnh khỏi Qdrant."""
         self._qdrant.delete_by_filter_sync(
             self._collection,
             eq_filter("case_id", case_id),
         )
 
-    async def delete_record(self, case_id: str) -> None:
-        await asyncio.to_thread(self.delete_record_sync, case_id)
+    async def delete_report(self, case_id: str) -> None:
+        await asyncio.to_thread(self.delete_report_sync, case_id)
 
-    async def search_cases(
+    async def search_reports(
         self,
         query: str,
         limit: int = 3,
@@ -287,7 +287,7 @@ class MedicalCaseIndexService:
         out = []
         for score, r in scored[:limit]:
             # gắn score vào payload? ScoredPoint có score field; r là Record. Chuyển sang ScoredPoint-like? 
-            # search_cases đọc p.payload và p.score. Record không có score. Set attribute.
+            # search_reports đọc p.payload và p.score. Record không có score. Set attribute.
             payload = r.payload if isinstance(r.payload, dict) else {}
             payload["_score"] = score
             r.payload = payload

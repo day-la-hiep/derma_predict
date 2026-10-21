@@ -41,7 +41,7 @@ interface DoctorConsultationState {
   acceptSession: (sessionId: string) => Promise<void>;
   /** Bác sĩ đóng ca */
   resolveSession: (sessionId: string) => Promise<void>;
-  /** Cập nhật trạng thái sau khi chốt bệnh án (server đã đóng ca trong cùng request) */
+  /** Cập nhật trạng thái sau khi chốt báo cáo kết luận (server đã đóng ca trong cùng request) */
   markSessionResolved: (sessionId: string) => void;
   /** Bác sĩ gửi tin nhắn phản hồi bệnh nhân */
   sendMessage: (content: string) => Promise<void>;
