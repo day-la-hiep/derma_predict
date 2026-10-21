@@ -36,8 +36,9 @@ PDF → ingest (text/page)  → toc (LLM reads TOC, human reviews) → mapping (
 `graph_relations`/`graph_entity_types`, `kg="doc"`) — the stage reads the merged `ctx.schema` (`GraphSchema`, CORE_SCHEMA by default;
 `graph` gets enabled relations only, `graph_index` all). The registry `pipeline/document_ingest/graph_schema.py` (`ENTITY_TYPES`, `SLOTS`) drives the prompt,
 entity matching, Neo4j loading and the FE labels — **to add an entity type or relation, add it there** (plus
-`RELATION_LABELS`/`ENTITY_LABELS` in FE `constants.ts`). Names are matched against `EntityLexicon` (full PrimeKG
-`entity_lexicon.csv` + DermO, loaded by `DocumentGraphService.lexicon()` from `settings.GRAPH_LEXICON_DIR`).
+`RELATION_LABELS`/`ENTITY_LABELS` in FE `constants.ts`). Names are matched against `EntityLexicon` (the nodes of the base
+graph — `nodes.csv` + DermO `terms.json` built by `core/graph_base`, loaded by `DocumentGraphService.lexicon()` from `settings.GRAPH_LEXICON_DIR`).
+PrimeKG ids are unique only per node type, so nodes are always addressed by `(type, id)` / Neo4j label + id, never by `Entity.id` alone.
 Reviewer overrides (stage `graph`): `rejected`, `relink` (per triple side, expanded to every triple with the same
 term), `accepted_nodes` (new `doc_*` entities, only when `profile.graph.allow_new_entities`). Gotchas (PrimeKG id
 collisions across node types, topic misclassification, `KG_EDGE_SOURCES`): `docs/notice/document-graph-extract.md`.

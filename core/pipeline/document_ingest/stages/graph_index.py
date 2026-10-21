@@ -23,10 +23,9 @@ def run(ctx: StageContext) -> dict:
     title = ctx.meta().get("title", ctx.document_id)
     ctx.progress(0, 3, "kiểm tra nút trong đồ thị")
 
-    # Nút PrimeKG: id chỉ duy nhất trong từng loại, trong khi Neo4j ràng buộc `Entity.id` duy nhất cho mọi loại.
-    # Id đã có nhưng thuộc loại khác thì không nạp (nếu nạp, cạnh sẽ nối nhầm vào nút kia).
-    primekg_ids = sorted({s.node_id for t in ok for s in (t.subject, t.object) if s.kg == "primekg" and s.node_id})
-    existing = graph.existing_types(primekg_ids)
+    # Nút PrimeKG: id chỉ duy nhất trong từng loại (HPO 972 và NCBI 972 là hai nút), nên nút được nhận diện bằng cặp (loại, id)
+    primekg_nodes = sorted({(s.type, s.node_id) for t in ok for s in (t.subject, t.object) if s.kg == "primekg" and s.node_id})
+    existing = graph.existing_nodes(primekg_nodes)
     nodes: dict[tuple[str, str], dict[str, Any]] = {}
     edges: list[dict[str, Any]] = []
     skipped: Counter[str] = Counter()
@@ -36,9 +35,8 @@ def run(ctx: StageContext) -> dict:
         if s.kg == "dermo":
             return True  # DermO đã nạp đủ cả ontology
         if s.kg == "primekg":
-            have = existing.get(s.node_id)
-            if have is not None:
-                return have == s.type
+            if (s.type, s.node_id) in existing:
+                return True
             e = lexicon.get(s.type, s.node_id)
             if e is None:
                 return False
@@ -61,7 +59,7 @@ def run(ctx: StageContext) -> dict:
             skipped["hai đầu trùng nút (tự trỏ về chính nó)"] += 1
             continue
         if not (node_ok(t.subject) and node_ok(t.object)):
-            skipped["trùng id khác loại trong Neo4j"] += 1
+            skipped["thực thể không có trong đồ thị lẫn từ điển"] += 1
             continue
         key = (t.relation, t.subject.type, t.subject.node_id, t.object.type, t.object.node_id)
         printed_pages = {printed[c] for c in t.chunk_ids if c in printed}

@@ -17,3 +17,6 @@ data_ingest/input_data/
 !data_ingest/medlineplus/output/
 /tmp
 benchmark/data
+
+# graph_base: file tải về và file build (tái tạo bằng `make kg-download kg-build`)
+graph_base/data/

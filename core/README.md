@@ -39,7 +39,7 @@ make worker      # Agent Worker — bắt buộc để agent trả lời
 ```
 
 Agent cần `AGENT_MODEL` trỏ tới provider đã cấu hình (OpenRouter / DeepSeek / Gemini, xem `app/config/settings.py`) và API key trong `.env`.
-Đồ thị tri thức nạp bằng `data_ingest/01_normalize/scripts/load_primekg.py` và `load_dermo.py`; chunk sách do pipeline nạp vào Qdrant
+Đồ thị tri thức nạp bằng `graph_base/` (`make kg-download kg-build kg-load kg-verify`, xem `graph_base/README.md`); chunk sách do pipeline nạp vào Qdrant
 qua giao diện `/admin/documents`.
 
 ## Ghi chú

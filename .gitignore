@@ -27,3 +27,6 @@ derma_hospital/
 
 # PDF assets
 *.pdf
+
+# Thư mục tạm ở gốc repo
+/tmp/

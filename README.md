@@ -72,14 +72,16 @@ make worker      # Agent Worker — bắt buộc để agent trả lời
 make frontend    # FE http://localhost:3010
 ```
 
-**Nạp dữ liệu đồ thị tri thức** (Neo4j mới tạo đang trống; chunk sách vào Qdrant qua giao diện `/doctor/documents`), chạy trong `core/`:
+**Nạp dữ liệu đồ thị tri thức** (Neo4j mới tạo đang trống; chunk sách vào Qdrant qua giao diện `/doctor/documents`), chạy ở thư mục gốc repo:
 
 ```bash
-uv run python data_ingest/01_normalize/scripts/load_primekg.py          # PrimeKG → Neo4j
-uv run python data_ingest/01_normalize/scripts/load_dermo.py            # DermO → Neo4j
+make kg-download    # tải PrimeKG (~1 GB) và DermO từ nguồn gốc
+make kg-build
+make kg-load        # thêm reset=1 để xoá đồ thị cũ trước khi nạp (xoá cả cạnh trích từ sách)
+make kg-verify
 ```
 
-Thêm `--reset` để xoá dữ liệu cũ trước khi nạp. Chi tiết nguồn dữ liệu: [core/data_ingest/README.md](core/data_ingest/README.md).
+Chi tiết: [core/graph_base/README.md](core/graph_base/README.md). (Script cũ trong `core/data_ingest/` chưa dọn, không dùng cho đồ thị nền nữa.)
 
 Tool `classify_skin_image` cần checkpoint CNN tại `SKIN_CNN_CHECKPOINT_PATH`.
 

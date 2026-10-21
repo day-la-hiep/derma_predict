@@ -35,7 +35,7 @@ class GraphStore(Protocol):
     """Đồ thị tri thức Neo4j (cài đặt: `DocumentGraphService`)."""
 
     def doc_entities(self) -> list[dict[str, Any]]: ...  # nút thực thể mới đã nạp từ tài liệu: id, name, type
-    def existing_types(self, ids: list[str]) -> dict[str, str]: ...  # id -> type của nút `:Entity` đang có
+    def existing_nodes(self, pairs: list[tuple[str, str]]) -> set[tuple[str, str]]: ...  # (type, id) của nút PrimeKG đang có
     def replace_document(self, document_id: str, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> None: ...
     def count_edges(self, document_id: str) -> int: ...
 
