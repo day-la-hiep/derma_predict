@@ -15,7 +15,7 @@ Cấp 1 số `n` tương ứng module `Mn` trong [requirements.md](requirements.
 | | 1.2 Tài khoản cá nhân | 1.2.1 Xem thông tin tài khoản | Hiển thị họ tên, ngày sinh, giới tính, vai trò; với bác sĩ hiển thị thêm phần giới thiệu chuyên môn. |
 | | | 1.2.2 Cập nhật thông tin | Người dùng sửa thông tin cá nhân; bác sĩ sửa phần giới thiệu chuyên môn. |
 | | | 1.2.3 Đổi mật khẩu | Nhập mật khẩu cũ và mật khẩu mới; hệ thống kiểm tra mật khẩu cũ rồi cập nhật. |
-| | 1.3 Phân quyền | 1.3.1 Phân quyền theo vai trò | Mỗi tài khoản có vai trò bệnh nhân, bác sĩ hoặc quản trị. API và màn hình chỉ mở cho vai trò được phép (ví dụ chỉ bác sĩ được sửa bệnh án). |
+| | 1.3 Phân quyền | 1.3.1 Phân quyền theo vai trò | Mỗi tài khoản có vai trò bệnh nhân, bác sĩ hoặc quản trị. API và màn hình chỉ mở cho vai trò được phép (ví dụ chỉ bác sĩ được sửa báo cáo kết luận). |
 | **2. Tư vấn với chatbot AI** | 2.1 Quản lý hội thoại | 2.1.1 Tạo hội thoại mới | Bệnh nhân chọn hồ sơ bệnh nhân và model AI, nhập câu hỏi đầu tiên. Hệ thống tạo hội thoại, lưu tin nhắn và bắt đầu lượt trả lời của chatbot. |
 | | | 2.1.2 Xem danh sách hội thoại | Hiển thị các hội thoại của tài khoản, sắp theo thời gian cập nhật gần nhất, kèm tiêu đề tự sinh từ câu hỏi đầu. |
 | | | 2.1.3 Xem lịch sử hội thoại | Tải lại toàn bộ tin nhắn của một hội thoại, gồm cả các bước lập luận và câu hỏi chatbot đang chờ trả lời. |
@@ -51,12 +51,12 @@ Cấp 1 số `n` tương ứng module `Mn` trong [requirements.md](requirements.
 | | | 5.1.2 Xem lịch hẹn | Bác sĩ xem danh sách lịch hẹn theo ngày / tuần. |
 | | 5.2 Lịch bệnh nhân | 5.2.1 Đặt lịch khám | Bệnh nhân chọn bác sĩ và khung giờ trống, chọn hồ sơ bệnh nhân, nhập lý do khám. |
 | | | 5.2.2 Xem / huỷ / đổi lịch | Bệnh nhân xem lịch đã đặt, huỷ hoặc chuyển sang khung giờ khác; hai bên đều được cập nhật. |
-| **6. Hồ sơ bệnh nhân & bệnh án** | 6.1 Hồ sơ bệnh nhân | 6.1.1 Quản lý hồ sơ | Một tài khoản tạo / sửa / xoá nhiều hồ sơ bệnh nhân (bản thân, người nhà), mỗi hồ sơ có họ tên, ngày sinh, giới tính. |
-| | | 6.1.2 Xem lịch sử khám | Xem các lượt tư vấn và bệnh án theo từng hồ sơ, sắp theo thời gian. |
+| **6. Hồ sơ bệnh nhân & báo cáo kết luận** | 6.1 Hồ sơ bệnh nhân | 6.1.1 Quản lý hồ sơ | Một tài khoản tạo / sửa / xoá nhiều hồ sơ bệnh nhân (bản thân, người nhà), mỗi hồ sơ có họ tên, ngày sinh, giới tính. |
+| | | 6.1.2 Xem lịch sử khám | Xem các lượt tư vấn và báo cáo kết luận theo từng hồ sơ, sắp theo thời gian. |
 | | | 6.1.3 Xem thư viện ảnh | Xem tập trung các ảnh bệnh đã gửi theo từng hồ sơ, kèm thời điểm và kết quả phân loại. |
-| | 6.2 Bệnh án | 6.2.1 Bác sĩ xem hồ sơ bệnh nhân | Bác sĩ xem hồ sơ, lịch sử bệnh án và ảnh của bệnh nhân mình đang tư vấn. |
-| | | 6.2.2 Cập nhật bệnh án | Sau mỗi lượt khám, bác sĩ ghi chẩn đoán, ghi chú, hướng điều trị vào bệnh án của hồ sơ. |
-| | | 6.2.3 Bệnh nhân xem bệnh án | Bệnh nhân xem bệnh án do bác sĩ ghi (chỉ đọc). |
+| | 6.2 Báo cáo kết luận | 6.2.1 Bác sĩ xem hồ sơ bệnh nhân | Bác sĩ xem hồ sơ, lịch sử báo cáo kết luận và ảnh của bệnh nhân mình đang tư vấn. |
+| | | 6.2.2 Cập nhật báo cáo kết luận | Sau mỗi lượt khám, bác sĩ ghi chẩn đoán, ghi chú, hướng điều trị vào báo cáo kết luận của hồ sơ. |
+| | | 6.2.3 Bệnh nhân xem báo cáo kết luận | Bệnh nhân xem báo cáo kết luận do bác sĩ ghi (chỉ đọc). |
 | **7. Quản lý ca bệnh & dữ liệu ảnh** | 7.1 Ca bệnh | 7.1.1 Lưu ca bệnh | Bác sĩ lưu một ca đã xác nhận gồm chẩn đoán, mô tả lâm sàng và ảnh, ẩn thông tin định danh bệnh nhân. |
 | | | 7.1.2 Đưa ca bệnh vào KB | Ca bệnh đã xác nhận được nạp vào kho tri thức để chatbot tra cứu ca tương tự. |
 | | 7.2 Dữ liệu ảnh | 7.2.1 Xác nhận nhãn ảnh | Bác sĩ xác nhận hoặc sửa nhãn bệnh của ảnh (theo danh mục lớp của CNN). |

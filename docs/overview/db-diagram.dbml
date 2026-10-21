@@ -133,39 +133,41 @@ Table video_calls {
   Note: 'Cuộc gọi video thuộc một phiên tư vấn (1 phiên nhiều cuộc gọi); hiện thành tin trong luồng chat qua messages.video_call_id (mới có schema). ON DELETE CASCADE theo consultation_sessions.'
 }
 
-// ===================== Bệnh án =====================
+// ===================== Báo cáo kết luận =====================
 
 TableGroup benh_an {
-  medical_records
+  finalize_reports
   patient_images
 }
 
-Table medical_records {
+Table finalize_reports {
   id varchar(64) [pk, default: `gen_random_uuid()`]
   patient_profile_id varchar(64) [not null, ref: > patient_profiles.id]
-  doctor_id varchar(64) [null, ref: > doctors.user_id, note: 'bác sĩ ghi bệnh án']
+  doctor_id varchar(64) [null, ref: > doctors.user_id, note: 'bác sĩ ghi báo cáo kết luận']
   diagnosis text [not null]
   notes text [not null, default: '']
   is_reference_case boolean [not null, default: false, note: 'ca bệnh tham khảo — dùng cho KB / tra ca tương tự']
+  consultation_session_id varchar(64) [null, unique, ref: > consultation_sessions.id, note: '1 báo cáo / phiên tư vấn']
+  snapshot jsonb [null, note: 'bản chụp bất biến lúc chốt']
   created_at timestamptz [not null]
   Indexes {
     patient_profile_id
   }
-  Note: 'Một hồ sơ bệnh nhân có nhiều bệnh án (mới có schema, chưa có API). patient_profile_id ON DELETE CASCADE; doctor_id ON DELETE SET NULL.'
+  Note: 'Kết luận cuối bác sĩ chốt từ một phiên tư vấn. patient_profile_id ON DELETE CASCADE; doctor_id ON DELETE SET NULL.'
 }
 
 Table patient_images {
   id varchar(64) [pk, default: `gen_random_uuid()`]
-  medical_record_id varchar(64) [not null, ref: > medical_records.id]
+  finalize_report_id varchar(64) [not null, ref: > finalize_reports.id]
   file_id varchar(64) [not null, ref: > files.id, note: 'có thể dùng lại file bệnh nhân đã gửi trong chat']
   body_site varchar(128) [not null, default: '', note: 'vị trí trên cơ thể']
   description text [not null, default: '']
   confirmed_label varchar(128) [null, note: 'nhãn bác sĩ xác nhận — dữ liệu huấn luyện CNN']
   captured_at timestamptz [null]
   Indexes {
-    medical_record_id
+    finalize_report_id
   }
-  Note: 'Ảnh bệnh do bác sĩ gắn vào bệnh án. ON DELETE CASCADE theo medical_records và files.'
+  Note: 'Ảnh bệnh do bác sĩ gắn vào báo cáo kết luận. ON DELETE CASCADE theo finalize_reports và files.'
 }
 
 // ===================== Clinical fact & báo cáo tiền tư vấn =====================
