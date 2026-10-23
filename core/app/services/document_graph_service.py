@@ -222,10 +222,65 @@ class DocumentGraphService:
         ov["relink"] = relink
         self._repo.overrides.write(document_id, "graph", ov)
 
-    def search_nodes(self, type_: str, q: str, limit: int) -> list[GraphNodeOutput]:
-        if type_ not in self._schema().entity_types:
-            raise InvalidError(f"Loại thực thể không hợp lệ: {type_}")
-        if not q.strip():
+    async def query_document_graph(
+        self, entity: str, relation: str | None = None, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """Truy vấn đồ thị trích từ sách (cạnh `source='DOC'`) theo tên thực thể.
+
+        Trả về quan hệ 1-hop (cả hai chiều) kèm evidence, chunk_ids, pages, document_id.
+        Nếu Neo4j chưa cấu hình → trả [] (không crash).
+        """
+        if not self.configured:
             return []
-        return [GraphNodeOutput(kg=e.kg, type=e.type, id=e.id, name=e.name, source=e.source)
-                for e in self.lexicon().search(type_, q, limit)]
+        if not entity or not entity.strip():
+            return []
+        lim = max(1, min(limit, 50))
+        rel_filter = relation.strip().upper() if relation else None
+
+        # Chiều xuôi: matched node là chủ thể
+        out_rows = await self.neo4j.run(
+            _cypher("""
+                MATCH (n) WHERE (n:Entity OR n:DermoTerm)
+                  AND (toLower(coalesce(n.name,'')) CONTAINS toLower($entity)
+                       OR any(s IN coalesce(n.synonyms, []) WHERE toLower(s) CONTAINS toLower($entity)))
+                WITH n LIMIT 5
+                MATCH (n)-[r]->(m)
+                WHERE r.source = 'DOC'
+                  AND ($rel IS NULL OR type(r) = $rel)
+                RETURN n.name AS subject, type(r) AS relation, m.name AS object,
+                       r.evidence AS evidence, r.chunk_ids AS chunk_ids,
+                       r.pages AS pages, r.document_id AS document_id,
+                       r.display_relation AS display, 'out' AS direction
+                LIMIT $lim
+            """),
+            entity=entity.strip(), rel=rel_filter, lim=lim,
+        )
+        # Chiều ngược: matched node là đối tượng
+        in_rows = await self.neo4j.run(
+            _cypher("""
+                MATCH (n) WHERE (n:Entity OR n:DermoTerm)
+                  AND (toLower(coalesce(n.name,'')) CONTAINS toLower($entity)
+                       OR any(s IN coalesce(n.synonyms, []) WHERE toLower(s) CONTAINS toLower($entity)))
+                WITH n LIMIT 5
+                MATCH (m)-[r]->(n)
+                WHERE r.source = 'DOC'
+                  AND ($rel IS NULL OR type(r) = $rel)
+                RETURN m.name AS subject, type(r) AS relation, n.name AS object,
+                       r.evidence AS evidence, r.chunk_ids AS chunk_ids,
+                       r.pages AS pages, r.document_id AS document_id,
+                       r.display_relation AS display, 'in' AS direction
+                LIMIT $lim
+            """),
+            entity=entity.strip(), rel=rel_filter, lim=lim,
+        )
+        rows = list(out_rows) + list(in_rows)
+        # dedup theo (subject, relation, object)
+        seen: set[tuple[str, str, str]] = set()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            key = (str(r.get("subject")), str(r.get("relation")), str(r.get("object")))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(r)
+        return out[:lim]

@@ -25,6 +25,7 @@ TOOL_DISPLAY_NAMES: dict[str, str] = {
     "knowledge_graph_query": "Tra cứu đồ thị tri thức",
     "search_finalize_report": "Tra cứu ca bệnh tương tự (báo cáo kết luận)",
     "search_finalize_report_by_image": "Tra cứu ca bệnh tương tự theo ảnh",
+    "query_document_graph": "Tra cuu do thi tri thuc tu sach",
     "classify_skin_image": "Phân tích ảnh tổn thương da",
     "analyze_skin_image_multimodal": "Mô tả tổn thương bằng AI đa phương thức",
     "search_trusted_web": "Tra cứu nguồn web uy tín",
