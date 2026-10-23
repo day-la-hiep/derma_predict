@@ -57,14 +57,19 @@ export function PatientJourneyCanvas({
       return dateA - dateB;
     });
 
-    const startX = 140;
-    const centerY = 260;
-    const sessionSpacingX = 360;
+    const startX = 80;
+    const centerY = 270;
+    const sessionSpacingX = 240;
 
     // 1. Vị trí node Bệnh nhân
     if (patientNode) {
+      let patientDisplayName = patientNode.name;
+      if (patientDisplayName.startsWith("pp-") || patientDisplayName.startsWith("user-")) {
+        patientDisplayName = (patientNode.properties?.name as string) || "Bệnh nhân";
+      }
       const pNode: PositionedNode = {
         ...patientNode,
+        name: patientDisplayName,
         x: startX,
         y: centerY,
         radius: 44,
@@ -75,9 +80,22 @@ export function PatientJourneyCanvas({
 
     // 2. Vị trí các Sessions theo trục ngang
     sessionNodes.forEach((sNode, idx) => {
+      const dateVal = sNode.properties?.date as string | undefined;
+      let dateShort = "";
+      if (dateVal) {
+        try {
+          const d = new Date(dateVal);
+          if (!isNaN(d.getTime())) {
+            dateShort = ` · ${d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}`;
+          }
+        } catch {}
+      }
+      const displayName = `Phiên ${idx + 1}${dateShort}`;
+
       const sPos: PositionedNode = {
         ...sNode,
-        x: startX + 260 + idx * sessionSpacingX,
+        name: displayName,
+        x: startX + 180 + idx * sessionSpacingX,
         y: centerY,
         radius: 40,
       };
@@ -242,13 +260,69 @@ export function PatientJourneyCanvas({
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-    setZoom((prev) => Math.min(Math.max(prev * zoomFactor, 0.4), 2.5));
+    setZoom((prev) => Math.min(Math.max(prev * zoomFactor, 0.35), 2.5));
   };
 
-  const handleResetView = () => {
-    setZoom(1);
-    setPan({ x: 40, y: 40 });
-  };
+  // Tự động căn chỉnh toàn bộ các node vào vừa vặn giữa khung nhìn
+  const fitView = useCallback(() => {
+    if (!containerRef.current || positionedNodes.length === 0) return;
+    const { clientWidth: width, clientHeight: height } = containerRef.current;
+    if (width === 0 || height === 0) return;
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    positionedNodes.forEach((n) => {
+      minX = Math.min(minX, n.x - n.radius - 30);
+      maxX = Math.max(maxX, n.x + n.radius + 30);
+      minY = Math.min(minY, n.y - n.radius - 30);
+      maxY = Math.max(maxY, n.y + n.radius + 40);
+    });
+
+    const graphWidth = maxX - minX;
+    const graphHeight = maxY - minY;
+
+    const padding = 40;
+    const availableWidth = Math.max(width - padding * 2, 100);
+    const availableHeight = Math.max(height - padding * 2, 100);
+
+    const scaleX = availableWidth / graphWidth;
+    const scaleY = availableHeight / graphHeight;
+    const newZoom = Math.min(Math.max(Math.min(scaleX, scaleY), 0.35), 1.1);
+
+    const centerX = (minX + maxX) / 2;
+    const centerYPos = (minY + maxY) / 2;
+
+    const newPanX = width / 2 - centerX * newZoom;
+    const newPanY = height / 2 - centerYPos * newZoom;
+
+    setZoom(Number(newZoom.toFixed(2)));
+    setPan({ x: Math.round(newPanX), y: Math.round(newPanY) });
+  }, [positionedNodes]);
+
+  // Tự động căn chỉnh khi đồ thị được nạp lần đầu hoặc kích thước container thay đổi
+  useEffect(() => {
+    if (positionedNodes.length === 0 || !containerRef.current) return;
+    const el = containerRef.current;
+
+    // Chạy fitView ngay khi mount và sau đó 120ms (sau khi modal transition hoàn tất)
+    fitView();
+    const timer = setTimeout(() => {
+      fitView();
+    }, 120);
+
+    const observer = new ResizeObserver(() => {
+      fitView();
+    });
+    observer.observe(el);
+
+    return () => {
+      clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [positionedNodes.length, fitView]);
 
   return (
     <div
@@ -285,14 +359,19 @@ export function PatientJourneyCanvas({
           <Button
             variant="ghost"
             size="icon-xs"
-            onClick={() => setZoom((z) => Math.max(z - 0.15, 0.4))}
+            onClick={() => setZoom((z) => Math.max(z - 0.15, 0.35))}
           >
             <ZoomOut className="size-4" />
           </Button>
         </Hint>
         <div className="h-4 w-px bg-border my-auto mx-0.5" />
-        <Hint side="top" content="Đặt lại góc nhìn">
-          <Button variant="ghost" size="icon-xs" onClick={handleResetView}>
+        <Hint side="top" content="Vừa khung nhìn (Fit view)">
+          <Button variant="ghost" size="icon-xs" onClick={() => fitView()}>
+            <Maximize2 className="size-4" />
+          </Button>
+        </Hint>
+        <Hint side="top" content="Đặt lại 100%">
+          <Button variant="ghost" size="icon-xs" onClick={() => { setZoom(1); fitView(); }}>
             <RotateCcw className="size-4" />
           </Button>
         </Hint>
@@ -304,14 +383,7 @@ export function PatientJourneyCanvas({
       </div>
 
       {/* SVG Canvas */}
-      <svg
-        className="h-full w-full"
-        style={{
-          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-          transformOrigin: "0 0",
-          transition: isDragging ? "none" : "transform 0.05s ease-out",
-        }}
-      >
+      <svg className="h-full w-full overflow-hidden">
         <defs>
           {/* Mũi tên định hướng cho từng loại liên kết */}
           {Object.entries(JOURNEY_EDGE_CONFIG).map(([type, cfg]) => (
@@ -333,6 +405,15 @@ export function PatientJourneyCanvas({
           </filter>
         </defs>
 
+        {/* Viewport Transform Group */}
+        <g
+          transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}
+          style={{
+            transformOrigin: "0 0",
+            transition: isDragging ? "none" : "transform 0.08s ease-out",
+          }}
+        >
+
         {/* 1. Render Edges */}
         <g className="edges-layer">
           {edgesWithCoords.map((edge, idx) => {
@@ -352,11 +433,17 @@ export function PatientJourneyCanvas({
             const dx = tx - sx;
             const dy = ty - sy;
 
-            // Tính control point cho đường cong mềm mại
+            // Uốn cong đường NEXT lên trên, và uốn cong HAD_SESSION xa xuống dưới để tránh đâm xuyên tâm các session
+            const isHadSessionLong = edge.type === "HAD_SESSION" && Math.abs(dx) > 250;
             const cx = sx + dx / 2;
-            const cy = isNext ? sy - 40 : sy + dy / 2;
+            const cy = isNext
+              ? sy - 45
+              : isHadSessionLong
+              ? sy + 75 + Math.min(Math.abs(dx) / 10, 40)
+              : sy + dy / 2;
 
-            const pathData = isNext
+            const isCurved = isNext || isHadSessionLong;
+            const pathData = isCurved
               ? `M ${sx} ${sy} Q ${cx} ${cy} ${tx} ${ty}`
               : `M ${sx} ${sy} L ${tx} ${ty}`;
 
@@ -375,14 +462,14 @@ export function PatientJourneyCanvas({
                   fill="none"
                   stroke={edgeCfg.strokeColor}
                   strokeWidth={isHighlighted ? 2.5 : isNext ? 2 : 1.5}
-                  strokeDasharray={isNext ? "6 4" : undefined}
+                  strokeDasharray={isNext ? "6 4" : isHadSessionLong ? "3 3" : undefined}
                   markerEnd={`url(#arrow-${edge.type})`}
                   className={cn(isNext && "animate-pulse")}
                 />
                 {/* Label của quan hệ ở trung điểm */}
                 <text
                   x={cx}
-                  y={isNext ? cy - 8 : (sy + ty) / 2 - 6}
+                  y={isNext ? cy - 8 : isHadSessionLong ? cy + 14 : (sy + ty) / 2 - 6}
                   textAnchor="middle"
                   className={cn(
                     "text-[10px] font-medium tracking-wide fill-muted-foreground pointer-events-none select-none",
@@ -500,6 +587,7 @@ export function PatientJourneyCanvas({
               </g>
             );
           })}
+        </g>
         </g>
       </svg>
     </div>
