@@ -3,6 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AuthScreen } from "@/features/auth/components/AuthScreen";
+import { CallLayer } from "@/features/video-call";
 import { AUTH_STATE_EVENT, getAccessToken, getAuthenticatedUser } from "@/services/client";
 
 // Khu vực của từng vai trò; vào sai khu thì chuyển về trang chủ của vai trò đó.
@@ -51,5 +52,10 @@ export function AccessGate({ children }: { children: React.ReactNode }) {
 
   if (redirectTo) return null;
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      <CallLayer />
+    </>
+  );
 }

@@ -311,6 +311,16 @@ def get_consultation_service(
     return ConsultationService(db, redis, rabbitmq, get_patient_graph_service())
 
 
+from app.services.video_call_service import VideoCallService
+
+
+def get_video_call_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[RedisClient, Depends(get_redis_client)],
+) -> VideoCallService:
+    return VideoCallService(db, redis)
+
+
 def get_user_repository(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserRepository:
