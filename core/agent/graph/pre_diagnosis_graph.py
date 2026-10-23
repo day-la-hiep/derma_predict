@@ -32,6 +32,7 @@ from agent.tools.hybrid_retrieval import (
     knowledge_graph_query,
     semantic_search,
 )
+from agent.tools.query_document_graph import query_document_graph
 from agent.tools.reasoning import record_reasoning
 from agent.tools.search_finalize_report import search_finalize_report
 from agent.tools.search_finalize_report_by_image import search_finalize_report_by_image
@@ -51,6 +52,7 @@ ALL_TOOLS = [
     semantic_search,
     keyword_search,
     knowledge_graph_query,
+    query_document_graph,
     search_finalize_report,
     search_finalize_report_by_image,
     classify_skin_image,
