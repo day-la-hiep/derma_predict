@@ -14,6 +14,7 @@ from app.common.constant import MessageSender, MessageType
 from app.config.constants import AGENT_REQUEST_QUEUE
 from app.dto.consultation import (
     ClinicalFactOutput,
+    ClinicalFactSourceMessageOutput,
     ConsultationSessionOutput,
     PatientProfileDto,
     PreConsultationReportOutput,
@@ -205,8 +206,18 @@ class ConsultationService:
                         detail=f.detail,
                         status=f.status,
                         created_at=f.created_at.isoformat(),
+                        source_message_ids=[m.id for m in msgs],
+                        source_messages=[
+                            ClinicalFactSourceMessageOutput(
+                                id=m.id,
+                                sender=m.sender,
+                                content=m.content,
+                                created_at=m.created_at.isoformat() if m.created_at else None,
+                            )
+                            for m in msgs
+                        ],
                     )
-                    for f, tpl in raw_facts
+                    for f, tpl, msgs in raw_facts
                 ]
             patient = await self._patient_dto(conv.patient_profile_id if conv else None)
             results.append(self._to_output(s, title, report, facts_dto, patient))
@@ -230,8 +241,18 @@ class ConsultationService:
                     detail=f.detail,
                     status=f.status,
                     created_at=f.created_at.isoformat(),
+                    source_message_ids=[m.id for m in msgs],
+                    source_messages=[
+                        ClinicalFactSourceMessageOutput(
+                            id=m.id,
+                            sender=m.sender,
+                            content=m.content,
+                            created_at=m.created_at.isoformat() if m.created_at else None,
+                        )
+                        for m in msgs
+                    ],
                 )
-                for f, tpl in raw_facts
+                for f, tpl, msgs in raw_facts
             ]
         patient = await self._patient_dto(conv.patient_profile_id if conv else None)
         return self._to_output(session, title, report, facts_dto, patient)

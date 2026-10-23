@@ -204,7 +204,16 @@ class PatientGraphService:
             node_id = str(raw_node.get("id") or raw_node.get("content") or raw_node.get("name") or "")
             if not node_id or node_id in node_map:
                 return
-            name = str(raw_node.get("name") or raw_node.get("content") or raw_node.get("summary") or node_id)
+            if default_label == "ConsultationSession":
+                date_val = str(raw_node.get("date") or "")
+                date_part = date_val.split("T")[0] if date_val else ""
+                name = str(raw_node.get("name") or (f"Phiên {date_part}" if date_part else "Phiên tư vấn"))
+            elif default_label == "Patient":
+                raw_name = str(raw_node.get("name") or raw_node.get("full_name") or "")
+                name = raw_name if raw_name and not raw_name.startswith("pp-") else "Bệnh nhân"
+            else:
+                name = str(raw_node.get("name") or raw_node.get("content") or raw_node.get("summary") or node_id)
+
             node_map[node_id] = GraphNodeOutput(
                 id=node_id,
                 label=default_label,

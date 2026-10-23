@@ -139,6 +139,8 @@ export interface ClinicalFact {
   detail: string;
   status: "active" | "superseded";
   createdAt: string;
+  sourceMessageIds?: string[];
+  sourceMessages?: SnapshotMessage[];
 }
 
 /* ────────── Pre-Consultation Report ────────── */

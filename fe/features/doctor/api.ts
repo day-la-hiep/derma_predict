@@ -81,6 +81,14 @@ export function adaptSession(raw: any): ConsultationSession {
     detail: f.detail ?? "",
     status: f.status === "superseded" ? "superseded" : "active",
     createdAt: f.createdAt ?? f.created_at ?? new Date().toISOString(),
+    sourceMessageIds: f.sourceMessageIds ?? f.source_message_ids ?? [],
+    sourceMessages: (f.sourceMessages ?? f.source_messages ?? []).map((m: any) => ({
+      id: m.id ?? "",
+      sender: m.sender ?? "patient",
+      content: m.content ?? "",
+      files: m.files ?? [],
+      createdAt: m.createdAt ?? m.created_at ?? null,
+    })),
   }));
 
   const report: PreConsultationReport | null = raw.report
