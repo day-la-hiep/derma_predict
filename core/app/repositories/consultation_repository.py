@@ -124,15 +124,26 @@ class ConsultationRepository:
 
     async def get_clinical_facts_by_patient(
         self, patient_profile_id: str
-    ) -> list[tuple[ClinicalFact, ClinicalFactTemplate]]:
+    ) -> list[tuple[ClinicalFact, ClinicalFactTemplate, list[Message]]]:
         stmt = (
             select(ClinicalFact, ClinicalFactTemplate)
             .join(ClinicalFactTemplate, ClinicalFact.template_id == ClinicalFactTemplate.id)
             .where(ClinicalFact.patient_profile_id == patient_profile_id)
             .order_by(ClinicalFact.created_at.desc())
         )
-        result = await self._db.execute(stmt)
-        return [(r[0], r[1]) for r in result.all()]
+        rows = [(r[0], r[1]) for r in (await self._db.execute(stmt)).all()]
+        if not rows:
+            return []
+        prov_stmt = (
+            select(ClinicalProvenance.fact_id, Message)
+            .join(Message, Message.id == ClinicalProvenance.message_id)
+            .where(ClinicalProvenance.fact_id.in_([f.id for f, _ in rows]))
+            .order_by(Message.created_at.asc())
+        )
+        by_fact: dict[str, list[Message]] = defaultdict(list)
+        for fact_id, message in (await self._db.execute(prov_stmt)).all():
+            by_fact[fact_id].append(message)
+        return [(f, t, by_fact.get(f.id, [])) for f, t in rows]
 
     async def get_or_create_template(
         self, fact_type: str, label: str

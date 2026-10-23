@@ -65,6 +65,7 @@ Nghi ngờ **phản ứng dị ứng thuốc dạng ban sẩn** (maculopapular d
         detail: "Sẩn đỏ 2–5mm, rải rác cánh tay và bụng, xuất hiện sau 3 ngày dùng Amoxicillin",
         status: "active",
         createdAt: "2026-10-07T09:16:00Z",
+        sourceMessageIds: ["msg-001", "msg-005"],
       },
       {
         id: "cf-002",
@@ -73,6 +74,7 @@ Nghi ngờ **phản ứng dị ứng thuốc dạng ban sẩn** (maculopapular d
         detail: "Ngứa mức độ trung bình, tăng về đêm, kèm theo mẩn đỏ",
         status: "active",
         createdAt: "2026-10-07T09:16:00Z",
+        sourceMessageIds: ["msg-001", "msg-005"],
       },
       {
         id: "cf-003",
@@ -81,6 +83,7 @@ Nghi ngờ **phản ứng dị ứng thuốc dạng ban sẩn** (maculopapular d
         detail: "Amoxicillin 500mg x 3 lần/ngày, bắt đầu 3 ngày trước, điều trị viêm họng",
         status: "active",
         createdAt: "2026-10-07T09:16:00Z",
+        sourceMessageIds: ["msg-003"],
       },
       {
         id: "cf-004",
@@ -89,6 +92,7 @@ Nghi ngờ **phản ứng dị ứng thuốc dạng ban sẩn** (maculopapular d
         detail: "Chưa ghi nhận dị ứng thuốc, không hen, không viêm da cơ địa",
         status: "active",
         createdAt: "2026-10-07T09:16:00Z",
+        sourceMessageIds: ["msg-007"],
       },
     ],
   },

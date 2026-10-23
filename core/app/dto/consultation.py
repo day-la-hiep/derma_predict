@@ -13,6 +13,13 @@ class PatientProfileDto(BaseModel):
     medical_history: str = ""
 
 
+class ClinicalFactSourceMessageOutput(BaseModel):
+    id: str
+    sender: str
+    content: str
+    created_at: str | None = None
+
+
 class ClinicalFactOutput(BaseModel):
     id: str
     template_label: str
@@ -20,6 +27,8 @@ class ClinicalFactOutput(BaseModel):
     detail: str
     status: str
     created_at: str
+    source_message_ids: list[str] = []
+    source_messages: list[ClinicalFactSourceMessageOutput] = []
 
 
 class PreConsultationReportOutput(BaseModel):
