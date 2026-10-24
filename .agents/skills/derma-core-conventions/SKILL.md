@@ -129,6 +129,7 @@ worker restart is needed to pick up `.env` changes. Model choices for the UI are
   (no design history, flow narration, or incident write-ups). Default to no docstring; if one is
   needed, a single line; for a non-obvious line, a short inline comment right at that line. Only
   exception: `@tool` docstrings in `agent/tools/` — they are the LLM's prompt (see "Add an agent tool").
+- **Không nuốt lỗi.** Mọi `except` bắt lỗi, và mọi chỗ bỏ qua có chủ ý (`continue` khi collection lệch chiều/thiếu sparse, nhánh retrieval lỗi, fallback) đều phải `logger.warning/error(...)` kèm nguyên nhân (`exc_info=True` khi là exception) — kể cả khi đã trả `notes`/message cho model hay người dùng, vì `notes` không nằm trong log của server. Dùng `logging.getLogger(__name__)` (hoặc tên module như file lân cận), message tiếng Việt có tiền tố `[khu vực]`. Chỉ im lặng khi thật sự là luồng bình thường, không phải sự cố.
 - Pyright runs in **basic** mode (`pyproject.toml`): `pyright agent app main.py` is clean (0
   errors, verified 2026-10-03). Basic mode does not flag partially-unknown library types, so
   don't add `# pyright: ignore` or `cast` just to silence those; fix real errors instead. Some

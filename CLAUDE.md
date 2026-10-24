@@ -102,6 +102,7 @@ Chi tiết nằm trong các skill; ở đây chỉ các điểm hay nhầm:
 - Route admin: `/api/v1/admin/documents/*`, mục lục của một tài liệu ở `/documents/{id}/toc`.
   Stage `toc` và `toc.json` là dữ liệu mục lục, tên đó đúng — đừng đổi.
 - Lỗi người dùng sửa được → `StageError` / `InvalidError` (hiển thị nguyên văn trên UI).
+- **Không nuốt lỗi:** `except` hay bỏ qua có chủ ý (`continue`, fallback, nhánh lỗi) đều phải `logger.warning/error` kèm nguyên nhân, kể cả khi đã báo qua `notes`/message. Chi tiết: skill `derma-core-conventions` mục Code style.
 - Tên và comment: Python dùng snake_case; docstring và comment **tiếng Việt**, giải thích **vì sao**,
   không mô tả **cái gì** đã rõ trong code.
 - **Không** viết docstring/comment dài ở đầu file (module docstring) hay khi định nghĩa hàm/class để kể
