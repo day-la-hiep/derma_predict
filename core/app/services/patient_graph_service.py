@@ -27,8 +27,9 @@ class PatientGraphService:
         facts: list[dict[str, Any]],
         gender: str = "unknown",
         dob: str = "",
+        images: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Đồng bộ một phiên tư vấn (Pre-consultation) và các dữ kiện lâm sàng lên đồ thị."""
+        """Đồng bộ một phiên tư vấn (Pre-consultation), các dữ kiện lâm sàng và ảnh da lên đồ thị."""
         if not patient_id or not session_id:
             return
 
@@ -112,6 +113,36 @@ class PatientGraphService:
                 """
                 await self._neo4j.run(map_dermo_query, facts=clean_facts)
 
+        # 4. Nạp các Ảnh bệnh nhân gửi trong phiên và liên kết với phiên / fact
+        if images:
+            upsert_images_query = """
+            MATCH (s:ConsultationSession {id: $session_id})
+            UNWIND $images AS img
+            MERGE (pi:PatientImage {id: img.file_id})
+            SET pi.file_id = img.file_id,
+                pi.url = img.url,
+                pi.content_type = img.content_type,
+                pi.body_site = coalesce(img.body_site, pi.body_site, '')
+            MERGE (s)-[:HAS_IMAGE]->(pi)
+            WITH pi, img
+            UNWIND coalesce(img.fact_ids, []) AS f_id
+            MATCH (f:ClinicalFact {id: f_id})
+            MERGE (pi)-[:EVIDENCES]->(f)
+            """
+            clean_images = [
+                {
+                    "file_id": img.get("file_id", ""),
+                    "url": img.get("url") or f"/api/v1/files/{img.get('file_id')}/view",
+                    "content_type": img.get("content_type", "image/jpeg"),
+                    "body_site": img.get("body_site", ""),
+                    "fact_ids": [fid for fid in img.get("fact_ids", []) if fid],
+                }
+                for img in images
+                if img.get("file_id")
+            ]
+            if clean_images:
+                await self._neo4j.run(upsert_images_query, session_id=session_id, images=clean_images)
+
     async def sync_finalized_session(
         self,
         session_id: str,
@@ -119,8 +150,9 @@ class PatientGraphService:
         suspected_condition: str,
         notes: str,
         instructions: list[str],
+        images: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Đồng bộ khi Bác sĩ hoàn tất phiên tư vấn: nhận định sơ bộ và lời khuyên chăm sóc."""
+        """Đồng bộ khi Bác sĩ hoàn tất phiên tư vấn: nhận định sơ bộ, lời khuyên và nhãn ảnh xác nhận."""
         if not session_id:
             return
 
@@ -162,6 +194,35 @@ class PatientGraphService:
                 instructions=clean_instructions,
             )
 
+        # Query 3: Cập nhật thông tin ảnh được bác sĩ chọn kèm nhãn xác nhận
+        if images:
+            upsert_final_images_query = """
+            MATCH (s:ConsultationSession {id: $session_id})
+            UNWIND $images AS img
+            MERGE (pi:PatientImage {id: img.file_id})
+            SET pi.body_site = coalesce(img.body_site, pi.body_site, ''),
+                pi.description = coalesce(img.description, pi.description, ''),
+                pi.confirmed_label = img.confirmed_label
+            MERGE (s)-[:HAS_IMAGE]->(pi)
+            WITH pi, img
+            FOREACH (_ IN CASE WHEN img.confirmed_label IS NOT NULL AND img.confirmed_label <> '' THEN [1] ELSE [] END |
+                MERGE (c:SuspectedCondition {name: img.confirmed_label})
+                MERGE (pi)-[:CONFIRMED_AS]->(c)
+            )
+            """
+            clean_final_images = [
+                {
+                    "file_id": img.get("file_id", ""),
+                    "body_site": img.get("body_site", ""),
+                    "description": img.get("description", ""),
+                    "confirmed_label": img.get("confirmed_label", ""),
+                }
+                for img in images
+                if img.get("file_id")
+            ]
+            if clean_final_images:
+                await self._neo4j.run(upsert_final_images_query, session_id=session_id, images=clean_final_images)
+
     async def get_history_hints(self, patient_id: str) -> tuple[list[str], list[str]]:
         """(nhận định, lời khuyên) bác sĩ đã chốt ở các phiên trước của bệnh nhân, mới nhất trước."""
         query = """
@@ -187,7 +248,11 @@ class PatientGraphService:
         OPTIONAL MATCH (f)-[r_dermo:MAPS_TO]->(d:DermoTerm)
         OPTIONAL MATCH (s)-[r_cond:SUSPECTED_CONDITION]->(c:SuspectedCondition)
         OPTIONAL MATCH (s)-[r_adv:RECOMMENDED_ADVICE]->(a:Advice)
-        RETURN p, s, s_next, f, d, c, a, r_sess, r_next, r_fact, r_dermo, r_cond, r_adv
+        OPTIONAL MATCH (s)-[r_img:HAS_IMAGE]->(img:PatientImage)
+        OPTIONAL MATCH (img)-[r_evi:EVIDENCES]->(img_fact:ClinicalFact)
+        OPTIONAL MATCH (img)-[r_conf:CONFIRMED_AS]->(img_cond:SuspectedCondition)
+        RETURN p, s, s_next, f, d, c, a, img, img_fact, img_cond,
+               r_sess, r_next, r_fact, r_dermo, r_cond, r_adv, r_img, r_evi, r_conf
         """
         try:
             records = await self._neo4j.run(query, patient_id=patient_id)
@@ -197,6 +262,7 @@ class PatientGraphService:
 
         node_map: dict[str, GraphNodeOutput] = {}
         edge_map: dict[str, GraphEdgeOutput] = {}
+        session_images_map: dict[str, list[dict[str, Any]]] = {}
 
         def _add_node(raw_node: dict[str, Any] | None, default_label: str) -> None:
             if not raw_node:
@@ -211,6 +277,11 @@ class PatientGraphService:
             elif default_label == "Patient":
                 raw_name = str(raw_node.get("name") or raw_node.get("full_name") or "")
                 name = raw_name if raw_name and not raw_name.startswith("pp-") else "Bệnh nhân"
+            elif default_label == "PatientImage":
+                body_site = raw_node.get("body_site")
+                lbl = raw_node.get("confirmed_label")
+                parts = [p for p in [body_site, lbl] if p]
+                name = f"Ảnh da{f' ({', '.join(parts)})' if parts else ''}"
             else:
                 name = str(raw_node.get("name") or raw_node.get("content") or raw_node.get("summary") or node_id)
 
@@ -240,6 +311,8 @@ class PatientGraphService:
 
             return f"{prefix}-{hashlib.sha256(content.encode()).hexdigest()[:12]}"
 
+        next_sessions: list[tuple[str, str]] = []
+
         for row in records:
             p = row.get("p")
             s = row.get("s")
@@ -248,6 +321,9 @@ class PatientGraphService:
             d = row.get("d")
             c = row.get("c")
             a = row.get("a")
+            img = row.get("img")
+            img_fact = row.get("img_fact")
+            img_cond = row.get("img_cond")
 
             if p:
                 _add_node(p, "Patient")
@@ -258,6 +334,7 @@ class PatientGraphService:
             if s and s_next:
                 _add_node(s_next, "ConsultationSession")
                 _add_edge(str(s.get("id")), str(s_next.get("id")), "NEXT")
+                next_sessions.append((str(s.get("id")), str(s_next.get("id"))))
             if s and f:
                 fact_type = f.get("type", "symptom")
                 label = "Symptom" if fact_type == "symptom" else ("Lesion" if fact_type == "lesion" else "ClinicalFact")
@@ -276,6 +353,35 @@ class PatientGraphService:
                 adv_id = _stable_id("adv", adv_content)
                 _add_node({"id": adv_id, "name": adv_content}, "Advice")
                 _add_edge(str(s.get("id")), adv_id, "RECOMMENDED_ADVICE")
+            if s and img:
+                img_dict = dict(img)
+                _add_node(img_dict, "PatientImage")
+                _add_edge(str(s.get("id")), str(img.get("id")), "HAS_IMAGE")
+                s_id = str(s.get("id"))
+                if s_id not in session_images_map:
+                    session_images_map[s_id] = []
+                if not any(i.get("id") == img.get("id") for i in session_images_map[s_id]):
+                    session_images_map[s_id].append(img_dict)
+            if img and img_fact:
+                _add_edge(str(img.get("id")), str(img_fact.get("id")), "EVIDENCES")
+            if img and img_cond:
+                cond_name = str(img_cond.get("name") or "")
+                cond_id = _stable_id("cond", cond_name)
+                _add_node({"id": cond_id, "name": cond_name}, "SuspectedCondition")
+                _add_edge(str(img.get("id")), cond_id, "CONFIRMED_AS")
+
+        # Nối quan hệ tiến triển theo thời gian FOLLOWS giữa các ảnh cùng vị trí body_site ở 2 phiên kế tiếp
+        for prev_sid, next_sid in set(next_sessions):
+            prev_imgs = session_images_map.get(prev_sid, [])
+            next_imgs = session_images_map.get(next_sid, [])
+            for p_img in prev_imgs:
+                p_site = (p_img.get("body_site") or "").strip().lower()
+                if not p_site:
+                    continue
+                for n_img in next_imgs:
+                    n_site = (n_img.get("body_site") or "").strip().lower()
+                    if p_site == n_site:
+                        _add_edge(str(p_img.get("id")), str(n_img.get("id")), "FOLLOWS", {"body_site": p_site})
 
         return PatientJourneyGraphOutput(
             patient_id=patient_id,
