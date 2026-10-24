@@ -125,6 +125,11 @@ export function PatientJourneyCanvas({
         .map((e) => graph.nodes.find((n) => n.id === e.target))
         .filter((n): n is PatientJourneyNode => Boolean(n));
 
+      const images = connectedEdges
+        .filter((e) => e.type === "HAS_IMAGE")
+        .map((e) => graph.nodes.find((n) => n.id === e.target))
+        .filter((n): n is PatientJourneyNode => Boolean(n));
+
       // Phân bổ Symptoms (ở phía trên session)
       symptoms.forEach((symp, sIdx) => {
         if (!map.has(symp.id)) {
@@ -137,6 +142,21 @@ export function PatientJourneyCanvas({
           };
           pNodes.push(pos);
           map.set(symp.id, pos);
+        }
+      });
+
+      // Phân bổ Images (ở phía trên cao, hơi lệch trái để không đè symptom)
+      images.forEach((imgNode, imgIdx) => {
+        if (!map.has(imgNode.id)) {
+          const offsetX = (imgIdx - (images.length - 1) / 2) * 100;
+          const pos: PositionedNode = {
+            ...imgNode,
+            x: sPos.x - 70 + offsetX,
+            y: centerY - 230,
+            radius: 34,
+          };
+          pNodes.push(pos);
+          map.set(imgNode.id, pos);
         }
       });
 
@@ -502,6 +522,8 @@ export function PatientJourneyCanvas({
                 ? node.label !== "Symptom" && node.label !== "Lesion" && node.label !== "ClinicalFact"
                 : activeFilter === "Condition"
                 ? node.label !== "Condition" && node.label !== "SuspectedCondition"
+                : activeFilter === "PatientImage"
+                ? node.label !== "PatientImage"
                 : node.label !== activeFilter);
             const cfg = JOURNEY_NODE_CONFIG[node.label] ?? DEFAULT_JOURNEY_NODE_CONFIG;
             const Icon = cfg.icon ?? CircleDot;

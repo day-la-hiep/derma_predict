@@ -320,6 +320,14 @@ export const JOURNEY_NODE_CONFIG: Record<string, JourneyNodeConfig> = {
     colorClass: "border-teal-400/40 bg-teal-500/10 text-teal-600 dark:text-teal-400",
     dotColor: "#0d9488",
   },
+  PatientImage: {
+    label: "Ảnh bệnh",
+    hint: "Hình ảnh tổn thương da bệnh nhân gửi hoặc bác sĩ đính kèm",
+    icon: ImageIcon,
+    badgeClass: "border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-900/60 dark:bg-cyan-950/50 dark:text-cyan-400",
+    colorClass: "border-cyan-400/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
+    dotColor: "#06b6d4",
+  },
 };
 
 export const JOURNEY_EDGE_CONFIG: Record<string, { label: string; strokeColor: string; dashed?: boolean }> = {
@@ -333,4 +341,8 @@ export const JOURNEY_EDGE_CONFIG: Record<string, { label: string; strokeColor: s
   SUSPECTED_CONDITION: { label: "Chẩn đoán", strokeColor: "#e11d48" },
   RECEIVED_ADVICE: { label: "Dặn dò", strokeColor: "#059669" },
   RECOMMENDED_ADVICE: { label: "Dặn dò", strokeColor: "#059669" },
+  HAS_IMAGE: { label: "Ảnh chụp", strokeColor: "#06b6d4" },
+  EVIDENCES: { label: "Bằng chứng", strokeColor: "#8b5cf6", dashed: true },
+  CONFIRMED_AS: { label: "Xác nhận nhãn", strokeColor: "#f43f5e" },
+  FOLLOWS: { label: "Tiến triển", strokeColor: "#10b981", dashed: true },
 };

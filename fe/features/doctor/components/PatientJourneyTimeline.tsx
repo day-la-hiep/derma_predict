@@ -11,6 +11,7 @@ import {
   Clock,
   FileText,
   CheckCircle2,
+  ImageIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -65,6 +66,11 @@ export function PatientJourneyTimeline({
         .map((e) => graph.nodes.find((n) => n.id === e.target))
         .filter((n): n is PatientJourneyNode => Boolean(n));
 
+      const images = outgoingEdges
+        .filter((e) => e.type === "HAS_IMAGE")
+        .map((e) => graph.nodes.find((n) => n.id === e.target))
+        .filter((n): n is PatientJourneyNode => Boolean(n));
+
       const hasNext = outgoingEdges.some((e) => e.type === "NEXT");
 
       return {
@@ -74,6 +80,7 @@ export function PatientJourneyTimeline({
         conditions,
         advices,
         doctors,
+        images,
         hasNext,
       };
     });
@@ -182,6 +189,50 @@ export function PatientJourneyTimeline({
                       <FileText className="size-3.5 text-brand" /> Tóm tắt phiên:
                     </p>
                     {step.session.properties.summary}
+                  </div>
+                )}
+
+                {/* Khối Ảnh bệnh nhân gửi */}
+                {step.images.length > 0 && (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 flex items-center gap-1">
+                      <ImageIcon className="size-3.5" /> Hình ảnh tổn thương ({step.images.length})
+                    </p>
+                    <div className="flex flex-wrap gap-2.5">
+                      {step.images.map((imgNode) => {
+                        const isSelected = selectedNodeId === imgNode.id;
+                        const fileId = imgNode.properties?.file_id;
+                        return (
+                          <button
+                            key={imgNode.id}
+                            type="button"
+                            onClick={() => onSelectNode(isSelected ? null : imgNode)}
+                            className={cn(
+                              "group flex items-center gap-2 rounded-xl border p-1.5 text-xs text-left transition-all overflow-hidden",
+                              isSelected
+                                ? "border-cyan-500 bg-cyan-500/15 ring-2 ring-cyan-500/20 text-cyan-900 dark:text-cyan-100"
+                                : "border-cyan-200/80 bg-cyan-50/40 text-cyan-800 hover:bg-cyan-100/60 dark:border-cyan-900/50 dark:bg-cyan-950/20 dark:text-cyan-300"
+                            )}
+                          >
+                            {fileId && (
+                              <img
+                                src={`/api/v1/files/${fileId}/view`}
+                                alt={imgNode.name}
+                                className="size-10 rounded-lg object-cover border border-cyan-200/50 shrink-0"
+                              />
+                            )}
+                            <div className="min-w-0 pr-1.5">
+                              <span className="font-semibold block truncate max-w-[140px]">{imgNode.name}</span>
+                              {imgNode.properties?.body_site && (
+                                <span className="text-[10px] text-muted-foreground block truncate">
+                                  {imgNode.properties.body_site}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
