@@ -14,6 +14,14 @@ export const endpoints = {
   document: (messageId: string) => `/conversations/messages/${messageId}/document`,
   /** cải thiện prompt hiện hành */
   improvePrompt: "/conversations/improve-prompt",
+  /** cuộc gọi video: tạo (bác sĩ), bắt máy, kết thúc, relay signaling WebRTC */
+  startCall: (conversationId: string) => `/conversations/${conversationId}/video-calls`,
+  /** SSE riêng của tài khoản: cuộc gọi đến, đổi trạng thái, signaling (không phụ thuộc hội thoại đang xem) */
+  callsStream: "/video-calls/stream",
+  acceptCall: (callId: string) => `/video-calls/${callId}/accept`,
+  endCall: (callId: string) => `/video-calls/${callId}/end`,
+  signalCall: (callId: string) => `/video-calls/${callId}/signal`,
+  iceConfig: "/video-calls/ice-config",
   /** upload ảnh đính kèm — gọi TRƯỚC sendMessage, gắn response vào `attachments` */
   uploadAttachment: "/uploads",
 } as const;

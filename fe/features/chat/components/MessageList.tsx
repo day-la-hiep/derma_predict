@@ -5,6 +5,7 @@ import { ArrowRight, Loader2 } from "lucide-react";
 import type { ChatMessage } from "../types";
 import { useChatStore } from "../store";
 import { MessageBubble } from "./MessageBubble";
+import { CallBubble } from "@/features/video-call";
 import { ConsultationDivider, isConsultationMarker } from "./ConsultationDivider";
 import { ReasoningSection } from "./ReasoningSection";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -109,6 +110,11 @@ export function MessageList({
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-6 sm:px-8">
       {messages.map((message) => {
+        if (message.messageType === "video_call") {
+          return (
+            <CallBubble key={message.id} variant="bubble" content={message.content} createdAt={message.createdAt} />
+          );
+        }
         if (isConsultationMarker(message.messageType)) {
           return (
             <ConsultationDivider

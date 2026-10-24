@@ -16,6 +16,7 @@ import { ConsultationDivider } from "@/features/chat/components/ConsultationDivi
 import { PatientProfileSheet } from "./PatientProfileSheet";
 import { PatientJourneyDialog } from "./PatientJourneyDialog";
 import { ReportPanel } from "./ReportPanel";
+import { CallBubble, CallButtons } from "@/features/video-call";
 
 const SENDER_CONFIG = {
   patient: {
@@ -61,6 +62,10 @@ export function ChatBubble({ message }: { message: DoctorViewMessage }) {
     message.messageType === "consultation_requested" ||
     message.messageType === "consultation_accepted" ||
     message.messageType === "consultation_resolved";
+
+  if (message.messageType === "video_call") {
+    return <CallBubble content={message.content} createdAt={message.createdAt} />;
+  }
 
   if (isSystemMessage) {
     return <ConsultationDivider messageType={message.messageType} content={message.content} />;
@@ -201,6 +206,7 @@ export function ChatViewer() {
                 }
               />
             )}
+            <CallButtons conversationId={activeSession.conversationId} disabled={activeSession.status !== "active"} />
             <PatientProfileSheet session={activeSession} />
           </div>
         )}

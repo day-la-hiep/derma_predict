@@ -214,6 +214,17 @@ class Settings(BaseSettings):
     MINIO_DOCUMENTS_BUCKET: str = "derma-documents"
     MINIO_SECURE: bool = False
 
+    # ----- Video call (WebRTC) -----
+    # STUN đủ cho NAT thường; mạng di động/firewall cần TURN (coturn trong docker-compose.yml). TURN_URL rỗng = chỉ STUN.
+    STUN_URLS: list[str] = ["stun:stun.l.google.com:19302"]
+    TURN_URL: str = ""  # ví dụ "turn:localhost:3478"; máy khác mạng phải là IP/domain public
+    TURN_SECRET: str = "derma-turn-secret"  # khớp `static-auth-secret` của coturn
+    TURN_CREDENTIAL_TTL_SECONDS: int = 3600
+    # TURN dịch vụ ngoài (Metered Open Relay): credential tĩnh, để trong .env, không commit
+    METERED_TURN_HOST: str = "standard.relay.metered.ca"
+    METERED_TURN_USERNAME: str = ""
+    METERED_TURN_CREDENTIAL: str = ""
+
     # ----- Skin CNN classifier (agent/tools/skin_image_classifier.py) -----
     # Checkpoint gốc nằm ở model/ (sibling repo root, xem model/test_cnn.py) — không copy
     # vào core/ để tránh trùng lặp file nặng (44MB), tham chiếu bằng path tương đối.

@@ -20,6 +20,7 @@ from app.api.graph_schema_api import router as graph_schema_router
 from app.api.upload_api import router as upload_router
 from app.api.doctor_api import router as doctor_router
 from app.api.patient_profile_api import router as patient_profile_router
+from app.api.video_call_api import router as video_call_router
 from app.config.log import RequestLogMiddleware, setup_logging
 from app.config.settings import log_startup_infra, settings
 from app.exception.exception_handler import register_exception_handlers
@@ -92,6 +93,7 @@ app.include_router(
     prefix=settings.API_V1_PREFIX,
 )
 app.include_router(patient_profile_router, prefix=settings.API_V1_PREFIX)
+app.include_router(video_call_router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/status", operation_id="status", tags=["health"])
