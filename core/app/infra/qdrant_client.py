@@ -4,10 +4,12 @@ from typing import Any
 
 from qdrant_client import AsyncQdrantClient, QdrantClient
 from qdrant_client.models import (
+    Condition,
     Distance,
     FieldCondition,
     Filter,
     FilterSelector,
+    MatchAny,
     MatchValue,
     Modifier,
     PayloadSchemaType,
@@ -25,6 +27,13 @@ from app.config.settings import settings
 def eq_filter(key: str, value: Any) -> Filter:
     """Bộ lọc payload `key == value`."""
     return Filter(must=[FieldCondition(key=key, match=MatchValue(value=value))])
+
+
+def build_filter(eq: dict[str, Any], any_of: dict[str, list[Any]]) -> Filter | None:
+    """AND của các điều kiện `key == value` và `key ∈ values`; `None` khi không có điều kiện nào."""
+    must: list[Condition] = [FieldCondition(key=k, match=MatchValue(value=v)) for k, v in eq.items()]
+    must += [FieldCondition(key=k, match=MatchAny(any=vs)) for k, vs in any_of.items()]
+    return Filter(must=must) if must else None
 
 
 class QdrantVectorClient:

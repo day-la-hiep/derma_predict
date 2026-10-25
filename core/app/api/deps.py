@@ -37,6 +37,7 @@ from app.services.document_service import DocumentService
 from app.services.conversation_service import ConversationService
 from app.services.knowledge_base_service import KnowledgeBaseService
 from app.services.knowledge_graph_service import KnowledgeGraphService
+from app.services.retrieval_service import RetrievalService
 from app.services.message_service import MessageService
 from app.services.patient_profile_service import PatientProfileService
 from app.services.finalize_report_service import FinalizeReportService
@@ -123,6 +124,10 @@ def get_knowledge_base_service() -> KnowledgeBaseService:
         "knowledge_base_service",
         lambda: KnowledgeBaseService(get_qdrant_client()),
     )
+
+
+def get_retrieval_service() -> RetrievalService:
+    return _singleton("retrieval_service", lambda: RetrievalService(get_qdrant_client()))
 
 
 def get_knowledge_graph_service() -> KnowledgeGraphService:
