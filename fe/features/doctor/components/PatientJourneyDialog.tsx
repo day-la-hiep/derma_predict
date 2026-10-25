@@ -68,11 +68,13 @@ export function PatientJourneyDialog({
     conditions:
       graph?.nodes.filter((n) => n.label === "Condition" || n.label === "SuspectedCondition").length ?? 0,
     advices: graph?.nodes.filter((n) => n.label === "Advice").length ?? 0,
+    images: graph?.nodes.filter((n) => n.label === "PatientImage").length ?? 0,
   };
 
   const FILTER_TABS = [
     { id: "all", label: "Tất cả", count: graph?.nodes.length ?? 0 },
     { id: "ConsultationSession", label: "Phiên tư vấn", count: stats.sessions },
+    { id: "PatientImage", label: "Ảnh bệnh", count: stats.images },
     { id: "Symptom", label: "Triệu chứng", count: stats.symptoms },
     { id: "Condition", label: "Chẩn đoán", count: stats.conditions },
     { id: "Advice", label: "Dặn dò", count: stats.advices },
@@ -277,6 +279,43 @@ export function PatientJourneyDialog({
 
                     {/* Node Properties */}
                     <div className="space-y-3 text-xs">
+                      {selectedNode.label === "PatientImage" && (
+                        <div className="space-y-3 pb-2 border-b border-border/50">
+                          {selectedNode.properties?.file_id && (
+                            <div className="overflow-hidden rounded-xl border border-border bg-muted/30">
+                              <img
+                                src={`/api/v1/files/${selectedNode.properties.file_id}/view`}
+                                alt={selectedNode.name}
+                                className="max-h-48 w-full object-cover"
+                              />
+                            </div>
+                          )}
+                          {selectedNode.properties?.body_site && (
+                            <div>
+                              <p className="font-medium text-muted-foreground">Vị trí cơ thể:</p>
+                              <p className="text-foreground mt-0.5 font-medium">
+                                {selectedNode.properties.body_site}
+                              </p>
+                            </div>
+                          )}
+                          {selectedNode.properties?.confirmed_label && (
+                            <div>
+                              <p className="font-medium text-muted-foreground">Bác sĩ xác nhận:</p>
+                              <p className="text-rose-600 dark:text-rose-400 font-semibold mt-0.5">
+                                {selectedNode.properties.confirmed_label}
+                              </p>
+                            </div>
+                          )}
+                          {selectedNode.properties?.description && (
+                            <div>
+                              <p className="font-medium text-muted-foreground">Mô tả lâm sàng:</p>
+                              <p className="text-foreground mt-0.5 leading-relaxed">
+                                {selectedNode.properties.description}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {selectedNode.properties?.date && (
                         <div>
                           <p className="font-medium text-muted-foreground">Thời gian:</p>

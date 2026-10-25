@@ -276,12 +276,22 @@ class FinalizeReportService:
                 logger.warning("Không nạp được báo cáo %s vào Qdrant", report.id, exc_info=True)
         if self._patient_graph:
             try:
+                final_images_payload = [
+                    {
+                        "file_id": img.file_id,
+                        "body_site": img.body_site,
+                        "description": img.description,
+                        "confirmed_label": img.confirmed_label,
+                    }
+                    for img, _ in attached_images
+                ]
                 await self._patient_graph.sync_finalized_session(
                     session_id=session_id,
                     doctor_id=doctor_id,
                     suspected_condition=body.diagnosis,
                     notes=body.notes,
                     instructions=body.instructions,
+                    images=final_images_payload,
                 )
             except Exception:  # noqa: BLE001
                 logger.warning("Không đồng bộ phiên %s vào đồ thị bệnh nhân", session_id, exc_info=True)
