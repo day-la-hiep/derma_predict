@@ -83,16 +83,6 @@ class RetrievalServiceTest(unittest.TestCase):
             assert f is not None and isinstance(f.must, list)
             self.assertEqual({c.key: c.match.value for c in f.must}, {"ref": True, "document_id": "d1", "bm25_mode": mode})  # type: ignore[union-attr]
 
-    def test_normalize_hook_runs_per_collection(self) -> None:
-        q = FakeQdrant({"a": 3, "b": 3}, set())
-
-        def fix(name: str, payload: dict[str, Any] | None) -> None:
-            if payload is not None:
-                payload["fixed"] = name
-
-        points = run(RetrievalService(q).dense(corpus(normalize=fix), vector=[0.0] * 3, limit=5))  # type: ignore[arg-type]
-        self.assertEqual({p.payload["fixed"] for p in points}, {"a", "b"})
-
 
 if __name__ == "__main__":
     unittest.main()

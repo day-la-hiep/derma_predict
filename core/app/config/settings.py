@@ -59,9 +59,6 @@ class Settings(BaseSettings):
     # Chunk tài liệu (pipeline/document_ingest, bước "Lưu vào kho tri thức"): mỗi point = 1 chunk đã gắn phần/chương/mục/trang,
     # payload có `document_id` để xoá/lọc theo tài liệu. Embedding gọi OpenRouter (`agent/common/embeddings.py`, cosine).
     QDRANT_DOCUMENT_COLLECTION: str = "derma_document_chunks_v4"  # v4: Qwen3-Embedding-8B (4096 chiều); v2/v3 khác số chiều nên không dùng lại được
-    # Collection sách cũ (trước khi đổi Book -> Document, payload `book_id`/`book_title`) vẫn được agent ĐỌC cùng collection mới để
-    # không mất dữ liệu đã nạp; pipeline không ghi vào đây. Rỗng = bỏ qua.
-    QDRANT_LEGACY_BOOK_COLLECTION: str = "derma_book_chunks"
     # Collection ca bệnh thực tế (finalize reports) do bác sĩ chốt, dùng làm nguồn ca tham khảo cho chatbot
     QDRANT_FINALIZE_REPORT_COLLECTION: str = "derma_finalize_reports"
     # Embedding + reranker Qwen3 gọi qua OpenRouter (cùng OPENROUTER_API_KEY với LLM). Đổi EMBEDDING_MODEL / EMBEDDING_DIM thì phải đổi

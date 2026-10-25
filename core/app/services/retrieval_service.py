@@ -34,7 +34,6 @@ class RetrievalCorpus:
     sparse_modes: tuple[str, ...] = ("mixed",)
     # payload ghi lại cách mã hoá BM25 của từng point; query phải mã hoá cùng cách nên lọc theo field này
     sparse_mode_field: str | None = None
-    normalize: Callable[[str, dict[str, Any] | None], None] | None = None
     base_filter: RetrievalFilter = RetrievalFilter()
 
 
@@ -49,12 +48,6 @@ class RetrievalService:
     def __init__(self, qdrant: QdrantVectorClient) -> None:
         self._qdrant = qdrant
 
-    @staticmethod
-    def _normalize(corpus: RetrievalCorpus, name: str, points: list[ScoredPoint]) -> None:
-        if corpus.normalize:
-            for p in points:
-                corpus.normalize(name, p.payload)
-
     async def dense(
         self, corpus: RetrievalCorpus, *, vector: list[float], limit: int, filter: RetrievalFilter | None = None
     ) -> list[ScoredPoint]:
@@ -67,7 +60,6 @@ class RetrievalService:
                 logger.warning("[retrieval:%s] bỏ qua collection %s: vector %s chiều, query %d chiều", corpus.name, name, size, len(vector))
                 continue
             found = await self._qdrant.search(name, vector, limit=limit, query_filter=query_filter)
-            self._normalize(corpus, name, found)
             points += found
         return sorted(points, key=lambda p: p.score, reverse=True)[:limit]
 
@@ -94,6 +86,5 @@ class RetrievalService:
                 )
             )
             for group in found:
-                self._normalize(corpus, name, group)
                 points += group
         return sorted(points, key=lambda p: p.score, reverse=True)[:limit]
