@@ -1,4 +1,4 @@
-.PHONY: infra infra-down backend worker ingest-worker migrate migrate-new init-db load-primekg load-dermo load-kg kg-download kg-build kg-load kg-verify data-export data-restore frontend
+.PHONY: infra infra-down backend worker ingest-worker migrate migrate-new init-db reindex-qdrant load-primekg load-dermo load-kg kg-download kg-build kg-load kg-verify data-export data-restore frontend
 
 infra:
 	docker compose up -d
@@ -24,6 +24,10 @@ migrate-new:
 # bucket MinIO + dữ liệu mẫu (user-1, bác sĩ, admin); chạy sau migrate, chạy lại không tạo trùng
 init-db:
 	cd core && uv run python scripts/init_db.py
+
+# nạp lại Qdrant từ MinIO/Postgres: make reindex-qdrant [only=documents|finalize-reports] [document=<id>] [prune=1|prune_only=1] [dry=1]  (prune=1: xoá điểm mồ côi, nên chạy dry=1 trước)
+reindex-qdrant:
+	cd core && uv run python scripts/reindex_qdrant.py $(if $(only),--only $(only)) $(if $(document),--document $(document)) $(if $(prune),--prune) $(if $(prune_only),--prune-only) $(if $(dry),--dry-run)
 
 # nạp PrimeKG (label :Entity — quan hệ bệnh/triệu chứng/thuốc) vào Neo4j; chạy lại được, `make load-primekg reset=1` xoá :Entity cũ trước khi nạp
 load-primekg:

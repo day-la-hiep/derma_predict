@@ -159,5 +159,18 @@ class QdrantVectorClient:
             return 0
         return int(client.count(name, count_filter=query_filter, exact=True).count)
 
+    def distinct_payload_values_sync(self, name: str, key: str) -> set[str]:
+        """Mọi giá trị khác nhau của payload `key` (bỏ qua point không có field đó); collection chưa có thì rỗng."""
+        client = self.sync_client
+        if not client.collection_exists(name):
+            return set()
+        values: set[str] = set()
+        offset = None
+        while True:
+            page, offset = client.scroll(name, limit=256, offset=offset, with_payload=[key], with_vectors=False)
+            values.update(str(p.payload[key]) for p in page if p.payload and p.payload.get(key) is not None)
+            if offset is None:
+                return values
+
     def upsert_points_sync(self, name: str, points: list[PointStruct]) -> None:
         self.sync_client.upsert(name, points=points, wait=True)

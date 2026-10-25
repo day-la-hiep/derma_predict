@@ -272,7 +272,7 @@ class FinalizeReportService:
             try:
                 await self._index_service.index_report(report, profile, images=attached_images)
             except Exception:  # noqa: BLE001
-                # Không chặn chốt báo cáo; báo cáo này sẽ thiếu trong Qdrant tới khi chạy scripts/reindex_finalize_reports.py
+                # Không chặn chốt báo cáo; báo cáo này sẽ thiếu trong Qdrant tới khi chạy scripts/reindex_qdrant.py
                 logger.warning("Không nạp được báo cáo %s vào Qdrant", report.id, exc_info=True)
         if self._patient_graph:
             try:

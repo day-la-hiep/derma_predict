@@ -40,6 +40,7 @@ make backend        # Core FastAPI :3050
 make worker         # Agent Worker (tiến trình riêng, consume RabbitMQ)
 make ingest-worker  # Ingest Worker: chạy các bước pipeline tài liệu (bắt buộc chạy thì bấm "Chạy" ở /doctor/documents mới có tác dụng)
 make frontend       # Next.js :3010
+make reindex-qdrant # nạp lại Qdrant (sách + ca bệnh) từ MinIO/Postgres; thêm dry=1 để xem trước (xem docs/notice/qdrant-reindex.md)
 ```
 
 - Python dùng `uv` (`core/pyproject.toml`), venv tại `core/.venv`. Chạy script trong `core/`.
