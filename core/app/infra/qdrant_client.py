@@ -4,10 +4,12 @@ from typing import Any
 
 from qdrant_client import AsyncQdrantClient, QdrantClient
 from qdrant_client.models import (
+    Condition,
     Distance,
     FieldCondition,
     Filter,
     FilterSelector,
+    MatchAny,
     MatchValue,
     Modifier,
     PayloadSchemaType,
@@ -25,6 +27,13 @@ from app.config.settings import settings
 def eq_filter(key: str, value: Any) -> Filter:
     """Bộ lọc payload `key == value`."""
     return Filter(must=[FieldCondition(key=key, match=MatchValue(value=value))])
+
+
+def build_filter(eq: dict[str, Any], any_of: dict[str, list[Any]]) -> Filter | None:
+    """AND của các điều kiện `key == value` và `key ∈ values`; `None` khi không có điều kiện nào."""
+    must: list[Condition] = [FieldCondition(key=k, match=MatchValue(value=v)) for k, v in eq.items()]
+    must += [FieldCondition(key=k, match=MatchAny(any=vs)) for k, vs in any_of.items()]
+    return Filter(must=must) if must else None
 
 
 class QdrantVectorClient:
@@ -149,6 +158,19 @@ class QdrantVectorClient:
         if not client.collection_exists(name):
             return 0
         return int(client.count(name, count_filter=query_filter, exact=True).count)
+
+    def distinct_payload_values_sync(self, name: str, key: str) -> set[str]:
+        """Mọi giá trị khác nhau của payload `key` (bỏ qua point không có field đó); collection chưa có thì rỗng."""
+        client = self.sync_client
+        if not client.collection_exists(name):
+            return set()
+        values: set[str] = set()
+        offset = None
+        while True:
+            page, offset = client.scroll(name, limit=256, offset=offset, with_payload=[key], with_vectors=False)
+            values.update(str(p.payload[key]) for p in page if p.payload and p.payload.get(key) is not None)
+            if offset is None:
+                return values
 
     def upsert_points_sync(self, name: str, points: list[PointStruct]) -> None:
         self.sync_client.upsert(name, points=points, wait=True)

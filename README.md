@@ -71,6 +71,8 @@ make init-db     # bucket MinIO + dữ liệu mẫu (user-1, bác sĩ, admin) �
 make backend     # Core http://localhost:3050 (Swagger: /docs)
 make worker      # Agent Worker — bắt buộc để agent trả lời
 make frontend    # FE http://localhost:3010
+
+make reindex-qdrant  # (khi đổi model embedding / nạp lại kho tri thức) nạp lại Qdrant từ MinIO/Postgres; dry=1 để xem trước
 ```
 
 **Nạp dữ liệu đồ thị tri thức** (Neo4j mới tạo đang trống; chunk sách vào Qdrant qua giao diện `/doctor/documents`), chạy ở thư mục gốc repo:

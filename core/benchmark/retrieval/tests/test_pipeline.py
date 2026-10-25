@@ -50,13 +50,13 @@ class PipelineTest(unittest.TestCase):
     def test_rank_rounds_before_sorting_so_close_scores_keep_order(self) -> None:
         cands = to_candidates([chunk("A"), chunk("B"), chunk("C")])
         ranked = run(rank_candidates("q", cands, stubs([], [], {"A": 0.8004, "B": 0.8001, "C": 0.95})["rerank_fn"]))
-        self.assertEqual([c["_chunk_id"] for c in ranked or []], ["C", "A", "B"])
+        self.assertEqual([c["_id"] for c in ranked or []], ["C", "A", "B"])
 
     def test_hybrid_reranks_and_exposes_both_orders(self) -> None:
         r = run(run_hybrid("q", **stubs(["A", "B"], ["B", "C"], {"A": 0.1, "B": 0.5, "C": 0.9})))
         self.assertTrue(r.reranked)
-        self.assertEqual([c["_chunk_id"] for c in r.candidates], ["B", "A", "C"])  # thứ tự RRF
-        self.assertEqual([c["_chunk_id"] for c in r.ranked], ["C", "B", "A"])  # sau rerank
+        self.assertEqual([c["_id"] for c in r.candidates], ["B", "A", "C"])  # thứ tự RRF
+        self.assertEqual([c["_id"] for c in r.ranked], ["C", "B", "A"])  # sau rerank
 
     def test_rerank_unavailable_keeps_rrf_order(self) -> None:
         r = run(run_hybrid("q", **stubs(["A", "B"], ["B", "C"], None)))
@@ -76,7 +76,7 @@ class PipelineTest(unittest.TestCase):
             raise RuntimeError("qdrant chết")
 
         r = run(run_hybrid("q", **{**fns, "semantic_fn": broken}))
-        self.assertEqual([c["_chunk_id"] for c in r.ranked], ["B"])
+        self.assertEqual([c["_id"] for c in r.ranked], ["B"])
         self.assertTrue(any("semantic" in n and "không dùng được" in n for n in r.notes))
 
     def test_no_candidates(self) -> None:

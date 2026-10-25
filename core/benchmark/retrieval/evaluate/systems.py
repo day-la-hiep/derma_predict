@@ -38,7 +38,7 @@ def _hits(ids: list[str]) -> list[Hit]:
 
 
 def _scored(ranked: list[dict[str, Any]]) -> list[Hit]:
-    return [Hit(chunk_id=c["_chunk_id"], rank=r, score=c.get("score")) for r, c in enumerate(ranked[:DEPTH], start=1)]
+    return [Hit(chunk_id=c["_id"], rank=r, score=c.get("score")) for r, c in enumerate(ranked[:DEPTH], start=1)]
 
 
 def _ids(payloads: list[dict[str, Any]]) -> list[str]:
@@ -105,7 +105,7 @@ class Retriever:
         ranked = await rank_candidates(text, candidates, self._rerank)
         if ranked is None:
             notes.append("reranker không dùng được -> giữ thứ tự nhánh")
-            return _hits([c["_chunk_id"] for c in candidates]), "fallback"
+            return _hits([c["_id"] for c in candidates]), "fallback"
         return _scored(ranked), "reranker"
 
     async def run_all(self, qid: str, text: str, systems: list[str] | None = None) -> list[Run]:
@@ -135,7 +135,7 @@ class Retriever:
                 hits = _hits(_ids(hybrid.bm25))
             elif system == "rrf":
                 assert hybrid
-                hits = _hits([c["_chunk_id"] for c in hybrid.candidates])
+                hits = _hits([c["_id"] for c in hybrid.candidates])
             elif system in ("hybrid", "hybrid_no_expand"):
                 result = hybrid if system == "hybrid" else no_expand
                 assert result
