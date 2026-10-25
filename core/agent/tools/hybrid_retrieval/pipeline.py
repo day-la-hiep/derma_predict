@@ -49,7 +49,7 @@ def expand_query(query: str, entities: list[ExtractedEntity]) -> str:
 def to_candidates(payloads: Payloads, corpus: RetrievalCorpus = DOCUMENT_CORPUS) -> list[dict[str, Any]]:
     # khoá bắt đầu bằng "_" bị `_clean` của tool loại khỏi kết quả trả cho agent
     return [
-        {**corpus.to_result(p), "_chunk_id": str(p.get(corpus.id_key) or ""), "_passage": str(p.get("context_text") or p.get("text", ""))[:PASSAGE_CHARS]}
+        {**corpus.to_result(p), "_id": str(p.get(corpus.id_key) or ""), "_passage": str(p.get("context_text") or p.get("text", ""))[:PASSAGE_CHARS]}
         for p in payloads
     ]
 
