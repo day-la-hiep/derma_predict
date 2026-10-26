@@ -60,10 +60,12 @@ MAX_REASONING_RETRIES = 2
 
 
 class CriticVerdict(BaseModel):
+    """Phán quyết NỘI BỘ của critic: chỉ điền các trường, không chào hỏi, không viết lại câu trả lời."""
+
     approved: bool = Field(
         description="True nếu bản nháp đạt yêu cầu, False nếu cần viết lại"
     )
     feedback: str = Field(
         default="",
-        description="Lý do từ chối + điều cần sửa — để trống nếu approved=true",
+        description="Lý do từ chối + điều cần sửa: tối đa 40 từ, ngôi thứ ba, không chào hỏi — để trống nếu approved=true",
     )

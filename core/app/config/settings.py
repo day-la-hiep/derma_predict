@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from dotenv import find_dotenv, load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -142,6 +143,10 @@ class Settings(BaseSettings):
     # model của hội thoại — đặt model nhỏ, rẻ hơn ở đây cũng được vì việc phân loại đơn giản.
     AGENT_TRIAGE_ENABLED: bool = True
     AGENT_TRIAGE_MODEL: str = ""
+
+    # Phiên bản graph tiền chẩn đoán: "v1" = create_agent + middleware (`agent/graph/v1`), "v2" = StateGraph plan → retrieve → reflect → answer
+    # (`agent/graph/v2`). Mặc định v1 để hành vi hiện tại không đổi; đổi cần khởi động lại worker.
+    AGENT_GRAPH_VERSION: Literal["v1", "v2"] = "v1"
 
     # Chỉ áp dụng khi AGENT_MODEL dùng provider "google_genai" (Gemini "thinking" —
     # xem `agent/llm.py`); OpenRouter/model khác không hỗ trợ tham số này.

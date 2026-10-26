@@ -1,3 +1,4 @@
+import logging
 from typing import Any, cast
 
 from langchain.agents import AgentState
@@ -12,7 +13,7 @@ from langgraph.graph.state import CompiledStateGraph  # pyright: ignore[reportMi
 from langgraph.runtime import Runtime
 from langgraph.store.base import BaseStore
 
-from agent.graph.pre_diagnosis_graph import (
+from agent.graph.v1.pre_diagnosis_graph import (
     ALL_TOOLS,
     build_pre_diagnosis_graph,
     default_middleware,
@@ -24,6 +25,8 @@ from agent.tools.memory import build_memory_store
 from agent.common.tracing import trace_callback
 from app.config.settings import settings
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "ALL_TOOLS",
     "chat_graph",
@@ -32,6 +35,21 @@ __all__ = [
     "config_for",
     "default_middleware",
 ]
+
+
+# Chỉ node `answer` của graph v2 được stream token. Graph v1 không stream: các lượt `model` trung gian có thể kèm chữ cùng tool_calls,
+# nên chỉ câu trả lời cuối được gửi một lần ở cuối lượt (`turn.py` phát `message.delta` từ AIMessage cuối khi chưa có token nào).
+_STREAM_NODES = ("answer",)
+
+
+def _default_pre_diagnosis() -> CompiledStateGraph[Any, AgentContext, Any, Any]:
+    if settings.AGENT_GRAPH_VERSION == "v2":
+        from agent.graph.v2.pre_diagnosis_graph import (
+            build_pre_diagnosis_graph as build_v2,
+        )
+
+        return build_v2()
+    return build_pre_diagnosis_graph()
 
 
 def _pre_diagnosis_node(graph: CompiledStateGraph[Any, AgentContext, Any, Any]):
@@ -54,7 +72,7 @@ def _pre_diagnosis_node(graph: CompiledStateGraph[Any, AgentContext, Any, Any]):
             if mode == "messages":
                 message, meta = cast("tuple[Any, dict[str, Any]]", chunk)
                 if (
-                    meta.get("langgraph_node") == "model"
+                    meta.get("langgraph_node") in _STREAM_NODES
                     and isinstance(message, AIMessageChunk)
                     and message.text
                 ):
@@ -87,7 +105,7 @@ def build_chat_graph(
     graph = StateGraph(ChatState, context_schema=AgentContext)
     graph.add_node(
         "pre_diagnosis",
-        _pre_diagnosis_node(pre_diagnosis or build_pre_diagnosis_graph()),
+        _pre_diagnosis_node(pre_diagnosis or _default_pre_diagnosis()),
     )
     if settings.AGENT_TRIAGE_ENABLED:
         graph.add_node("triage", triage)
@@ -115,7 +133,11 @@ def build_agent_graph(
     middleware: list[AgentMiddleware[AgentState[Any], AgentContext, Any]]
     | None = None,
 ) -> CompiledStateGraph[Any, AgentContext, Any, Any]:
-    """Chat graph đầy đủ"""
+    """Chat graph đầy đủ; `tools`/`system_prompt`/`middleware` chỉ áp dụng cho graph v1"""
+    if settings.AGENT_GRAPH_VERSION == "v2":
+        if tools or system_prompt or middleware:
+            logger.warning("graph v2 bỏ qua tools/system_prompt/middleware truyền vào")
+        return build_chat_graph(checkpointer, store)
     return build_chat_graph(
         checkpointer,
         store,
