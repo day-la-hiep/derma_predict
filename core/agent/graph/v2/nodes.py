@@ -9,6 +9,7 @@ from langgraph.runtime import Runtime
 from pydantic import BaseModel
 
 from agent.common.evidence import message_text
+from agent.common.fact_extractor import extract_facts, facts_text, merge_facts
 from agent.common.llm import get_model
 from agent.context.agent_context import AgentContext
 from agent.graph.v2.evidence import ground_hypotheses, label_evidence
@@ -102,20 +103,43 @@ def _evidence_text(evidence: list[dict[str, Any]], only: set[str] | None = None)
     return "\n".join(rows) or "(chưa có)"
 
 
+async def extract_facts_node(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
+    ctx = runtime.context
+    messages = state["messages"]
+    known = state.get("facts", [])
+    upto = state.get("facts_upto", 0)
+    if upto > len(messages):
+        logger.warning("facts_upto=%d lớn hơn số tin nhắn %d, trích lại từ đầu", upto, len(messages))
+        upto = 0
+    fresh = _history(messages[upto:])
+    transcript = [("PATIENT" if isinstance(m, HumanMessage) else "AI", str(m.text)) for m in fresh]
+    new = await extract_facts(known, transcript, ctx.model or None)
+    # Chỉ số trong lượt này vô nghĩa ở lượt sau: đổi sang id tin nhắn.
+    for f in new:
+        f["source_messages"] = [fresh[i - 1].id for i in f["source_messages"] if fresh[i - 1].id]
+    merged = merge_facts(known, new)
+    if new:
+        await emit_tool_step(ctx, "extract_facts", {"new": len(new)}, facts_text(merged))
+    return {"facts": merged, "facts_upto": len(messages)}
+
+
 async def plan(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
     ctx = runtime.context
-    system = await with_memory(PLAN_SYSTEM, state["messages"], runtime.store, ctx)
+    evidence = state.get("evidence", [])
+    context = (
+        f"Dữ kiện lâm sàng đã biết:\n{facts_text(state.get('facts', []))}\n\n"
+        f"Giả thuyết đã có căn cứ từ các lượt trước:\n{_plan_text(state.get('plan', []), [])}\n\n"
+        f"Đã tra cứu (kèm kết quả): {'; '.join(state.get('call_results', [])) or '(chưa)'}\n\n"
+        f"Bằng chứng đã thu được:\n{_digest(evidence)}"
+    )
+    system = await with_memory(PLAN_SYSTEM.format(context=context), state["messages"], runtime.store, ctx)
     result = await _structured(ctx, PlanInput, [SystemMessage(content=system), *_history(state["messages"])])
     await emit_tool_step(ctx, REASONING_TOOL, {"stage": "initial"}, render_plan(result))
+    grounded = {h["disease"] for h in state.get("plan", [])}
     return {
-        "plan": [],
-        "unsupported": [h.disease for h in result.hypotheses],
+        "unsupported": [h.disease for h in result.hypotheses if h.disease not in grounded],
         "queries": result.queries,
-        "done_calls": [],
-        "call_results": [],
         "rounds": 0,
-        "evidence": [],
-        "evidence_status": "none",
     }
 
 

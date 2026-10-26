@@ -59,6 +59,7 @@ hardcode them. The Core↔Worker contract is `agent/dto/schemas.py` (`TurnReques
 | `agent/graph/common.py` | **leaf module**: `emit`, `TOOL_DISPLAY_NAMES`, `CriticState`, constants | import graph/middleware |
 | `agent/middleware/` | `common/` (shared by v1 and v2), `v1/` (reasoning/evidence hooks, v1 only): `@wrap_model_call` / `@wrap_tool_call` / `@after_model` | import `chat_graph` / `pre_diagnosis_graph` |
 | `agent/common/evidence.py` | pure evidence helpers shared by v1 middleware and v2 nodes | import graph/middleware |
+| `agent/common/fact_extractor.py` | clinical-fact extraction shared by v2 node `extract_facts` and the pre-consultation report handler (`extract_facts`, `merge_facts`, `validate_facts_evidence`) | import graph/middleware |
 | `agent/tools/` | one `@tool` per file (or small family) | import FastAPI |
 | `agent/context/` | `agent_context.py` = `AgentContext` dataclass (per-turn data tools read via `runtime.context`); `builder.py` = `build_context(req)` that fills it from the DB/request | run the graph |
 | `agent/worker.py` | process entry only: consume queue, per-conversation lock, `main` | hold turn logic |
