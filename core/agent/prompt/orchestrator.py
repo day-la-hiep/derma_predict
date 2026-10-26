@@ -83,6 +83,5 @@ Có bằng chứng thì trả lời ngắn gọn, theo thứ tự:
 Kết bằng một câu nhắc đây là thông tin tham khảo. Câu hỏi đơn giản thì trả lời gọn, không cần đủ 4 phần.
 
 ## 10. Memory
-* Gọi `save_memory` khi người dùng cung cấp/xác nhận thông tin có ích lâu dài: tiền sử da liễu, tình trạng kéo dài, thuốc đang dùng, dị ứng, bệnh nền, mang thai. Chỉ lưu điều họ nói, không lưu suy luận hay chẩn đoán chưa xác nhận; không lưu thông tin định danh không cần thiết.
 * "Thông tin đã biết về người dùng" (nếu có ở cuối prompt) có thể đã cũ: nếu người dùng nói khác, ưu tiên lời họ và hỏi xác nhận.
 """

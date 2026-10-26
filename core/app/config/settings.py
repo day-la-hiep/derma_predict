@@ -148,6 +148,14 @@ class Settings(BaseSettings):
     # (`agent/graph/v2`). Mặc định v1 để hành vi hiện tại không đổi; đổi cần khởi động lại worker.
     AGENT_GRAPH_VERSION: Literal["v1", "v2"] = "v1"
 
+    # Memory dài hạn theo hồ sơ bệnh nhân (`agent/tools/memory.py`): tin người dùng vào bộ đệm sau mỗi lượt (không gọi LLM); khi đủ AGENT_MEMORY_BATCH_MAX_PENDING
+    # tin hoặc đã qua AGENT_MEMORY_BATCH_INTERVAL_MIN phút kể từ batch trước thì một lần gọi LLM cập nhật memory cho cả loạt (đặt interval = 0 để chỉ batch theo số tin).
+    # Gom (hợp nhất) khi số bản ghi >= AGENT_MEMORY_CONSOLIDATE_AT, hoặc đã qua AGENT_MEMORY_CONSOLIDATE_DAYS ngày và có từ 5 thay đổi.
+    AGENT_MEMORY_BATCH_INTERVAL_MIN: int = 60
+    AGENT_MEMORY_BATCH_MAX_PENDING: int = 20
+    AGENT_MEMORY_CONSOLIDATE_AT: int = 15
+    AGENT_MEMORY_CONSOLIDATE_DAYS: int = 7
+
     # Chỉ áp dụng khi AGENT_MODEL dùng provider "google_genai" (Gemini "thinking" —
     # xem `agent/llm.py`); OpenRouter/model khác không hỗ trợ tham số này.
     AGENT_THINKING_LEVEL: str = "medium"

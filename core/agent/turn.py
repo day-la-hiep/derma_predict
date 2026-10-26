@@ -1,5 +1,6 @@
 """Xử lý 1 turn của agent"""
 
+import asyncio
 import json
 import logging
 from typing import Any, Literal, cast
@@ -11,6 +12,7 @@ from agent.dto.schemas import AgentResponseMessage, TurnRequest
 from agent.graph.chat_graph import chat_graph, config_for
 from agent.context.agent_context import AgentContext
 from agent.context.builder import build_context
+from agent.tools.memory import after_turn
 from app.api.deps import get_rabbitmq_client, get_redis_client
 from app.config.constants import (
     CONVERSATION_ROOM_CHANNEL,
@@ -24,6 +26,9 @@ logger = logging.getLogger(__name__)
 # Node của chat graph có thể tạo câu trả lời cuối của turn: bước lọc intent trả lời luôn (`triage`) hoặc graph tiền chẩn đoán
 # (`pre_diagnosis`; update của nó gồm mọi tin mới trong vòng lặp nên câu trả lời là AIMessage cuối cùng).
 _ANSWER_NODES = ("triage", "pre_diagnosis")
+
+# Giữ tham chiếu tới tác vụ nền: asyncio chỉ giữ tham chiếu yếu nên tác vụ không ai giữ có thể bị thu dọn giữa chừng.
+_background: set["asyncio.Task[None]"] = set()
 
 _ERROR_TEXT = (
     "Xin lỗi, hệ thống gặp sự cố khi xử lý câu hỏi này (có thể do quá tải "
@@ -182,6 +187,18 @@ async def _drive(req: TurnRequest, input_: object) -> None:
         status="done",
         reasoning=context.reasoning_steps,
     )
+    _schedule_memory_update(req, context)
+
+
+def _schedule_memory_update(req: TurnRequest, context: AgentContext) -> None:
+    """Cập nhật memory chạy nền, tách khỏi luồng trả lời: câu trả lời đã gửi xong, lượt không phải chờ bước này."""
+    text = req.content if req.type == "turn" else req.answer
+    store = chat_graph.store
+    if not text or store is None or not context.patient_profile_id:
+        return
+    task = asyncio.create_task(after_turn(store, context.patient_profile_id, req.conversation_id, text, context.model or None))
+    _background.add(task)
+    task.add_done_callback(_background.discard)
 
 
 async def handle_turn(req: TurnRequest) -> None:

@@ -7,6 +7,8 @@ from typing import Any
 class AgentContext:
     user_id: str
     conversation_id: str
+    # Hồ sơ bệnh nhân của hội thoại: khoá của memory dài hạn; rỗng (test, debug) thì không đọc / ghi memory.
+    patient_profile_id: str = ""
     # FE cần để gắn event vào đúng tin nhắn đang stream; rỗng khi test không stream.
     message_id: str = ""
     # `classify_skin_image` đối chiếu với danh sách này vì LLM hay chép sai object_key.

@@ -6,49 +6,37 @@ from langchain.agents.middleware import (
     ModelResponse,
     wrap_model_call,
 )
-from langchain.messages import HumanMessage, SystemMessage
-from langchain_core.messages import AnyMessage
+from langchain.messages import SystemMessage
 from langgraph.store.base import BaseStore
 
 from agent.common.llm import get_model
 from agent.context.agent_context import AgentContext
 from agent.prompt.orchestrator import DIAGNOSIS_PROMPT
-from agent.tools.memory import has_memories, search_memories
+from agent.tools.memory import MAX_INJECTED, list_memories
 
 logger = logging.getLogger(__name__)
 
 
-async def load_memory(messages: list[AnyMessage], store: BaseStore | None, user_id: str) -> str:
-    """Đọc memory dài hạn của người dùng theo tin nhắn cuối của họ; không có memory (hoặc lỗi) thì trả chuỗi rỗng."""
-    query = next(
-        (str(m.content) for m in reversed(messages) if isinstance(m, HumanMessage)),
-        "",
-    )
+async def load_memory(store: BaseStore | None, profile_id: str) -> str:
+    """Memory dài hạn của hồ sơ (tối đa `MAX_INJECTED` bản mới nhất, một truy vấn, không embedding); không có hoặc lỗi thì trả chuỗi rỗng."""
+    if store is None or not profile_id:
+        return ""
     try:
-        # Store rỗng (luôn đúng với v2, vì chỉ v1 có `save_memory`) thì khỏi embed câu hỏi.
-        if not await has_memories(store, user_id):  # type: ignore[arg-type]
-            return ""
-        memories = await search_memories(store, user_id, query)  # type: ignore[arg-type]
+        memories = await list_memories(store, profile_id, limit=MAX_INJECTED)
     except Exception as exc:  # noqa: BLE001
-        # Bộ nhớ dài hạn không bắt buộc cho một lượt trả lời; nếu embedding/DB lỗi
-        # thì bỏ qua thay vì làm hỏng cả lượt hội thoại.
+        # Bộ nhớ dài hạn không bắt buộc cho một lượt trả lời; nếu DB lỗi thì bỏ qua thay vì làm hỏng cả lượt hội thoại.
         logger.warning("không đọc được memory dài hạn: %s", exc)
         return ""
-    return "\n".join(f"- {m}" for m in memories)
+    return "\n".join(f"- {content}" for _, content in memories)
 
 
 def inject_memory(base: str, memory_text: str) -> str:
     return f"{base}\n\nThông tin đã biết về người dùng:\n{memory_text}" if memory_text else base
 
 
-async def with_memory(
-    base: str,
-    messages: list[AnyMessage],
-    store: BaseStore | None,
-    ctx: AgentContext,
-) -> str:
+async def with_memory(base: str, store: BaseStore | None, ctx: AgentContext) -> str:
     """Đọc memory rồi nối vào prompt trong cùng một lời gọi (v1: mỗi lần gọi model); v2 đọc một lần ở `load_memory` rồi dùng `inject_memory`."""
-    return inject_memory(base, await load_memory(messages, store, ctx.user_id))
+    return inject_memory(base, await load_memory(store, ctx.patient_profile_id))
 
 
 @wrap_model_call
@@ -74,9 +62,7 @@ async def inject_long_term_memory(
         if request.system_message
         else DIAGNOSIS_PROMPT
     )
-    text = await with_memory(
-        str(base), request.state["messages"], request.runtime.store, ctx
-    )
+    text = await with_memory(str(base), request.runtime.store, ctx)
     if text != base:
         request = request.override(system_message=SystemMessage(content=text))
     return await handler(request)

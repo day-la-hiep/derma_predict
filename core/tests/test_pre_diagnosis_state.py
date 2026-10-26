@@ -14,6 +14,7 @@ from agent.graph.v2.nodes import load_memory_node
 from agent.graph.v2.pre_diagnosis_graph import _after_plan
 from agent.graph.v2.state import PreDiagState
 from agent.middleware.common.model import inject_memory, load_memory
+from langgraph.store.memory import InMemoryStore
 from app.config.settings import settings
 
 
@@ -130,42 +131,27 @@ class DiagPersistTest(unittest.TestCase):
 
 
 class MemoryInjectedAtFirstNodeTest(unittest.TestCase):
-    def _load(self, has: Any, found: list[str]) -> tuple[str, AsyncMock, AsyncMock]:
-        has_mock = AsyncMock(side_effect=has) if isinstance(has, Exception) else AsyncMock(return_value=has)
-        search_mock = AsyncMock(return_value=found)
-        with patch("agent.middleware.common.model.has_memories", has_mock), patch("agent.middleware.common.model.search_memories", search_mock):
-            text = run(load_memory([HumanMessage(content="tôi ngứa")], object(), "u"))  # type: ignore[arg-type]
-        return text, has_mock, search_mock
-
-    def test_empty_store_skips_embedding(self):
-        text, has_mock, search_mock = self._load(False, [])
-        self.assertEqual((text, has_mock.await_count, search_mock.await_count), ("", 1, 0))
-
-    def test_non_empty_store_searches_once(self):
-        text, _, search_mock = self._load(True, ["dị ứng penicillin", "đang có thai"])
-        self.assertEqual(text, "- dị ứng penicillin\n- đang có thai")
-        self.assertEqual(search_mock.await_count, 1)
-
-    def test_store_error_gives_empty_text(self):
-        text, _, _ = self._load(RuntimeError("down"), [])
-        self.assertEqual(text, "")
-
-    def test_inject_memory_is_pure(self):
-        self.assertEqual(inject_memory("base", ""), "base")
-        self.assertIn("- dị ứng penicillin", inject_memory("base", "- dị ứng penicillin"))
-
     def test_first_node_loads_and_later_nodes_never_touch_store(self):
-        ctx = AgentContext(user_id="u", conversation_id="c")
+        ctx = AgentContext(user_id="u", conversation_id="c", patient_profile_id="p1")
         load_mock = AsyncMock(return_value="- dị ứng penicillin")
         state: Any = {"messages": [HumanMessage(content="tôi ngứa")]}
         runtime: Any = SimpleNamespace(context=ctx, store=object())
         with patch("agent.graph.v2.nodes.load_memory", load_mock):
             run(load_memory_node(state, runtime))
         self.assertEqual((ctx.memory_text, load_mock.await_count), ("- dị ứng penicillin", 1))
+        load_mock.assert_awaited_once_with(runtime.store, "p1")
         # các node sau chỉ nối chuỗi trong context
         prompts = [inject_memory(f"base{i}", ctx.memory_text) for i in range(4)]
         self.assertTrue(all("- dị ứng penicillin" in p for p in prompts))
         self.assertEqual(load_mock.await_count, 1)
+
+    def test_inject_memory_is_pure(self):
+        self.assertEqual(inject_memory("base", ""), "base")
+        self.assertIn("- dị ứng penicillin", inject_memory("base", "- dị ứng penicillin"))
+
+    def test_load_memory_without_store_or_profile_is_empty(self):
+        self.assertEqual(run(load_memory(None, "p1")), "")
+        self.assertEqual(run(load_memory(InMemoryStore(), "")), "")
 
 
 if __name__ == "__main__":

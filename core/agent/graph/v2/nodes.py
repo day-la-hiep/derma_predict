@@ -106,7 +106,7 @@ def _evidence_text(evidence: list[dict[str, Any]], only: set[str] | None = None)
 async def load_memory_node(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
     # Node đầu của lượt: đọc memory một lần rồi để trong context; plan / choose_tools / reflect / answer chỉ nối chuỗi này vào prompt.
     ctx = runtime.context
-    ctx.memory_text = await load_memory(state["messages"], runtime.store, ctx.user_id)
+    ctx.memory_text = await load_memory(runtime.store, ctx.patient_profile_id)
     return {}
 
 
