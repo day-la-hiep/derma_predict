@@ -21,6 +21,11 @@ def build_memory_store() -> BaseStore:
     )
 
 
+async def has_memories(store: BaseStore, user_id: str) -> bool:
+    """Kiểm tra nhanh (không embed) xem người dùng đã có memory nào chưa."""
+    return bool(await store.asearch((user_id, MEMORY_NAMESPACE), limit=1))
+
+
 async def search_memories(
     store: BaseStore, user_id: str, query: str, limit: int = 5
 ) -> list[str]:

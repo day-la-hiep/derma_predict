@@ -19,3 +19,5 @@ class AgentContext:
     # Ghi đè mức trần của graph v2 cho riêng lượt này (None = dùng mặc định trong `graph/v2/nodes.py`); chủ yếu để thử trong `agent/test/debug_app.py`.
     max_tool_rounds: int | None = None
     max_model_retries: int | None = None
+    # Memory dài hạn của người dùng, đọc một lần ở node đầu của lượt (graph v2: `load_memory`); các node sau chỉ nối chuỗi này vào prompt, không chạm store.
+    memory_text: str = ""

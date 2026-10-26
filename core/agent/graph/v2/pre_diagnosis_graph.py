@@ -9,7 +9,7 @@ from langgraph.prebuilt import ToolNode
 from langgraph.store.base import BaseStore
 
 from agent.context.agent_context import AgentContext
-from agent.graph.v2.nodes import answer, choose_tools_node, extract_facts_node, label_evidence_node, plan, reflect
+from agent.graph.v2.nodes import answer, choose_tools_node, extract_facts_node, label_evidence_node, load_memory_node, plan, reflect
 from agent.graph.v2.state import PreDiagState
 from agent.tools.hybrid_retrieval import (
     hybrid_retrieval,
@@ -67,6 +67,7 @@ def build_pre_diagnosis_graph(
     """`checkpointer` / `store` để None khi nối vào chat graph"""
     tools = build_tools()
     graph = StateGraph(PreDiagState, context_schema=AgentContext)
+    graph.add_node("load_memory", load_memory_node)
     graph.add_node("extract_facts", extract_facts_node)
     graph.add_node("plan", plan)
     graph.add_node("choose_tools", choose_tools_node(tools))
@@ -74,7 +75,8 @@ def build_pre_diagnosis_graph(
     graph.add_node("label_evidence", label_evidence_node)
     graph.add_node("reflect", reflect)
     graph.add_node("answer", answer)
-    graph.add_edge(START, "extract_facts")
+    graph.add_edge(START, "load_memory")
+    graph.add_edge("load_memory", "extract_facts")
     graph.add_edge("extract_facts", "plan")
     graph.add_conditional_edges("plan", _after_plan, ["choose_tools", "answer"])
     graph.add_conditional_edges("choose_tools", _after_choose, ["tools", "reflect"])

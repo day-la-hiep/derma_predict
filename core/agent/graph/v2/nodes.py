@@ -15,7 +15,7 @@ from agent.context.agent_context import AgentContext
 from agent.graph.v2.evidence import ground_hypotheses, label_evidence
 from agent.graph.v2.schemas import PlanInput, ReflectInput, render_plan, render_reflect
 from agent.graph.v2.state import PreDiagState
-from agent.middleware.common.model import with_memory
+from agent.middleware.common.model import inject_memory, load_memory
 from agent.middleware.common.tool import emit_tool_step
 from agent.prompt.v2 import ANSWER_FOUND, ANSWER_NONE, CHOOSE_SYSTEM, PLAN_SYSTEM, REFLECT_SYSTEM
 from agent.tools.reasoning import TOOL_NAME as REASONING_TOOL
@@ -103,6 +103,13 @@ def _evidence_text(evidence: list[dict[str, Any]], only: set[str] | None = None)
     return "\n".join(rows) or "(chưa có)"
 
 
+async def load_memory_node(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
+    # Node đầu của lượt: đọc memory một lần rồi để trong context; plan / choose_tools / reflect / answer chỉ nối chuỗi này vào prompt.
+    ctx = runtime.context
+    ctx.memory_text = await load_memory(state["messages"], runtime.store, ctx.user_id)
+    return {}
+
+
 async def extract_facts_node(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
     ctx = runtime.context
     messages = state["messages"]
@@ -132,7 +139,7 @@ async def plan(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[str,
         f"Đã tra cứu (kèm kết quả): {'; '.join(state.get('call_results', [])) or '(chưa)'}\n\n"
         f"Bằng chứng đã thu được:\n{_digest(evidence)}"
     )
-    system = await with_memory(PLAN_SYSTEM.format(context=context), state["messages"], runtime.store, ctx)
+    system = inject_memory(PLAN_SYSTEM.format(context=context), ctx.memory_text)
     result = await _structured(ctx, PlanInput, [SystemMessage(content=system), *_history(state["messages"])])
     await emit_tool_step(ctx, REASONING_TOOL, {"stage": "initial"}, render_plan(result))
     grounded = {h["disease"] for h in state.get("plan", [])}
@@ -152,7 +159,7 @@ def choose_tools_node(tools: list[Any]):
             f"Đã gọi (kèm kết quả): {'; '.join(state.get('call_results', [])) or '(chưa)'}\n\n"
             f"Kết quả đã thu được (chỉ tra điều CÒN THIẾU, không tra lại điều đã có):\n{_digest(state.get('evidence', []))}"
         )
-        system = await with_memory(CHOOSE_SYSTEM.format(context=context), state["messages"], runtime.store, ctx)
+        system = inject_memory(CHOOSE_SYSTEM.format(context=context), ctx.memory_text)
         model = _model(ctx).bind_tools(tools, tool_choice="any")
         base = [SystemMessage(content=system), *_history(state["messages"])]
         ai = AIMessage(content="")
@@ -239,7 +246,7 @@ async def reflect(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[s
         f"Đã gọi (kèm kết quả): {'; '.join(state.get('call_results', [])) or '(chưa)'}\n\n"
         f"Bằng chứng và gợi ý truy xuất được:\n{_evidence_text(evidence)}"
     )
-    system = await with_memory(REFLECT_SYSTEM.format(context=context), state["messages"], runtime.store, ctx)
+    system = inject_memory(REFLECT_SYSTEM.format(context=context), ctx.memory_text)
     result = await _structured(ctx, ReflectInput, [SystemMessage(content=system), *_history(state["messages"])])
     plan_, unsupported, notes = ground_hypotheses(result.hypotheses, evidence)
     next_action = result.next
@@ -260,6 +267,6 @@ async def answer(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[st
         base = ANSWER_FOUND.format(context=context)
     else:
         base = ANSWER_NONE.format(context="")
-    system = await with_memory(base, state["messages"], runtime.store, ctx)
+    system = inject_memory(base, ctx.memory_text)
     ai = await _model(ctx).ainvoke([SystemMessage(content=system), *_history(state["messages"])])
     return {"messages": [ai]}
