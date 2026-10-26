@@ -79,11 +79,12 @@ FE ──POST /messages──▶ Core ──publish──▶ RabbitMQ agent_requ
 | `graph/chat_graph.py` | Chat graph: `build_chat_graph()`, `agent_graph`, `config_for()`. Node `pre_diagnosis` gọi graph tiền chẩn đoán, chuyển tiếp token qua kênh `custom` và truyền lại việc xoá tin nhắn (`RemoveMessage`) của middleware vào state của chat graph. |
 | `graph/triage.py` | Node `triage`: một lần gọi LLM ngắn (`prompt/triage.py`) quyết định `answer` / `diagnose`. |
 | `graph/v1/pre_diagnosis_graph.py` | **Graph v1** (mặc định): `ALL_TOOLS`, `default_middleware()`, `build_pre_diagnosis_graph()` gọi `create_agent(model, tools, system_prompt, middleware, context_schema)`. |
-| `graph/v2/` | **Graph v2** (`AGENT_GRAPH_VERSION=v2`): `StateGraph` `plan → choose_tools → tools → label_evidence → reflect → answer` (`pre_diagnosis_graph.py`, `nodes.py`, `evidence.py`, `schemas.py`, `state.py`; prompt ở `prompt/v2.py`). Xem `docs/notice/agent-graph-versions.md`. |
+| `graph/v2/` | **Graph v2** (`AGENT_GRAPH_VERSION=v2`): `StateGraph` `extract_facts → plan → choose_tools → tools → label_evidence → reflect → answer` (`plan` không có truy vấn mới thì sang thẳng `answer`; state `ChatState.diag` giữ facts/bằng chứng giữa các lượt) (`pre_diagnosis_graph.py`, `nodes.py`, `evidence.py`, `schemas.py`, `state.py`; prompt ở `prompt/v2.py`). Xem `docs/notice/agent-graph-versions.md`. |
 | `graph/common.py` | Hằng số dùng chung của middleware: `TOOL_DISPLAY_NAMES`, giới hạn thử lại, schema critic. |
 | `middleware/common/model.py` | Dùng chung v1/v2: `select_model`, `inject_long_term_memory`, helper `with_memory`. |
 | `middleware/v1/model.py` | Chỉ của v1: `force_reasoning`, `enforce_initial_reasoning`, `critic_review`, `emit_reasoning_step`. |
 | `middleware/v1/evidence.py` | Chỉ của v1: `evidence_rules`. |
+| `common/fact_extractor.py` | Trích dữ kiện lâm sàng dùng chung: `extract_facts`, `merge_facts`, `validate_facts_evidence` (graph v2 node `extract_facts` và báo cáo tiền tư vấn). |
 | `common/evidence.py` | Hàm thuần về bằng chứng dùng chung v1/v2 (`evidence_status`, `has_evidence`, `RETRIEVAL_TOOLS`...). |
 | `middleware/common/tool.py` | Dùng chung: `emit_tool_result` (v1) và `emit_tool_step` (ghi bước + phát `message.tool_result`, v2 gọi trực tiếp). |
 | `tools/` | Mỗi file một (nhóm) tool; `ask_user.py` là tool hỏi lại người dùng. |

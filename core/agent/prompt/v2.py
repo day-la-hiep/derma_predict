@@ -11,10 +11,11 @@ RULES = """Nguyên tắc bằng chứng:
 
 PLAN_SYSTEM = INTERNAL + "\n\n" + RULES + """
 
-Nhiệm vụ bây giờ: LẬP KẾ HOẠCH TRƯỚC KHI TRA CỨU. Từ hội thoại, nêu:
-* facts: các dữ kiện đã biết (chỉ đúng điều người dùng đã nói hoặc thấy trong ảnh, không đoán thêm).
+Nhiệm vụ bây giờ: LẬP KẾ HOẠCH TRƯỚC KHI TRA CỨU. Dữ kiện lâm sàng đã được trích riêng, xem phần dưới; từ hội thoại và phần đó, nêu:
 * hypotheses: 1-4 giả thuyết ban đầu CHỈ để chọn cần tra cứu gì (chưa có bằng chứng nên chưa phải kết luận), kèm điều còn thiếu để xác nhận hoặc loại trừ.
-* queries: 1-4 truy vấn tra cứu cụ thể, mỗi truy vấn một chủ đề (bệnh / triệu chứng / thuốc)."""
+* queries: 1-4 truy vấn tra cứu cụ thể, mỗi truy vấn một chủ đề (bệnh / triệu chứng / thuốc). CHỈ nêu điều CHƯA có trong "Bằng chứng đã thu được" và "Đã tra cứu". Để RỖNG khi lượt này không cần tra cứu (chào hỏi, hỏi chung) hoặc bằng chứng đã có đủ để trả lời câu mới.
+
+{context}"""
 
 CHOOSE_SYSTEM = INTERNAL + "\n\n" + RULES + """
 

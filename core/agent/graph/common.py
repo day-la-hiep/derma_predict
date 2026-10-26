@@ -19,6 +19,7 @@ TOOL_DISPLAY_NAMES: dict[str, str] = {
     "record_reasoning": "Lập luận",
     "ask_user": "Hỏi lại người dùng",
     "save_memory": "Lưu thông tin ghi nhớ",
+    "extract_facts": "Trích dữ kiện lâm sàng",
     "hybrid_retrieval": "Tra cứu sách giáo khoa",
     "semantic_search": "Tra cứu sách giáo khoa (theo ngữ nghĩa)",
     "keyword_search": "Tra cứu sách giáo khoa (theo từ khoá)",

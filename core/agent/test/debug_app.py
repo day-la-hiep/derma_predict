@@ -286,6 +286,8 @@ def _preview(e: dict[str, Any]) -> str:
             parts.append(f"kết quả `{m.get('tool', '?')}`: {m['text'][:160]!r}")
         elif m["text"]:
             parts.append(f"AI: {m['text'][:200]!r}")
+    if "facts" in u:
+        parts.append(f"{len(u['facts'])} dữ kiện tích luỹ")
     if "plan" in u:
         parts.append("giả thuyết: " + (", ".join(f"{h['disease'][:30]} ({h['confidence']}, {','.join(h['cites']) or '—'})" for h in u["plan"]) or "(không có)"))
     if u.get("unsupported"):

@@ -41,6 +41,9 @@ __all__ = [
 # nên chỉ câu trả lời cuối được gửi một lần ở cuối lượt (`turn.py` phát `message.delta` từ AIMessage cuối khi chưa có token nào).
 _STREAM_NODES = ("answer",)
 
+# Phần state của graph v2 giữ lại giữa các lượt; graph v1 không có các khoá này nên `diag` rỗng.
+_DIAG_KEYS = ("facts", "facts_upto", "plan", "unsupported", "evidence", "evidence_status", "done_calls", "call_results")
+
 
 def _default_pre_diagnosis() -> CompiledStateGraph[Any, AgentContext, Any, Any]:
     if settings.AGENT_GRAPH_VERSION == "v2":
@@ -64,7 +67,7 @@ def _pre_diagnosis_node(graph: CompiledStateGraph[Any, AgentContext, Any, Any]):
         # tóm tắt) được chuyển tiếp qua kênh `custom` cho `turn.py` phát `message.delta`.
         # `get_config()`: truyền tiếp config của lượt chạy (checkpoint namespace, thread_id) để `interrupt()` của `ask_user` hoạt động.
         async for mode, chunk in graph.astream(
-            {"messages": before},
+            {"messages": before, **state.get("diag", {})},
             config=get_config(),
             context=runtime.context,
             stream_mode=["messages", "values"],
@@ -85,7 +88,8 @@ def _pre_diagnosis_node(graph: CompiledStateGraph[Any, AgentContext, Any, Any]):
             "messages": [
                 *(RemoveMessage(id=i) for i in known - kept if i),
                 *(m for m in final["messages"] if m.id not in known),
-            ]
+            ],
+            "diag": {k: final[k] for k in _DIAG_KEYS if k in final},
         }
 
     return run

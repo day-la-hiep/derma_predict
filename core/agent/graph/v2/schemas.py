@@ -42,13 +42,12 @@ class PlanHypothesis(BaseModel):
 class PlanInput(BaseModel):
     __doc__ = _INTERNAL
 
-    facts: list[str] = Field(min_length=1, description="Dữ kiện đã biết, đúng điều người dùng đã nói hoặc thấy trong ảnh: cụm từ, mỗi mục tối đa 15 từ, không viết thành câu")
     hypotheses: list[PlanHypothesis] = Field(description="Tối đa 4 giả thuyết")
-    queries: list[str] = Field(min_length=1, description="Tối đa 4 truy vấn tra cứu: cụm từ khoá, mỗi mục tối đa 12 từ, mỗi truy vấn một chủ đề; không phải câu hỏi gửi người dùng")
+    queries: list[str] = Field(default_factory=list, description="Tối đa 4 truy vấn tra cứu: cụm từ khoá, mỗi mục tối đa 12 từ, mỗi truy vấn một chủ đề; không phải câu hỏi gửi người dùng. Để RỖNG khi kết quả tra cứu đã có đủ cho câu hỏi này hoặc không cần tra cứu")
 
-    _coerce = field_validator("facts", "queries", mode="before")(_as_list)
+    _coerce = field_validator("queries", mode="before")(_as_list)
     _trim = field_validator("hypotheses", "queries", mode="after")(_first4)
-    _short = field_validator("facts", "queries", mode="after")(_clip)
+    _short = field_validator("queries", mode="after")(_clip)
 
 
 class ReflectHypothesis(BaseModel):
@@ -76,14 +75,12 @@ class ReflectInput(BaseModel):
 
 
 def render_plan(data: PlanInput) -> str:
-    lines = ["**Lập luận ban đầu**", "", "Dữ kiện đã có:"]
-    lines += [f"[{i}] {f}" for i, f in enumerate(data.facts, 1)]
-    lines += ["", "Các giả thuyết (chỉ để cân nhắc, chưa có bằng chứng):"]
+    lines = ["**Lập luận ban đầu**", "", "Các giả thuyết (chỉ để cân nhắc, chưa có bằng chứng):"]
     for i, h in enumerate(data.hypotheses, 1):
         lines.append(f"{i}. {h.disease}")
         if h.missing:
             lines.append(f"   Còn thiếu: {'; '.join(h.missing)}")
-    lines += ["", "Sẽ tra cứu: " + "; ".join(data.queries)]
+    lines += ["", "Sẽ tra cứu: " + ("; ".join(data.queries) or "không cần tra cứu thêm")]
     return "\n".join(lines)
 
 
