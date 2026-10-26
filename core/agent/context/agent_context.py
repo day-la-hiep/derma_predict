@@ -16,3 +16,6 @@ class AgentContext:
     # Middleware append trực tiếp; worker giữ cùng reference nên đọc được sau `astream()` để Core lưu lại
     # (SSE không replay được khi load lại hội thoại). Mỗi dict khớp `Step`.
     reasoning_steps: list[dict[str, Any]] = field(default_factory=list)
+    # Ghi đè mức trần của graph v2 cho riêng lượt này (None = dùng mặc định trong `graph/v2/nodes.py`); chủ yếu để thử trong `agent/test/debug_app.py`.
+    max_tool_rounds: int | None = None
+    max_model_retries: int | None = None

@@ -61,7 +61,7 @@ uv run python $E/experiment.py --cases $E/examples/cases.json --variants $E/exam
 ## Gotchas
 
 - `build_agent_graph` accepts `tools`, `system_prompt`, `middleware` overrides (used by this
-  driver); production callers pass none. `default_middleware()` (pre-diagnosis graph) returns the production list. Small-talk prompts are answered by the `triage` node before any tool runs — set `AGENT_TRIAGE_ENABLED=false` to exercise the pre-diagnosis graph on every prompt.
+  driver); production callers pass none. `default_middleware()` (pre-diagnosis graph v1) returns the production list; the `tools`/`system_prompt`/`middleware` overrides only apply with `AGENT_GRAPH_VERSION=v1` (graph v2 ignores them and logs a warning). Small-talk prompts are answered by the `triage` node before any tool runs — set `AGENT_TRIAGE_ENABLED=false` to exercise the pre-diagnosis graph on every prompt.
 - Run with a real LLM: results vary run to run, so judge a change with `--repeat 3`+, not one run.
 - `--tools` removes tools from the graph but NOT from the system prompt. The model still tries the
   missing tools and gets `X is not a valid tool, try one of [...]` (counted in `tool_errors`, not a

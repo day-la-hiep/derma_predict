@@ -73,5 +73,6 @@ exclude = ["**/__pycache__", ".venv"]
 dev = [
     "pyright>=1.1.411",
     "pyyaml>=6.0.3",
+    "streamlit>=1.66.1",
     "watchfiles>=1.2.0",
 ]

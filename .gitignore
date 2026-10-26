@@ -32,3 +32,6 @@ derma_hospital/
 
 # Thư mục tạm ở gốc repo
 /tmp/
+
+# output của debug app (agent/test)
+core/agent/test/debug_conversations/

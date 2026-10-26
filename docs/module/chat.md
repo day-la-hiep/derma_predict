@@ -14,7 +14,7 @@ knowledge graph, phân loại ảnh; thiếu thông tin thì hỏi lại; câu t
 | Service | `core/app/services/conversation_service.py`, `message_service.py` |
 | Repository / Model | `conversation_repository.py`, `message_repository.py`, `file_repository.py`; `models/conversation.py`, `message.py`, `file.py` |
 | Worker | `core/agent/worker.py` (vòng đời, khoá theo hội thoại), `turn.py` (chạy 1 turn), `publisher.py`, `core/app/workers/agent_response_consumer.py` (chạy trong Core) |
-| Agent | `core/agent/graph/` (`chat_graph.py` lọc intent → `pre_diagnosis_graph.py` tiền chẩn đoán), `tools/`, `middleware/`, `prompt/` |
+| Agent | `core/agent/graph/` (`chat_graph.py` lọc intent → `graph/v1/pre_diagnosis_graph.py` tiền chẩn đoán (v1; v2 ở `graph/v2/`, chọn bằng `AGENT_GRAPH_VERSION`)), `tools/`, `middleware/`, `prompt/` |
 
 ## 2. API
 
@@ -94,7 +94,7 @@ Các điểm cần nhớ:
 | `message.done` | turn kết thúc | `content` |
 | `[DONE]` | sentinel, Core đóng SSE | — |
 
-`message.thinking` / `message.tool_result` do middleware phát (`agent/middleware/model.py`, `tool.py`),
+`message.thinking` / `message.tool_result` do middleware phát (`agent/middleware/v1/model.py`, `agent/middleware/common/tool.py`),
 `turn.py` chỉ forward token và chốt kết quả. Bước lập luận được lưu vào `metadata.reasoning` để FE dựng lại
 khi tải lại trang.
 
@@ -131,7 +131,7 @@ Agent gồm hai graph. **Chat graph** (`chat_graph.py`) lọc intent: tin xã gi
 | `hybrid_retrieval` | tool tra cứu **mặc định** cho yêu cầu chung: sách giáo khoa đã số hoá + đồ thị tri thức, chạy semantic + BM25 + KG (trích thực thể → DermO → PrimeKG, bệnh ứng viên) rồi rerank bằng Qwen3-Reranker (OpenRouter); trả đoạn kèm nguồn (sách, mục, trang) | Qdrant `derma_document_chunks` + Neo4j PrimeKG/DermO |
 | `semantic_search` | (chuyên biệt) tra sách giáo khoa đã số hoá theo ngữ nghĩa (embedding → Qdrant), rerank bằng Qwen3-Reranker (OpenRouter); trả đoạn kèm nguồn (sách, mục, trang) | Qdrant `derma_document_chunks` |
 | `keyword_search` | (chuyên biệt) tra sách giáo khoa theo từ khoá (BM25 do Qdrant chấm trên sparse vector) — bắt tên thuốc, thuật ngữ; cùng dạng kết quả với `semantic_search` | Qdrant `derma_document_chunks` |
-| `knowledge_graph_query` | (tool riêng) template Cypher theo `intent` (8 intent: ứng viên theo triệu chứng, phân biệt, hồ sơ bệnh, triệu chứng, cờ đỏ/nguy cơ, điều trị, chống chỉ định, hồ sơ thuốc) trên PrimeKG/DermO/BYT; chỉ là gợi ý, không phải bằng chứng | Neo4j PrimeKG/DermO |
+| `knowledge_graph_query` | (tool riêng) template Cypher theo `intent` (8 intent: ứng viên theo triệu chứng, phân biệt, hồ sơ bệnh, triệu chứng, cờ đỏ/nguy cơ, điều trị, chống chỉ định, hồ sơ thuốc) trên PrimeKG/DermO; `red_flags_risk` hiện luôn trả rỗng (đồ thị không còn dữ liệu BYT), `symptoms_of_disease` / `disease_overview` chỉ có dữ liệu cho một số bệnh; chỉ là gợi ý, không phải bằng chứng | Neo4j PrimeKG/DermO |
 | `classify_skin_image` | CNN 22 lớp phân loại ảnh da — chỉ là **giả thuyết** | MinIO + PyTorch |
 | `analyze_skin_image_multimodal` | (chỉ đăng ký khi `AGENT_VISION_MODEL` không rỗng) model multimodal (vd MedGemma qua Ollama) mô tả hình thái/phân bố + giả thuyết, bổ sung cho CNN — không phải bằng chứng. Xem [notice](../notice/medgemma-image-description.md) | MinIO + model theo `AGENT_VISION_MODEL` |
 | `search_trusted_web`, `fetch_trusted_page` | tra web trong danh sách domain uy tín | Tavily |

@@ -48,7 +48,7 @@ The driver calls the API without an Authorization header (conversation routes do
 `pyright` runs in basic mode (`typeCheckingMode` in `pyproject.toml`):
 
 ```bash
-pyright agent/tools agent/middleware agent/graph agent/prompt agent/turn.py agent/worker.py
+pyright agent/tools agent/middleware agent/graph agent/common agent/prompt agent/turn.py agent/worker.py
 ```
 
 ## Run (human path)
@@ -79,7 +79,7 @@ terminals, then the Next.js app in `../fe` (`pnpm dev`). Not usable headless.
 ## Troubleshooting
 
 - `ImportError: cannot import name '_MAX_CRITIC_RETRIES' from partially initialized module
-  'agent.graph.pre_diagnosis_graph'` → a middleware imported from `pre_diagnosis_graph`; import from
+  'agent.graph.v1.pre_diagnosis_graph'` → a middleware imported from `pre_diagnosis_graph`; import from
   `agent.graph.common` instead.
 - `[Errno 98] Address already in use` from `main.py` → an API is already on :3050; reuse it.
 - `chat` hangs then times out → worker not running; check `tail /tmp/worker.log` for
