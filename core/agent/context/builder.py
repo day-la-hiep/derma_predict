@@ -5,21 +5,23 @@ from app.config.settings import settings
 from app.repositories.conversation_repository import ConversationRepository
 
 
-async def _conversation_for(conversation_id: str) -> tuple[str, str]:
+async def _conversation_for(conversation_id: str) -> tuple[str, str, str]:
     async with get_postgres_client().session_factory() as db:
         repo = ConversationRepository(db)
         conversation = await repo.get(conversation_id)
         if conversation is None:
-            return "", ""
+            return "", "", ""
         user_id = await repo.owner_user_id(conversation) or ""
+        profile_id = conversation.patient_profile_id
     model = settings.AGENT_MODEL_CHOICES.get(conversation.model, "")
-    return user_id, model
+    return user_id, model, profile_id
 
 
 async def build_context(req: TurnRequest) -> AgentContext:
-    user_id, model = await _conversation_for(req.conversation_id)
+    user_id, model, profile_id = await _conversation_for(req.conversation_id)
     return AgentContext(
         user_id=user_id,
+        patient_profile_id=profile_id,
         conversation_id=req.conversation_id,
         message_id=req.message_id,
         image_keys=[

@@ -1,3 +1,4 @@
+import logging
 import re
 from typing import Any, Awaitable, Callable
 from langchain.agents import AgentState
@@ -14,8 +15,9 @@ from langchain.messages import (
     SystemMessage,
     ToolMessage,
 )
-from langchain_core.messages import RemoveMessage
+from langchain_core.messages import AnyMessage, RemoveMessage
 
+from agent.common.evidence import evidence_status
 from agent.graph.common import (
     MAX_CRITIC_RETRIES,
     MAX_REASONING_RETRIES,
@@ -28,9 +30,7 @@ from agent.graph.common import (
 )
 from agent.common.llm import get_model
 from agent.prompt.critic import CRITIC_SYSTEM
-from agent.prompt.orchestrator import DIAGNOSIS_PROMPT
 from agent.context.agent_context import AgentContext
-from agent.tools.memory import search_memories
 from agent.tools.reasoning import (
     FEEDBACK_PREFIX,
     TOOL_NAME as REASONING_TOOL,
@@ -39,55 +39,7 @@ from agent.tools.reasoning import (
     turn_messages,
 )
 
-
-@wrap_model_call
-async def select_model(
-    request: ModelRequest[AgentContext],
-    handler: Callable[[ModelRequest[AgentContext]], Awaitable[ModelResponse]],
-) -> ModelResponse:
-    """Chọn model theo `AgentContext.model`"""
-    ctx: AgentContext = request.runtime.context  # type: ignore[assignment]
-    if ctx.model:
-        request = request.override(model=get_model(ctx.model))
-    return await handler(request)
-
-
-@wrap_model_call
-async def inject_long_term_memory(
-    request: ModelRequest[AgentContext],
-    handler: Callable[[ModelRequest[AgentContext]], Awaitable[ModelResponse]],
-) -> ModelResponse:
-    messages = request.state["messages"]
-    query = next(
-        (
-            str(m.content)
-            for m in reversed(messages)
-            if isinstance(m, HumanMessage)
-        ),
-        "",
-    )
-    ctx: AgentContext = request.runtime.context  # type: ignore[assignment]
-    memories: list[str] = []
-    try:
-        memories = await search_memories(request.runtime.store, ctx.user_id, query)  # type: ignore[arg-type]
-    except Exception:  # noqa: BLE001
-        # Bộ nhớ dài hạn không bắt buộc cho một lượt trả lời; nếu embedding/DB lỗi
-        # thì bỏ qua thay vì làm hỏng cả lượt hội thoại.
-        memories = []
-
-    if memories:
-        memory_text = "\n".join(f"- {m}" for m in memories)
-        base = (
-            request.system_message.content
-            if request.system_message
-            else DIAGNOSIS_PROMPT
-        )
-        request = request.override(
-            system_message=SystemMessage(
-                content=f"{base}\n\nThông tin đã biết về người dùng:\n{memory_text}"
-            )
-        )
-    return await handler(request)
+logger = logging.getLogger(__name__)
 
 
 @wrap_model_call
@@ -148,6 +100,32 @@ async def emit_reasoning_step(
     return response
 
 
+_CRITIC_MODEL_RETRIES = 2
+
+
+async def _critic_verdict(ctx: AgentContext, messages: list[AnyMessage], status: str) -> CriticVerdict | None:
+    """Gọi LLM chấm bản nháp; model nhỏ hay viết văn bản thay vì gọi hàm nên gọi lại tối đa `_CRITIC_MODEL_RETRIES` lần."""
+    critic_model = get_model(ctx.model or None).with_structured_output(
+        CriticVerdict, method="function_calling", include_raw=True
+    )
+    task = HumanMessage(
+        content=f"[Nhiệm vụ của hệ thống] TRẠNG THÁI BẰNG CHỨNG của lượt này: {status}. Chấm bản nháp ở trên theo các tiêu chí trong chỉ dẫn. Chỉ trả lời bằng cách gọi hàm CriticVerdict. KHÔNG viết văn bản."
+    )
+    for attempt in range(_CRITIC_MODEL_RETRIES + 1):
+        result = await critic_model.ainvoke([SystemMessage(content=CRITIC_SYSTEM), *messages, task])
+        parsed = result.get("parsed") if isinstance(result, dict) else None
+        if isinstance(parsed, CriticVerdict):
+            return parsed
+        logger.warning(
+            "critic lần %d/%d: model không trả CriticVerdict (lỗi parse: %s)",
+            attempt + 1,
+            _CRITIC_MODEL_RETRIES + 1,
+            result.get("parsing_error") if isinstance(result, dict) else None,
+        )
+    logger.warning("critic không có phán quyết sau %d lần thử, cho qua câu trả lời", _CRITIC_MODEL_RETRIES + 1)
+    return None
+
+
 @after_model(can_jump_to=["model"], state_schema=CriticState)
 async def critic_review(
     state: CriticState, runtime: Runtime[AgentContext]
@@ -157,7 +135,7 @@ async def critic_review(
     last = messages[-1] if messages else None
     if not isinstance(last, AIMessage) or last.tool_calls:
         return None
-    if not any(isinstance(m, ToolMessage) for m in messages):
+    if not last.text.strip():
         return None
 
     retries = state.get("critic_retries", 0)
@@ -176,13 +154,10 @@ async def critic_review(
             },
         )
 
-    critic_model = get_model().with_structured_output(
-        CriticVerdict, method="function_calling"
-    )
-    verdict = await critic_model.ainvoke(
-        [SystemMessage(content=CRITIC_SYSTEM), *messages]
-    )
-    assert isinstance(verdict, CriticVerdict)
+    verdict = await _critic_verdict(ctx, messages, evidence_status(turn_messages(messages[:-1])))
+    if verdict is None:
+        # Không lấy được phán quyết thì cho qua thay vì chặn câu trả lời; đã ghi warning ở `_critic_verdict`.
+        return None
 
     if ctx.conversation_id:
         await emit(

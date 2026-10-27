@@ -1,0 +1,15 @@
+# [Pending] Lưu bền dữ kiện lâm sàng tích luỹ từ chat
+
+Hiện `ChatState.diag.facts` (graph v2) nằm trong checkpoint Postgres (`AsyncPostgresSaver`, schema `langgraph`) theo `conversation_id` (xem `docs/notice/agent-graph-versions.md`): sống qua restart worker nhưng chỉ trong phạm vi một hội thoại, chưa vào `clinical_facts` (nên chưa dùng được ở hội thoại khác hay cho bác sĩ). Hướng mở rộng, chưa làm:
+
+1. **Ghi bền qua Core.** Sau mỗi lượt Worker gửi facts mới về Core qua RabbitMQ (`AgentResponseMessage.facts` / `provenance_pairs` đã có sẵn cho báo cáo; chỉ Core ghi Postgres); Core lưu vào `clinical_facts` bằng `ConsultationRepository.get_or_create_template` / `add_clinical_facts` / `add_provenances`, rồi đồng bộ Neo4j như `save_generated_report` nếu cần. Hồ sơ lấy từ `Conversation.patient_profile_id`; không có hồ sơ thì bỏ qua.
+2. **Không cần đổi `dto/base` / model / migration** (rà code): `ClinicalFact` đã có `status` (`active` | `superseded`), `superseded_by`, `provenances` (theo message DB); `origin` suy từ `fact_type` như `finalize_report_service.default_origin`. Chỉ cần thêm `user_message_id` vào `TurnRequest` (`agent/dto/schemas.py`, wire contract) để provenance dùng id tin nhắn DB, vì `source_messages` trong graph là id tin nhắn LangGraph, không trùng id DB.
+3. **Đính chính — quyết định đã chốt: supersede.** Fact cùng nhãn nhưng khác chi tiết thì tạo fact mới, fact cũ `status=superseded` + `superseded_by`; cùng chi tiết thì bỏ qua (bác sĩ vẫn thấy lịch sử khai báo).
+4. **Báo cáo tiền tư vấn đọc lại facts đã tích luỹ** thay vì trích lại toàn hội thoại, chỉ sinh `summary`; hiện `handle_consultation_report` đã đưa `get_active_facts_with_provenance` vào prompt như "dữ kiện đã biết" nên nên chỉnh để không trích lại thứ đã có. Chú ý `save_generated_report` không khử trùng: nếu chat đã ghi facts rồi report lại ghi thì bác sĩ sẽ thấy bản trùng.
+5. **Gieo facts ở lượt đầu** từ `clinical_facts` của bệnh nhân (cân nhắc chỉ `history` / `medication` / `allergy`) để sống qua nhiều cuộc trò chuyện. Mô tả bệnh cũ có thể không còn đúng với cuộc trò chuyện mới.
+6. **Quyền riêng tư / đồng ý:** facts do AI trích sẽ vào hồ sơ bệnh nhân trước khi người đó chọn chia sẻ với bác sĩ; cần sản phẩm quyết có cho phép không (chưa xác nhận hệ thống có yêu cầu đồng ý nào).
+
+Ranh giới cần giữ: kết quả tra cứu (evidence, giả thuyết, `done_calls`) là tri thức, KHÔNG ghi vào `clinical_facts`/Neo4j.
+
+## Liên quan: memory dài hạn (đã làm, tách biệt)
+Memory chữ tự do theo hồ sơ đã lưu Postgres (`core/app/kien-truc-memory.md`) và **chưa liên kết** với facts. Khi làm lưu bền facts cần quyết: giữ hai cơ chế, hay để facts (có cấu trúc, có nguồn, có đính chính) thay vai trò memory; hiện hai bên có thể cùng chứa "dị ứng penicillin" và lệch nhau (memory có thể bị ghi đè khi bệnh nhân nói đã hết dị ứng, xem rủi ro trong notice). Checkpoint hội thoại đã bền (Postgres), nên `diag` giờ sống lâu hơn code: cần kiểu rõ ràng + `version` cho `diag` và chính sách dọn / xoá checkpoint (xem notice).

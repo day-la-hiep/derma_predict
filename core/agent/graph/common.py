@@ -18,7 +18,7 @@ from app.api.deps import get_redis_client
 TOOL_DISPLAY_NAMES: dict[str, str] = {
     "record_reasoning": "Lập luận",
     "ask_user": "Hỏi lại người dùng",
-    "save_memory": "Lưu thông tin ghi nhớ",
+    "extract_facts": "Trích dữ kiện lâm sàng",
     "hybrid_retrieval": "Tra cứu sách giáo khoa",
     "semantic_search": "Tra cứu sách giáo khoa (theo ngữ nghĩa)",
     "keyword_search": "Tra cứu sách giáo khoa (theo từ khoá)",
@@ -61,10 +61,12 @@ MAX_REASONING_RETRIES = 2
 
 
 class CriticVerdict(BaseModel):
+    """Phán quyết NỘI BỘ của critic: chỉ điền các trường, không chào hỏi, không viết lại câu trả lời."""
+
     approved: bool = Field(
         description="True nếu bản nháp đạt yêu cầu, False nếu cần viết lại"
     )
     feedback: str = Field(
         default="",
-        description="Lý do từ chối + điều cần sửa — để trống nếu approved=true",
+        description="Lý do từ chối + điều cần sửa: tối đa 40 từ, ngôi thứ ba, không chào hỏi — để trống nếu approved=true",
     )

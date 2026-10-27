@@ -1,4 +1,4 @@
-.PHONY: infra infra-down backend worker ingest-worker migrate migrate-new init-db reindex-qdrant load-primekg load-dermo load-kg kg-download kg-build kg-load kg-verify data-export data-restore frontend
+.PHONY: infra infra-down backend worker debug-app ingest-worker migrate migrate-new init-db reindex-qdrant load-primekg load-dermo load-kg kg-download kg-build kg-load kg-verify data-export data-restore frontend
 
 infra:
 	docker compose up -d
@@ -11,6 +11,10 @@ backend:
 
 worker:
 	cd core && uv run python -u -m agent.worker
+
+# giao diện Streamlit debug luồng lập luận của agent, chạy graph trực tiếp (không cần backend/worker): make debug-app [port=8501]
+debug-app:
+	cd core && uv run streamlit run agent/test/debug_app.py $(if $(port),--server.port $(port))
 
 ingest-worker:
 	cd core && uv run python -u -m app.workers.document_ingest_worker

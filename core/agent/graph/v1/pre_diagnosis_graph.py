@@ -11,19 +11,15 @@ from langgraph.graph.state import CompiledStateGraph  # pyright: ignore[reportMi
 from langgraph.store.base import BaseStore
 
 from agent.context.agent_context import AgentContext
-from agent.middleware.model import (
+from agent.middleware.common.model import inject_long_term_memory, select_model
+from agent.middleware.common.tool import emit_tool_result
+from agent.middleware.v1.evidence import evidence_rules
+from agent.middleware.v1.model import (
+    critic_review,
     enforce_initial_reasoning,
     force_reasoning,
     emit_reasoning_step,
-    inject_long_term_memory,
-    select_model,
 )
-from agent.middleware.evidence import (
-    evidence_answer_check,
-    evidence_reasoning_check,
-    evidence_rules,
-)
-from agent.middleware.tool import emit_tool_result
 from agent.prompt.orchestrator import DIAGNOSIS_PROMPT
 from agent.tools.ask_user import ask_user
 from agent.tools.hybrid_retrieval import (
@@ -35,19 +31,19 @@ from agent.tools.hybrid_retrieval import (
 from agent.tools.query_document_graph import query_document_graph
 from agent.tools.reasoning import record_reasoning
 from agent.tools.search_finalize_report import search_finalize_report
-from agent.tools.search_finalize_report_by_image import search_finalize_report_by_image
+from agent.tools.search_finalize_report_by_image import (
+    search_finalize_report_by_image,
+)
 from agent.tools.skin_image_classifier import classify_skin_image
 from agent.tools.skin_image_multimodal import analyze_skin_image_multimodal
 from app.config.settings import settings
 from agent.tools.web_search import fetch_trusted_page, search_trusted_web
 from agent.common.llm import get_model
-from agent.tools.memory import save_memory
 
 
 ALL_TOOLS = [
     record_reasoning,
     ask_user,
-    save_memory,
     hybrid_retrieval,
     semantic_search,
     keyword_search,
@@ -65,7 +61,11 @@ def build_tools() -> list[Any]:
     # Đọc settings lúc dựng graph (không phải lúc import) để CLI/test đổi `AGENT_VISION_MODEL` rồi dựng lại.
     return [
         *ALL_TOOLS,
-        *([analyze_skin_image_multimodal] if settings.AGENT_VISION_MODEL else []),
+        *(
+            [analyze_skin_image_multimodal]
+            if settings.AGENT_VISION_MODEL
+            else []
+        ),
     ]
 
 
@@ -79,14 +79,13 @@ def default_middleware() -> list[
             select_model,
             inject_long_term_memory,
             force_reasoning,
+            # Chốt kiểm duyệt DUY NHẤT ở cuối. Hook `after_model` chạy ngược danh sách nên đứng TRƯỚC `enforce_initial_reasoning`
+            # để critic chỉ chấm sau khi lượt đã có lập luận hợp lệ.
+            critic_review,
             enforce_initial_reasoning,
             evidence_rules,
-            evidence_answer_check,
-            # emit_reasoning_step,
+            emit_reasoning_step,
             emit_tool_result,
-            # đứng SAU `emit_tool_result` (lớp trong): lời từ chối của nó vẫn được ghi vào bước hiển thị như mọi lỗi `record_reasoning`
-            evidence_reasoning_check,
-            # critic_review,
             # trigger/keep tính theo SỐ TIN NHẮN — đơn giản, không cần tokenizer riêng
             # cho từng provider. Vượt 20 tin nhắn -> tóm tắt còn lại 10 tin gần nhất.
             # SummarizationMiddleware(

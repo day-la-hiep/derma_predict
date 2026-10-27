@@ -7,7 +7,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.common.llm import get_model
-from agent.common.text_utils import tokenize
+from agent.common.fact_extractor import validate_facts_evidence
 from agent.dto.schemas import AgentResponseMessage, TurnRequest
 from app.api.deps import get_postgres_client, get_rabbitmq_client
 from app.config.constants import AGENT_RESPONSE_QUEUE
@@ -60,46 +60,6 @@ Yêu cầu cho phần `summary` (dùng Markdown chuyên nghiệp, rõ ràng theo
 
 Yêu cầu cho `source_messages`: Mảng chứa số thứ tự các tin nhắn (`[#i]`) trực tiếp làm bằng chứng cho fact đó (triệu chứng từ `[PATIENT]`, nhận định/chỉ định từ `[DOCTOR]`). Tuyệt đối không bịa số thứ tự không có trong hội thoại.
 """
-
-
-def _validate_facts_evidence(
-    raw_facts: list[dict[str, Any]],
-    messages_content: list[str],
-) -> list[dict[str, Any]]:
-    """Middleware logic: Kiểm tra đối chiếu dữ kiện lâm sàng với tin nhắn nguồn.
-    Loại bỏ hoặc làm sạch các fact có chỉ số tin nhắn không hợp lệ hoặc không có căn cứ từ lời bệnh nhân.
-    """
-    valid_facts: list[dict[str, Any]] = []
-    total_messages = len(messages_content)
-
-    for rf in raw_facts:
-        f_label = str(rf.get("template_label", "")).strip()
-        f_detail = str(rf.get("detail", "")).strip()
-        source_indices = rf.get("source_messages") or []
-
-        # Lọc chỉ số hợp lệ
-        valid_indices: list[int] = []
-        for idx in source_indices:
-            if isinstance(idx, int) and 1 <= idx <= total_messages:
-                valid_indices.append(idx)
-
-        # Kiểm tra token overlap với tin nhắn nguồn tương ứng
-        if valid_indices:
-            source_text = " ".join(messages_content[i - 1] for i in valid_indices)
-            source_tokens = tokenize(source_text)
-            fact_tokens = tokenize(f"{f_label} {f_detail}")
-            # Nếu fact có từ khóa nhưng không hề trùng khớp gì với tin nhắn nguồn được trích dẫn -> log warning
-            if fact_tokens and source_tokens and len(fact_tokens & source_tokens) == 0:
-                logger.warning(
-                    "Fact '%s' không khớp từ khóa với tin nhắn nguồn [#%s]",
-                    f_label,
-                    valid_indices,
-                )
-
-        rf["source_messages"] = valid_indices
-        valid_facts.append(rf)
-
-    return valid_facts
 
 
 async def handle_consultation_report(req: TurnRequest) -> None:
@@ -205,7 +165,7 @@ async def handle_consultation_report(req: TurnRequest) -> None:
                 raw_facts = parsed.get("facts", [])
 
                 # Chạy qua middleware validation & evidence check
-                validated_facts = _validate_facts_evidence(raw_facts, messages_content)
+                validated_facts = validate_facts_evidence(raw_facts, messages_content)
 
                 # Chuẩn bị fact_id và provenance pairs
                 for rf in validated_facts:

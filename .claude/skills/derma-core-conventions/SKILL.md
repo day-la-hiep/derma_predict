@@ -54,19 +54,22 @@ hardcode them. The Core↔Worker contract is `agent/dto/schemas.py` (`TurnReques
 | `app/exception/` | `exception_handler.py` registered in `main.py`, `errors.py` | |
 | `agent/graph/chat_graph.py` | **chat graph** (outermost): `build_chat_graph()`, `agent_graph`, `config_for()` (thread_id = conversation_id); nodes `triage` → `pre_diagnosis` | be imported by middleware |
 | `agent/graph/triage.py` | `triage` node: intent filter, answers small talk / out-of-scope directly | |
-| `agent/graph/pre_diagnosis_graph.py` | **pre-diagnosis graph** (`create_agent`): `ALL_TOOLS`, `default_middleware()`, `build_pre_diagnosis_graph()` | be imported by middleware |
+| `agent/graph/v1/pre_diagnosis_graph.py` | **pre-diagnosis graph v1** (`create_agent`, default): `ALL_TOOLS`, `default_middleware()`, `build_pre_diagnosis_graph()` | be imported by middleware |
+| `agent/graph/v2/` | **pre-diagnosis graph v2** (`StateGraph` plan → choose_tools → tools → label_evidence → reflect → answer); selected by `AGENT_GRAPH_VERSION` | import `middleware/v1` |
 | `agent/graph/common.py` | **leaf module**: `emit`, `TOOL_DISPLAY_NAMES`, `CriticState`, constants | import graph/middleware |
-| `agent/middleware/` | `@wrap_model_call` / `@wrap_tool_call` / `@after_model` hooks (pre-diagnosis graph only) | import `chat_graph` / `pre_diagnosis_graph` |
-| `agent/tools/` | one `@tool` per file (or small family) | import FastAPI |
+| `agent/middleware/` | `common/` (shared by v1 and v2), `v1/` (reasoning/evidence hooks, v1 only): `@wrap_model_call` / `@wrap_tool_call` / `@after_model` | import `chat_graph` / `pre_diagnosis_graph` |
+| `agent/common/evidence.py` | pure evidence helpers shared by v1 middleware and v2 nodes | import graph/middleware |
+| `agent/common/fact_extractor.py` | clinical-fact extraction shared by v2 node `extract_facts` and the pre-consultation report handler (`extract_facts`, `merge_facts`, `validate_facts_evidence`) | import graph/middleware |
+| `agent/tools/` | one `@tool` per file (or small family); `memory.py` is the long-term memory store + batch update helpers, not a tool | import FastAPI |
 | `agent/context/` | `agent_context.py` = `AgentContext` dataclass (per-turn data tools read via `runtime.context`); `builder.py` = `build_context(req)` that fills it from the DB/request | run the graph |
-| `agent/worker.py` | process entry only: consume queue, per-conversation lock, `main` | hold turn logic |
-| `agent/turn.py` | one turn (agent logic): build `AgentContext`, stream graph, finish (done / `ask_user` question / error) | |
+| `agent/worker.py` | process entry only: consume queue, per-conversation lock, `main` (opens the Postgres store + checkpointer via `agent/persistence.py` and assigns them to `chat_graph`) | hold turn logic |
+| `agent/turn.py` | one turn (agent logic): build `AgentContext`, stream graph, finish (done / `ask_user` question / error), then schedule the background long-term memory update (`_schedule_memory_update`) | |
 | `agent/publisher.py` | worker → backend only (no agent logic): `emit` + `finish_turn` (SSE event → `[DONE]` → `agent_response_queue`) | import graph/tools/middleware |
 | `app/workers/agent_response_consumer.py` | Core-side consumer of `agent_response_queue` that persists the assistant row (runs in Core, not the agent worker) | import from `agent/` beyond `agent/dto/schemas.py` |
 | `agent/prompt/` | `orchestrator.py` (SYSTEM_PROMPT of the pre-diagnosis graph), `triage.py` (short intent-filter prompt), `critic.py` | |
 | `agent/dto/schemas.py` | RabbitMQ message contract | |
 
-Dependency direction is one-way: `chat_graph → pre_diagnosis_graph → middleware/tools → common/state`.
+Dependency direction is one-way: `chat_graph → v1|v2/pre_diagnosis_graph → middleware/tools → common/state` (v2 never imports `middleware/v1`).
 That's why shared helpers sit in `common.py`: a middleware importing `pre_diagnosis_graph` (which imports the middleware to
 assemble the agent) raised `ImportError ... partially initialized module`. If something is needed by
 both sides, move it down into `common.py`, don't import upward.
@@ -105,12 +108,12 @@ a model run `uv run alembic revision --autogenerate -m "..."`, read the generate
 
 **Add an agent tool** — new file in `agent/tools/`, `@tool` with a Vietnamese docstring that tells
 the LLM *when* to call it and what each arg means (the docstring is the prompt). Need turn data →
-`runtime: ToolRuntime[AgentContext, Any]`. Then: append to `ALL_TOOLS` in `pre_diagnosis_graph.py`, add a
+`runtime: ToolRuntime[AgentContext, Any]`. Then: append to `ALL_TOOLS` in `graph/v1/pre_diagnosis_graph.py` (v2: `build_tools()` in `graph/v2/pre_diagnosis_graph.py`), add a
 friendly label to `TOOL_DISPLAY_NAMES` in `common.py` (else FE shows the raw function name), and
 mention it in `agent/prompt/orchestrator.py` if the model must be steered to use it.
 
-**Add middleware** — function in `agent/middleware/`, register it in `default_middleware()` in
-`pre_diagnosis_graph.py`; order matters (`select_model` first so later hooks see the chosen model).
+**Add middleware** — function in `agent/middleware/v1/` (or `common/` if v1 and v2 both use it), register it in `default_middleware()` in
+`graph/v1/pre_diagnosis_graph.py`; order matters (`select_model` first so later hooks see the chosen model).
 Anything pushed to the user goes through `emit(conversation_id, payload)`; keep event shape stable —
 the FE depends on `type/tool/content/conversationId/messageId`.
 

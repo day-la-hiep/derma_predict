@@ -8,6 +8,8 @@ from aio_pika.abc import AbstractIncomingMessage
 
 from agent.dto.schemas import TurnRequest
 from agent.handler.consultation_report import handle_consultation_report
+from agent.graph.chat_graph import chat_graph
+from agent.persistence import postgres_persistence
 from agent.turn import handle_resume, handle_turn
 from app.config.log import request_id_var, setup_logging
 from app.config.settings import log_startup_infra, settings
@@ -50,12 +52,17 @@ async def main() -> None:
     log_startup_infra()
     logger.info("model: %s", settings.AGENT_MODEL)
     await get_rabbitmq_client().connect()
-    logger.info("đang lắng nghe queue '%s'", AGENT_REQUEST_QUEUE)
-    await get_rabbitmq_client().consume(AGENT_REQUEST_QUEUE, _on_message)
-    try:
-        await asyncio.Event().wait()  # chạy tới khi bị dừng (Ctrl+C)
-    finally:
-        await close_clients()
+    # Memory dài hạn và checkpoint hội thoại nằm ở Postgres (schema `langgraph`); graph biên dịch sẵn lúc import với bản RAM nên thay ở đây, trước khi nhận turn nào.
+    async with postgres_persistence() as (store, checkpointer):
+        chat_graph.store = store
+        chat_graph.checkpointer = checkpointer
+        logger.info("memory dài hạn và checkpoint hội thoại: Postgres, schema langgraph")
+        logger.info("đang lắng nghe queue '%s'", AGENT_REQUEST_QUEUE)
+        await get_rabbitmq_client().consume(AGENT_REQUEST_QUEUE, _on_message)
+        try:
+            await asyncio.Event().wait()  # chạy tới khi bị dừng (Ctrl+C)
+        finally:
+            await close_clients()
 
 
 if __name__ == "__main__":

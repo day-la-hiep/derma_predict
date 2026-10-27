@@ -48,7 +48,7 @@ The driver calls the API without an Authorization header (conversation routes do
 `pyright` runs in basic mode (`typeCheckingMode` in `pyproject.toml`):
 
 ```bash
-pyright agent/tools agent/middleware agent/graph agent/prompt agent/turn.py agent/worker.py
+pyright agent/tools agent/middleware agent/graph agent/common agent/prompt agent/turn.py agent/worker.py
 ```
 
 ## Run (human path)
@@ -66,10 +66,11 @@ terminals, then the Next.js app in `../fe` (`pnpm dev`). Not usable headless.
   it's the infra, not the code.
 - `send`/`chat` against an unknown conversation id returns HTTP 500 (not 404).
 - Run exactly ONE worker. Two consumers share `agent_request_queue` round-robin, but the checkpointer
-  and long-term store are in-memory per process, so turns of one conversation land on different
-  processes and the agent "forgets" earlier messages (seen: same-conversation follow-up answered
+  and the per-conversation lock are per process (checkpoint and long-term memory are in Postgres, schema `langgraph`), so two
+  workers may run two turns of one conversation at the same time (untested); earlier it was worse: with in-memory state turns landed on different
+  processes and the agent "forgot" earlier messages (seen: same-conversation follow-up answered
   "you haven't told me"). Check with `docker exec derma-rabbitmq rabbitmqctl list_queues name consumers`
-  (expect `agent_request_queue 1`). A worker restart/auto-reload also wipes all conversation memory.
+  (expect `agent_request_queue 1`). A worker restart/auto-reload keeps the conversation checkpoint (history and `diag`) and long-term memory in Postgres; `make debug-app` still uses RAM checkpoints.
 - Qdrant in compose has `QDRANT__SERVICE__API_KEY=derma_qdrant_2026`; `.env` needs
   `QDRANT_API_KEY=derma_qdrant_2026` (read by `app/infra/qdrant_client.py`), else `hybrid_retrieval`
   returns a failed-leg note (`401 Must provide an API key`). The book-chunk collection
@@ -79,7 +80,7 @@ terminals, then the Next.js app in `../fe` (`pnpm dev`). Not usable headless.
 ## Troubleshooting
 
 - `ImportError: cannot import name '_MAX_CRITIC_RETRIES' from partially initialized module
-  'agent.graph.pre_diagnosis_graph'` → a middleware imported from `pre_diagnosis_graph`; import from
+  'agent.graph.v1.pre_diagnosis_graph'` → a middleware imported from `pre_diagnosis_graph`; import from
   `agent.graph.common` instead.
 - `[Errno 98] Address already in use` from `main.py` → an API is already on :3050; reuse it.
 - `chat` hangs then times out → worker not running; check `tail /tmp/worker.log` for

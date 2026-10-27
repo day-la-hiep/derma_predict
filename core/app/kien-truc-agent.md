@@ -78,10 +78,15 @@ FE ──POST /messages──▶ Core ──publish──▶ RabbitMQ agent_requ
 | `turn.py` | Dựng `AgentContext`, chạy `astream`, forward token, kết thúc turn (xong / hỏi lại / lỗi). |
 | `graph/chat_graph.py` | Chat graph: `build_chat_graph()`, `agent_graph`, `config_for()`. Node `pre_diagnosis` gọi graph tiền chẩn đoán, chuyển tiếp token qua kênh `custom` và truyền lại việc xoá tin nhắn (`RemoveMessage`) của middleware vào state của chat graph. |
 | `graph/triage.py` | Node `triage`: một lần gọi LLM ngắn (`prompt/triage.py`) quyết định `answer` / `diagnose`. |
-| `graph/pre_diagnosis_graph.py` | `ALL_TOOLS`, `default_middleware()`, `build_pre_diagnosis_graph()` gọi `create_agent(model, tools, system_prompt, middleware, context_schema)`. |
+| `graph/v1/pre_diagnosis_graph.py` | **Graph v1** (mặc định): `ALL_TOOLS`, `default_middleware()`, `build_pre_diagnosis_graph()` gọi `create_agent(model, tools, system_prompt, middleware, context_schema)`. |
+| `graph/v2/` | **Graph v2** (`AGENT_GRAPH_VERSION=v2`): `StateGraph` `load_memory → extract_facts → plan → choose_tools → tools → label_evidence → reflect → answer` (`plan` không có truy vấn mới thì sang thẳng `answer`; state `ChatState.diag` giữ facts/bằng chứng giữa các lượt) (`pre_diagnosis_graph.py`, `nodes.py`, `evidence.py`, `schemas.py`, `state.py`; prompt ở `prompt/v2.py`). Xem `docs/notice/agent-graph-versions.md`. |
 | `graph/common.py` | Hằng số dùng chung của middleware: `TOOL_DISPLAY_NAMES`, giới hạn thử lại, schema critic. |
-| `middleware/model.py` | Middleware quanh lần gọi model. |
-| `middleware/tool.py` | Middleware quanh lần gọi tool (`emit_tool_result`). |
+| `middleware/common/model.py` | Dùng chung v1/v2: `select_model`, `inject_long_term_memory`, helpers `load_memory`, `inject_memory`, `with_memory`. |
+| `middleware/v1/model.py` | Chỉ của v1: `force_reasoning`, `enforce_initial_reasoning`, `critic_review`, `emit_reasoning_step`. |
+| `middleware/v1/evidence.py` | Chỉ của v1: `evidence_rules`. |
+| `common/fact_extractor.py` | Trích dữ kiện lâm sàng dùng chung: `extract_facts`, `merge_facts`, `validate_facts_evidence` (graph v2 node `extract_facts` và báo cáo tiền tư vấn). |
+| `common/evidence.py` | Hàm thuần về bằng chứng dùng chung v1/v2 (`evidence_status`, `has_evidence`, `RETRIEVAL_TOOLS`...). |
+| `middleware/common/tool.py` | Dùng chung: `emit_tool_result` (v1) và `emit_tool_step` (ghi bước + phát `message.tool_result`, v2 gọi trực tiếp). |
 | `tools/` | Mỗi file một (nhóm) tool; `ask_user.py` là tool hỏi lại người dùng. |
 | `prompt/orchestrator.py` | `SYSTEM_PROMPT`: nguyên tắc bằng chứng, khung quyết định, cách chọn tool, ngân sách tool. |
 | `llm.py` | `get_model()` — khởi tạo model theo `provider:model` (OpenRouter, DeepSeek, Gemini...). |
@@ -107,23 +112,22 @@ Khi resume sau `ask_user`, `Command(resume=...)` đi vào chat graph và tiếp 
 
 ## 4. Middleware
 
-Middleware của **graph tiền chẩn đoán**, thứ tự trong `default_middleware()` (`pre_diagnosis_graph.py`):
+Middleware của **graph tiền chẩn đoán v1**, thứ tự trong `default_middleware()` (`graph/v1/pre_diagnosis_graph.py`); graph v2 không dùng middleware lập luận/bằng chứng mà làm bằng node:
 
 | Middleware | Loại | Làm gì |
 |---|---|---|
 | `select_model` | `wrap_model_call` | Đổi model theo `AgentContext.model` (model chọn theo từng hội thoại, `AGENT_MODEL_CHOICES`). **Phải đứng đầu** để các middleware sau thấy đúng model. |
-| `inject_long_term_memory` | `wrap_model_call` | Tìm memory dài hạn liên quan tin nhắn gần nhất rồi chèn vào system message (`tools/memory.py`). |
+| `inject_long_term_memory` | `wrap_model_call` | Chèn memory dài hạn của hồ sơ bệnh nhân (tối đa 10 bản mới nhất) vào system message (`tools/memory.py`, xem `kien-truc-memory.md`). |
 | `force_reasoning` | `wrap_model_call` | Ngay sau một đợt kết quả tool, ép model gọi `record_reasoning` trước khi đi tiếp. |
 | `enforce_initial_reasoning` | `after_model` | Lưới an toàn: model chưa lập luận mà đã trả lời / gọi tool thì bắt làm lại (tối đa `MAX_REASONING_RETRIES`, hết lượt thì cho qua). |
 | `evidence_rules` | `wrap_model_call` | Lượt đã tra cứu (`hybrid_retrieval`, `semantic_search`, `keyword_search`, `knowledge_graph_query`, web) mà **không có bằng chứng** (không có đoạn sách `source="book"`, không có trang web; quan hệ đồ thị và kết quả ảnh không tính) thì thêm quy tắc cứng vào system prompt trước mỗi lần gọi model: không nêu tên bệnh / xếp hạng / độ tin cậy / lời khuyên điều trị, chỉ nói rõ chưa tra cứu được, nhắc lại lời người dùng, hỏi thêm hoặc khuyên khám. |
-| `evidence_answer_check` | `after_model` | Lưới an toàn: câu trả lời cuối vẫn nhắc tên giả thuyết đã nêu khi không có bằng chứng thì bắt viết lại (tối đa 2 lần; bản nháp có thể đã stream ra, giới hạn đã biết). |
+| `critic_review` | `after_model` | **Chốt kiểm duyệt duy nhất ở cuối**: một lần gọi LLM (`prompt/critic.py`) chấm bản nháp cuối theo lời người dùng, kết quả tool và lập luận (dữ kiện nguồn `user` có đúng lời người dùng không, tên bệnh khi chưa có bằng chứng, cờ đỏ, kê đơn). Không đạt thì yêu cầu viết lại tối đa `MAX_CRITIC_RETRIES = 1` lần; không lấy được phán quyết thì cho qua (ghi warning). Đứng trước `enforce_initial_reasoning` trong danh sách vì hook `after_model` chạy ngược. Bản nháp có thể đã stream ra, giới hạn đã biết. |
 | `emit_tool_result` | `wrap_tool_call` | Sau mỗi tool: ghi một bước `type="tool"` vào `AgentContext.reasoning_steps` và phát `message.tool_result`. |
 
-Đang **tắt** (có code, comment trong `default_middleware()`): `emit_reasoning_step` (phát `message.thinking`),
-`critic_review` (chấm bản nháp cuối, tối đa `MAX_CRITIC_RETRIES` lần) và `SummarizationMiddleware` (tóm tắt
-lịch sử dài).
+Đang **tắt** (có code, comment trong `default_middleware()`): `SummarizationMiddleware` (tóm tắt lịch sử dài).
+`emit_reasoning_step` (phát `message.thinking`) đang bật.
 
-`evidence_reasoning_check` (`wrap_tool_call`, đứng sau `emit_tool_result`) từ chối `record_reasoning` khi (1) có dữ kiện nguồn `"user"` không truy được về lời người dùng (kể cả câu trả lời `ask_user`; đối chiếu theo từ khoá, ngưỡng 50%) hoặc (2) có giả thuyết ở stage `after_evidence` / `final` trong khi không có bằng chứng. Schema của `record_reasoning` cũng bắt: stage `initial` không hiển thị độ tin cậy (chưa có bằng chứng), độ tin cậy "vừa"/"cao" cần ít nhất một dữ kiện từ tool/web ủng hộ, và `hypotheses` được phép rỗng ở `after_evidence` / `final`.
+Đã bỏ các kiểm tra từ khoá theo từng bước (`evidence_reasoning_check`, `evidence_answer_check`): chúng bắt nhầm các dữ kiện diễn đạt lại (vd "Triệu chứng ngứa") và tốn lượt gọi lại. Schema của `record_reasoning` vẫn bắt: stage `initial` không hiển thị độ tin cậy, độ tin cậy "vừa"/"cao" cần ít nhất một dữ kiện từ tool/web ủng hộ, và `hypotheses` được phép rỗng ở `after_evidence` / `final`.
 
 `record_reasoning` là tool ép lập luận có cấu trúc theo 3 giai đoạn (`initial` → `after_evidence` → `final`).
 Trạng thái được **suy ra từ `messages`** của turn nên tự đúng khi resume sau `ask_user`, không có state riêng.
@@ -141,7 +145,7 @@ Trạng thái được **suy ra từ `messages`** của turn nên tự đúng kh
 4. Worker chạy `handle_resume` → `astream(Command(resume=answer))`: `interrupt()` trả về đúng câu trả lời
    và turn chạy tiếp từ chỗ dừng, cùng `message_id`.
 
-Checkpointer là `InMemorySaver` nên **chỉ dùng được khi chạy một worker** (xem mục 8).
+Checkpointer là `AsyncPostgresSaver` (schema `langgraph`, `agent/persistence.py`) nên lịch sử hội thoại sống qua restart worker; vẫn **nên chạy một worker** vì khoá chống chạy đè theo hội thoại nằm trong tiến trình (xem mục 8).
 
 ## 6. Event realtime và dữ liệu lưu
 
@@ -176,18 +180,22 @@ và người dùng hỏi lại được ngay.
 
 ## 8. Giới hạn đã biết
 
-- **`InMemorySaver` / `InMemoryStore`**: checkpoint và long-term memory mất khi worker khởi động lại và
-  không chia sẻ giữa nhiều worker. Chạy nhiều worker cần checkpointer / store bền (Postgres hoặc Redis).
+- **Checkpoint và memory ở Postgres** (`AsyncPostgresSaver` + `AsyncPostgresStore`, schema `langgraph`, mở ở
+  `agent/worker.py::main` qua `agent/persistence.py`; xem `kien-truc-memory.md`). Giới hạn: khoá theo hội thoại
+  (`worker.py`) chỉ có hiệu lực trong một tiến trình nên chạy nhiều worker có thể xử lý hai turn cùng hội thoại
+  đồng thời (chưa thử); mỗi lượt sinh nhiều checkpoint (đo 6 mỗi lượt với graph giả) và chưa có việc dọn hay xoá khi
+  xoá hội thoại (`adelete_thread` có sẵn nhưng chưa được gọi); `diag` chưa có kiểu/`version` nên đổi cấu trúc có thể
+  làm hội thoại cũ đọc sai. `debug_app.py` vẫn dùng checkpoint RAM.
 - **Ngân sách tool nằm trong prompt**, không được code ép (khoảng 10 lần gọi tool / lượt, tối đa 3 vòng
   hỏi lại). Model không tuân thủ thì không có chặn cứng nào ngoài giới hạn đệ quy mặc định của LangGraph.
 - Kết quả của agent chỉ là **gợi ý hỗ trợ, không phải chẩn đoán y khoa**; điều này nằm trong `SYSTEM_PROMPT`.
 
 ## 9. Thêm tool / middleware mới
 
-- **Tool**: viết hàm `@tool` trong `agent/tools/`, thêm vào `ALL_TOOLS` (`pre_diagnosis_graph.py`) và thêm nhãn tiếng
+- **Tool**: viết hàm `@tool` trong `agent/tools/`, thêm vào `ALL_TOOLS` (`graph/v1/pre_diagnosis_graph.py`; v2: `build_tools()` trong `graph/v2/pre_diagnosis_graph.py`) và thêm nhãn tiếng
   Việt vào `TOOL_DISPLAY_NAMES` (`graph/common.py`, thiếu thì hiển thị tên hàm). Nếu cần dùng `user_id`,
   ảnh... thì nhận `runtime: ToolRuntime` để đọc `AgentContext`. Cần hỏi người dùng giữa chừng: gọi
   `interrupt()` như `ask_user`. Cập nhật mục hướng dẫn chọn tool trong `SYSTEM_PROMPT`.
-- **Middleware**: viết bằng `@wrap_model_call` / `@wrap_tool_call` / `@after_model`, thêm vào
+- **Middleware** (v1): viết bằng `@wrap_model_call` / `@wrap_tool_call` / `@after_model` trong `middleware/v1/` (hoặc `middleware/common/` nếu cả hai bản dùng), thêm vào
   `default_middleware()`. Thứ tự là thứ tự áp dụng; `select_model` luôn đứng đầu.
 - Thử nghiệm prompt / tool / middleware mà không cần API, RabbitMQ hay Postgres: skill `experiment-agent-flow`.
