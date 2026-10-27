@@ -121,8 +121,7 @@ def build_chat_graph(
         graph.add_edge(START, "pre_diagnosis")
     graph.add_edge("pre_diagnosis", END)
     return graph.compile(
-        # InMemorySaver/InMemoryStore: đủ cho dev (worker 1 tiến trình duy nhất).
-        # Production cần backend bền vững hơn — xem `agent/tools/memory.py`.
+        # Bản RAM dùng cho test/debug và lúc import; worker thay bằng Postgres khi khởi động (`agent/persistence.py`).
         checkpointer=checkpointer or InMemorySaver(),
         store=store or build_memory_store(),
     )

@@ -1,107 +1,49 @@
-# Long-term memory — Qdrant + distill bằng LLM
+# Memory dài hạn theo hồ sơ bệnh nhân (Postgres, cập nhật theo batch)
 
-Xem [`kien-truc-agent.md`](./kien-truc-agent.md) cho cách agent chạy một turn (`create_agent` của LangChain) — tài liệu
-này chỉ mô tả lớp memory PHỤ TRỢ nằm ngoài 1 turn.
+Xem [`kien-truc-agent.md`](./kien-truc-agent.md) cho cách agent chạy một lượt. Tài liệu này chỉ mô tả lớp memory phụ trợ nằm ngoài một lượt. Mã: `agent/tools/memory.py`.
 
-## 0. Vấn đề cần giải quyết
+## 1. Memory là gì
+- Chuỗi chữ ngắn về thông tin **dùng lâu dài** của một bệnh nhân (tiền sử, bệnh nền, thuốc đang dùng, dị ứng, mang thai…). Không lưu triệu chứng tức thời của lần chat, lời của trợ lý hay suy đoán chẩn đoán.
+- Khoá theo **hồ sơ bệnh nhân** (`patient_profile_id`, lấy từ `Conversation` trong `agent/context/builder.py`), không theo tài khoản: một tài khoản quản lý hồ sơ cho cả người nhà nên memory theo tài khoản sẽ trộn người với nhau.
+- Mỗi bản ghi: `{content}`; không có vector, không có loại hay nguồn. Memory **tách biệt** với dữ kiện lâm sàng (`diag.facts` / `clinical_facts`): hai bên không đọc hay ghi chéo.
 
-Trước khi có cơ chế này, Agent **không nhớ gì ngoài phạm vi 1 turn**:
-`worker.py::_initial_state()` build `messages` chỉ từ đúng 1 `HumanMessage` (nội dung tin nhắn
-hiện tại). Kể cả 2 turn liên tiếp trong CÙNG 1 hội thoại, turn sau không thấy turn trước —
-LangGraph checkpointer dùng `thread_id = message_id` của TỪNG turn (không phải
-`conversation_id`), nên state không tự nối giữa các turn.
+## 2. Lưu ở đâu
+- `AsyncPostgresStore` (gói `langgraph-checkpoint-postgres`) trong schema riêng `langgraph` của cùng database, **không cấu hình `index`** nên không embedding, không cần pgvector. Worker mở store lúc khởi động (`agent/worker.py::main`, `agent/persistence.py::postgres_persistence()`, tự tạo bảng, dùng chung kết nối schema với checkpoint hội thoại) rồi gán vào `chat_graph.store`.
+- Alembic của Core chỉ soi schema mặc định nên không đụng schema `langgraph` (`python -m alembic check` báo "No new upgrade operations detected").
+- Test và `debug_app.py` dùng `InMemoryStore()` (không bền).
+- **Ngoại lệ so với quy tắc "chỉ Core ghi Postgres":** worker ghi trực tiếp các bảng của store trong schema `langgraph` (trạng thái nội bộ của agent, không phải dữ liệu nghiệp vụ của Core).
 
-## 1. Thiết kế: 1 cơ chế duy nhất cho cả 2 phạm vi
+Các namespace, đều theo `(patient_profile_id, …)`:
 
-Thay vì tách riêng "nhớ trong hội thoại" và "nhớ xuyên hội thoại", cả 2 dùng **chung 1 cơ chế**:
-mỗi turn hoàn tất được tóm tắt (distill) thành 1 "memory" ngắn gọn, gắn `user_id`, lưu vector
-vào Qdrant; turn mới nào cũng semantic-search theo `user_id` (không lọc theo `conversation_id`)
-để lấy memory liên quan nhất — bất kể memory đó đến từ hội thoại nào. Vì vậy 1 memory từ turn
-trước TRONG CÙNG hội thoại tự nhiên xuất hiện lại (nếu liên quan) y hệt cách 1 memory từ hội
-thoại khác xuất hiện — không cần logic riêng cho từng phạm vi.
-
-**Đánh đổi có chủ đích**: memory là bản tóm tắt (lossy), KHÔNG phải replay nguyên văn hội thoại
-cũ — tránh phình context vô hạn theo thời gian, đổi lại model không nhớ chính xác từng câu chữ
-đã nói, chỉ nhớ các "fact" quan trọng (tình trạng da, tiền sử, thuốc đã dùng/khuyến nghị, dị
-ứng...).
-
-## 2. Luồng dữ liệu
-
-```
-Turn mới đến (worker.py::_handle_turn)
-        │
-        ▼
-_load_memory_context(conversation_id, query_text=tin nhắn user)
-        │  1. Đọc Postgres: Conversation.user_id (READ — không phạm nguyên tắc
-        │     "Core là writer duy nhất", nguyên tắc đó chỉ áp dụng cho WRITE)
-        │  2. memory.retrieve_context(user_id, query_text)
-        │       → embed query_text (Google gemini-embedding-001, 768 chiều)
-        │       → Qdrant semantic search, filter user_id, score_threshold=0.5
-        ▼
-SystemMessage(memory_context) được thêm vào ĐẦU state["messages"], trước HumanMessage
-        │
-        ▼
-   ... graph chạy turn như bình thường (pre_step/reasoning/tool_wait/finalize) ...
-        │
-        ▼
-Turn xong (status="done", KHÔNG áp dụng cho turn tạm dừng chờ ask_user)
-        │
-        ▼
-memory.distill_and_store(user_id, conversation_id, message_id, user_content, reasoning, answer)
-        │  1. Gọi LLM (get_llm(), không tools) tóm tắt toàn bộ Reasoning của turn
-        │     (câu hỏi/trả lời ask_user, kết quả tool, câu trả lời cuối) thành
-        │     tối đa 5 gạch đầu dòng. Rỗng (không có gì đáng nhớ) → bỏ qua, không lưu.
-        │  2. embed(summary) → upsert vào Qdrant (payload: user_id, conversation_id,
-        │     message_id, summary, created_at)
-        ▼
-   Memory sẵn sàng cho turn kế tiếp (hội thoại này hoặc hội thoại khác của user)
-```
-
-## 3. Vì sao Qdrant (không phải bảng Postgres)
-
-Codebase dùng SQLAlchemy model + repository cho mọi thứ khác (`Message`/`Conversation`/`User`),
-nhưng memory cần **semantic search** (tìm theo độ liên quan ngữ nghĩa, không phải theo khoá
-chính xác hay thời gian) — Postgres thuần không hỗ trợ việc này tốt (cần extension `pgvector`
-mới làm được). Qdrant là kho dữ liệu **hoàn toàn tách biệt** khỏi Postgres:
-
-- Nguyên tắc "Core là writer duy nhất của bảng `messages`" (từ `agent_response_queue`,
-  `docs/async-api-doc.md` mục 6) **chỉ áp dụng cho Postgres** — Qdrant không nằm trong phạm vi
-  đó. Agent Worker đọc/ghi Qdrant **trực tiếp**, không qua RabbitMQ/Core.
-- Không dùng LangGraph Store API (`langgraph.store.*`) dù đã có sẵn trong dependency — giữ 1
-  pattern nhất quán (client wrapper module-level, cùng phong cách `redis_client.py`/
-  `rabbitmq_client.py`) thay vì thêm 1 khái niệm mới vào codebase.
-
-## 4. File liên quan
-
-| File | Vai trò |
+| Namespace | Nội dung |
 |---|---|
-| `app/infra/qdrant_client.py` | Client wrapper thuần: `ensure_collection`/`upsert_memory`/`search_memories`. Dùng `query_points()` (không phải `.search()` — đã deprecate ở `qdrant-client>=1.10`). |
-| `agent/tools/memory.py` | Business logic: `distill_and_store()`, `retrieve_context()`, `_reasoning_transcript()`. |
-| `agent/worker.py` | Nối vào luồng turn: `_load_memory_context()` (gọi trong `_initial_state()`), lệnh gọi `distill_and_store()` sau khi turn `status="done"`, `main()` gọi `ensure_collection()` lúc khởi động. |
+| `memories` | memory đang hiệu lực |
+| `memory_pending` | bộ đệm tin nhắn của người dùng chờ batch (`{text, conversation_id, at}`) |
+| `memory_meta` | mốc `last_batch_at`, `last_consolidated_at`, `changes_since_consolidate` |
+| `memories_archive` | bản sao các memory cũ trước mỗi lần gom |
 
-## 5. Model embedding
+## 3. Đọc
+- Graph v2: node đầu `load_memory` đọc **một lần** rồi đặt chuỗi vào `AgentContext.memory_text`; `plan` / `choose_tools` / `reflect` / `answer` chỉ nối chuỗi đó vào prompt (`inject_memory`), không chạm store.
+- Graph v1: middleware `inject_long_term_memory` gọi `with_memory` ở mỗi lần gọi model (một truy vấn SQL, rất rẻ vì không embedding).
+- Lấy tối đa `MAX_INJECTED = 10` bản **mới cập nhật nhất**, không lọc theo độ liên quan. Người có hơn 10 bản sẽ không thấy các bản cũ hơn trong prompt.
 
-`models/gemini-embedding-001` (Google, cùng provider với `AGENT_MODEL`, dùng chung
-`GOOGLE_API_KEY` — không cần thêm provider mới). Mặc định trả vector 3072 chiều nhưng hỗ trợ
-Matryoshka truncation qua tham số `output_dimensionality` — dự án giới hạn về **768** chiều
-(`agent/tools/memory.py::_EMBEDDING_DIM`, PHẢI khớp `app/infra/qdrant_client.py::EMBEDDING_DIM`)
-để vector gọn hơn, đủ tốt cho tập dữ liệu memory nhỏ.
+## 4. Ghi: chạy nền, theo batch
+Không còn tool `save_memory` hay node ghi trong graph. Sau khi câu trả lời đã gửi, `agent/turn.py::_schedule_memory_update` chạy `after_turn()` bằng `asyncio.create_task` nên lượt không phải chờ.
 
-**Lưu ý lịch sử**: model cũ `models/text-embedding-004` (nhắc tới trong 1 số hướng dẫn cũ) đã
-bị Google khai tử cho API key mới (404 NOT_FOUND) — xác nhận qua `ListModels`
-(`supportedGenerationMethods` chứa `embedContent`) trước khi chọn model, đừng giả định tên
-model còn hoạt động.
+1. `after_turn` ghi tin nhắn người dùng vào bộ đệm `memory_pending` (không gọi LLM). Lần đầu thấy hồ sơ thì đặt mốc `last_batch_at = bây giờ` để batch đầu cũng đợi đủ một chu kỳ.
+2. Đủ điều kiện thì chạy batch: bộ đệm có ≥ `AGENT_MEMORY_BATCH_MAX_PENDING` tin (mặc định 20), hoặc đã qua ≥ `AGENT_MEMORY_BATCH_INTERVAL_MIN` phút (mặc định 60; đặt 0 để chỉ batch theo số tin) kể từ batch trước. Không có cron: batch chỉ chạy khi hồ sơ đó có lượt mới.
+3. Batch (`run_batch`): một lần gọi LLM nhận memory hiện có (nhãn M1, M2…) và toàn bộ tin trong bộ đệm, trả các thao tác `add` / `update` (ghi đè bản `target_key`, dùng khi cùng chủ đề hoặc mâu thuẫn như "đã sinh" so với "đang mang thai") / `skip`. Nhãn lạ coi là `add`. Mọi quyết định `logger.info` kèm nội dung cũ và mới. Xong thì xoá bộ đệm.
+4. Lỗi LLM: ghi `logger.warning`, **giữ nguyên bộ đệm** để lần sau thử lại. Lỗi store: `logger.exception`, không làm sập worker.
+5. Hai batch của cùng một hồ sơ không chạy đè nhau (khoá theo hồ sơ trong tiến trình worker).
 
-## 6. Chịu lỗi
+## 5. Gom định kỳ
+Chạy ngay sau một batch thành công khi: số bản ghi ≥ `AGENT_MEMORY_CONSOLIDATE_AT` (15), **hoặc** đã qua `AGENT_MEMORY_CONSOLIDATE_DAYS` ngày (7) kể từ lần gom trước và có ≥ 5 thay đổi. Một lần gọi LLM trả danh sách gọn (tối đa 10 mục: gộp trùng, bản mới thắng khi mâu thuẫn, không thêm thông tin). Trước khi thay, bản cũ được chép sang `memories_archive`; kết quả rỗng, quá 10 mục hoặc lỗi thì giữ nguyên danh sách và ghi warning.
 
-Toàn bộ `memory.py` (`distill_and_store`, `retrieve_context`) tự bắt exception, chỉ `print` log
-— KHÔNG bao giờ raise ra ngoài. Qdrant down / LLM distill lỗi / embedding lỗi đều không được
-làm hỏng turn chính (đã kiểm chứng: tắt hẳn container `derma-qdrant` giữa chừng, turn vẫn hoàn
-tất bình thường, chỉ thiếu phần memory).
-
-## 7. Giới hạn đã biết
-
-- `retrieve_context`/`distill_and_store` không dùng transaction/queue nào đảm bảo — nếu Worker
-  crash giữa lúc distill, memory của turn đó bị mất (chấp nhận được vì memory là phụ trợ).
-- Không có cơ chế dọn memory cũ/trùng lặp — theo thời gian số point trong Qdrant tăng vô hạn.
-- `score_threshold=0.5` (cosine) là giá trị chọn tạm — chưa tuning theo dữ liệu thật.
+## 6. Giới hạn đã biết
+- Quyết định thêm / ghi đè / gom do LLM, có thể sai (gộp hoặc ghi đè nhầm thông tin y tế); bù bằng log và archive, chưa có giao diện khôi phục.
+- Memory mới chỉ có tác dụng sau khi batch chạy, nên cuộc trò chuyện ngay sau đó có thể chưa thấy; người ngừng chat thì bộ đệm chưa được xử lý tới lượt kế.
+- Tác vụ nền mất nếu worker tắt giữa lúc batch; bộ đệm vẫn còn nên batch sau xử lý lại. Khoá theo hồ sơ chỉ có hiệu lực trong một worker (nhiều worker cần khoá phân tán).
+- Chưa có chính sách xoá memory, bộ đệm và archive khi xoá hồ sơ (chưa tìm thấy API xoá hồ sơ trong code); đây là dữ liệu y tế.
+- **Thử với LLM thật (hồ sơ thử, Postgres thật):** batch ghi đúng thông tin dài hạn và bỏ qua triệu chứng tức thời; ghi đè khi bệnh nhân đính chính hoạt động. **Rủi ro đã thấy:** tin "em không bị dị ứng penicillin nữa, đã thử lại ổn" khiến bản "dị ứng penicillin" bị ghi đè thành "không còn dị ứng", tức dị ứng bị xoá chỉ dựa vào lời bệnh nhân. Chưa có quy tắc bảo vệ dị ứng (ví dụ chỉ chú thích "bệnh nhân báo đã hết, chưa xác nhận" thay vì xoá).
+- **Chất lượng bước gom chưa được kiểm chứng:** lần thử duy nhất dùng dữ liệu tự tạo mâu thuẫn nên không đánh giá được; chưa có kiểm tra tự động chặn kết quả gom chứa thông tin không có trong danh sách cũ.
+- `debug_app.py` chạy graph trực tiếp nên không chạy hook ghi memory.

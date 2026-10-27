@@ -2,15 +2,12 @@ import asyncio
 import logging
 import uuid
 from collections import defaultdict
-from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any, AsyncIterator, Literal
+from typing import Any, Literal
 
-import psycopg
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.store.base import BaseStore
 from langgraph.store.memory import InMemoryStore
-from langgraph.store.postgres import AsyncPostgresStore
 from pydantic import BaseModel, Field
 
 from agent.common.llm import get_model
@@ -73,20 +70,8 @@ class ConsolidatedMemory(BaseModel):
 
 
 def build_memory_store() -> BaseStore:
-    """Store trong RAM (test, debug, module-level `chat_graph`); worker thay bằng store Postgres lúc khởi động."""
+    """Store trong RAM (test, debug, module-level `chat_graph`); worker thay bằng store Postgres lúc khởi động (`agent/persistence.py`)."""
     return InMemoryStore()
-
-
-@asynccontextmanager
-async def postgres_memory_store() -> AsyncIterator[BaseStore]:
-    """Store Postgres trong schema `langgraph` riêng để Alembic của Core không đụng tới; tự tạo bảng khi mở."""
-    url = settings.DATABASE_URL.replace("+asyncpg", "")
-    async with await psycopg.AsyncConnection.connect(url, autocommit=True) as conn:
-        await conn.execute("CREATE SCHEMA IF NOT EXISTS langgraph")
-    sep = "&" if "?" in url else "?"
-    async with AsyncPostgresStore.from_conn_string(f"{url}{sep}options=-csearch_path%3Dlanggraph") as store:
-        await store.setup()
-        yield store
 
 
 def _now() -> datetime:

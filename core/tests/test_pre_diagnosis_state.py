@@ -5,6 +5,7 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from agent.common.fact_extractor import ExtractedFact, ExtractedFacts, extract_facts, merge_facts, validate_facts_evidence
@@ -128,6 +129,32 @@ class DiagPersistTest(unittest.TestCase):
         self.assertEqual([f["template_label"] for f in seen[1]["facts"]], ["f0"])
         self.assertEqual(seen[1]["done_calls"], ["call0"])
         self.assertEqual(seen[2]["facts"], None)
+
+
+class CheckpointerSwapTest(unittest.TestCase):
+    def test_checkpointer_assigned_after_compile_is_used(self):
+        async def step(state: PreDiagState) -> dict[str, Any]:
+            return {"messages": [AIMessage(content="ok")], "facts": [fact("f", "x")]}
+
+        fake = StateGraph(PreDiagState)
+        fake.add_node("step", step)
+        fake.add_edge(START, "step")
+        fake.add_edge("step", END)
+        with patch.object(settings, "AGENT_TRIAGE_ENABLED", False):
+            graph = build_chat_graph(pre_diagnosis=cast(Any, fake.compile()))
+        default_saver, swapped = graph.checkpointer, InMemorySaver()
+        graph.checkpointer = swapped  # cách worker thay checkpoint RAM bằng Postgres sau khi graph đã biên dịch
+        ctx = AgentContext(user_id="u", conversation_id="c")
+        cfg = config_for("thread-swap")
+
+        async def scenario() -> Any:
+            await graph.ainvoke({"messages": [HumanMessage(content="tôi ngứa")]}, config=cfg, context=ctx)
+            return await graph.aget_state(cfg)
+
+        state = run(scenario())
+        self.assertEqual(state.values["diag"]["facts"][0]["template_label"], "f")
+        self.assertIsNotNone(swapped.get_tuple(cfg))
+        self.assertIsNone(cast(Any, default_saver).get_tuple(cfg))
 
 
 class MemoryInjectedAtFirstNodeTest(unittest.TestCase):
