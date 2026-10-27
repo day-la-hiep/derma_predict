@@ -61,7 +61,7 @@ Trạng thái được đối chiếu với code ngày **2026-10-05** (nhánh `f
 | M2.7 | Tra cứu thông tin bệnh lý từ KB | ✅ | guideline BYT / WHO / MedlinePlus (Qdrant), PrimeKG + DermO (Neo4j), web nguồn uy tín |
 | M2.8 | Tra cứu **ca bệnh liên quan** | 🔲 | chưa có kho ca bệnh, phụ thuộc M7 |
 | M2.9 | Chọn model LLM cho hội thoại | ✅ | `/models`, `PATCH /conversations/{id}/model` |
-| M2.10 | Ghi nhớ thông tin bệnh nhân giữa các hội thoại | 🟡 | `save_memory` + `inject_long_term_memory` chạy được nhưng store in-memory, mất khi restart Worker |
+| M2.10 | Ghi nhớ thông tin bệnh nhân giữa các hội thoại | 🟡 | Memory theo hồ sơ lưu Postgres (schema `langgraph`), ghi theo batch ở nền; checkpoint hội thoại cũng lưu Postgres; chưa có chính sách xoá / dọn khi xoá hồ sơ hay hội thoại |
 | M2.11 | Trích dẫn nguồn (sources) cho câu trả lời | 🟡 | đã có `Source` (`dto/common/chat.py`, lưu trong `messages.metadata` JSON, không có bảng riêng); agent chưa sinh, `ChatSourceDto` trên wire chưa khớp `Source` |
 
 ### M3 — Clinical fact & báo cáo tiền tư vấn

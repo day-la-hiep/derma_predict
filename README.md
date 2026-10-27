@@ -163,7 +163,7 @@ Chi tiết trong các skill ở `.claude/skills/`; dưới đây là các điể
 ## 6. Hạn chế đã biết
 
 - Chưa có auth đa người dùng: chat truyền `user_id` từ client, khu admin chưa phân quyền.
-- Checkpointer và long-term memory của agent đang in-memory → mất khi restart Worker, chỉ chạy được 1 Worker.
+- Checkpoint hội thoại (lịch sử của agent và `diag`) và long-term memory đều lưu Postgres (schema `langgraph`); chỉ chạy 1 Worker vì khoá chống chạy đè theo hội thoại nằm trong tiến trình.
 - Mỗi hội thoại một turn một lúc (không có Steer); đang chờ trả lời câu hỏi thì không gửi được tin mới.
 - Upload PDF đi qua Core; DB và MinIO không cùng transaction thật; chưa có job dọn object mồ côi.
 - Chunk sách đã nạp Qdrant nhưng agent chat chưa có tool tra collection này.

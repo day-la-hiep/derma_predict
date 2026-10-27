@@ -127,7 +127,6 @@ Agent gồm hai graph. **Chat graph** (`chat_graph.py`) lọc intent: tin xã gi
 |---|---|---|
 | `record_reasoning` | ghi lập luận có cấu trúc (hiện thành bước suy luận trên UI) | — |
 | `ask_user` | hỏi lại người dùng, có lựa chọn | `interrupt()` |
-| `save_memory` | lưu thông tin đáng nhớ về người dùng | LangGraph store |
 | `hybrid_retrieval` | tool tra cứu **mặc định** cho yêu cầu chung: sách giáo khoa đã số hoá + đồ thị tri thức, chạy semantic + BM25 + KG (trích thực thể → DermO → PrimeKG, bệnh ứng viên) rồi rerank bằng Qwen3-Reranker (OpenRouter); trả đoạn kèm nguồn (sách, mục, trang) | Qdrant `derma_document_chunks` + Neo4j PrimeKG/DermO |
 | `semantic_search` | (chuyên biệt) tra sách giáo khoa đã số hoá theo ngữ nghĩa (embedding → Qdrant), rerank bằng Qwen3-Reranker (OpenRouter); trả đoạn kèm nguồn (sách, mục, trang) | Qdrant `derma_document_chunks` |
 | `keyword_search` | (chuyên biệt) tra sách giáo khoa theo từ khoá (BM25 do Qdrant chấm trên sparse vector) — bắt tên thuốc, thuật ngữ; cùng dạng kết quả với `semantic_search` | Qdrant `derma_document_chunks` |
@@ -138,8 +137,10 @@ Agent gồm hai graph. **Chat graph** (`chat_graph.py`) lọc intent: tin xã gi
 
 ### Long-term memory
 
-Trước mỗi lần gọi LLM, `inject_long_term_memory` semantic search memory theo `user_id` (xuyên hội thoại) và
-chèn vào system prompt; agent chủ động ghi qua `save_memory`. Store hiện là `InMemoryStore`.
+Memory theo **hồ sơ bệnh nhân** (xuyên hội thoại), lưu Postgres (schema `langgraph`), không embedding. Đọc: tối đa 10 bản
+mới nhất chèn vào system prompt (v2 đọc một lần ở node `load_memory`, v1 qua `inject_long_term_memory`). Ghi: không còn
+tool; sau khi trả lời, worker chạy nền gom tin người dùng vào bộ đệm rồi cập nhật memory theo batch (đối chiếu với memory
+cũ: thêm / ghi đè / bỏ qua) và gom định kỳ. Chi tiết: `core/app/kien-truc-memory.md`.
 
 ## 7. Ảnh đính kèm
 
@@ -150,7 +151,7 @@ kiểm tra file đã tồn tại, nối vào tin qua `message_files`; chỉ ản
 ## 8. Hạn chế / đơn giản hoá có chủ ý
 
 - Chưa có auth: `user_id` truyền từ client (FE dùng `user-1`).
-- Checkpointer + memory store in-memory → mất khi restart Worker, chỉ chạy 1 Worker.
+- Checkpoint hội thoại (lịch sử của agent và `diag`) và long-term memory đều lưu Postgres (schema `langgraph`); chỉ chạy 1 Worker vì khoá chống chạy đè theo hội thoại nằm trong tiến trình.
 - Không có Steer: người dùng phải chờ turn xong (hoặc trả lời câu hỏi đang chờ) mới gửi được tin mới.
 - Row assistant có thể kẹt `queued` nếu FE gửi tin nhưng không mở SSE (key Redis có TTL, row DB thì không);
   chưa có job dọn.

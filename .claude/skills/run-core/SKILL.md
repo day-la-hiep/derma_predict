@@ -66,10 +66,11 @@ terminals, then the Next.js app in `../fe` (`pnpm dev`). Not usable headless.
   it's the infra, not the code.
 - `send`/`chat` against an unknown conversation id returns HTTP 500 (not 404).
 - Run exactly ONE worker. Two consumers share `agent_request_queue` round-robin, but the checkpointer
-  and long-term store are in-memory per process, so turns of one conversation land on different
-  processes and the agent "forgets" earlier messages (seen: same-conversation follow-up answered
+  and the per-conversation lock are per process (checkpoint and long-term memory are in Postgres, schema `langgraph`), so two
+  workers may run two turns of one conversation at the same time (untested); earlier it was worse: with in-memory state turns landed on different
+  processes and the agent "forgot" earlier messages (seen: same-conversation follow-up answered
   "you haven't told me"). Check with `docker exec derma-rabbitmq rabbitmqctl list_queues name consumers`
-  (expect `agent_request_queue 1`). A worker restart/auto-reload also wipes all conversation memory.
+  (expect `agent_request_queue 1`). A worker restart/auto-reload keeps the conversation checkpoint (history and `diag`) and long-term memory in Postgres; `make debug-app` still uses RAM checkpoints.
 - Qdrant in compose has `QDRANT__SERVICE__API_KEY=derma_qdrant_2026`; `.env` needs
   `QDRANT_API_KEY=derma_qdrant_2026` (read by `app/infra/qdrant_client.py`), else `hybrid_retrieval`
   returns a failed-leg note (`401 Must provide an API key`). The book-chunk collection

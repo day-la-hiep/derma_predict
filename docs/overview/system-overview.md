@@ -85,7 +85,7 @@ Guideline/KG phải được nạp trước thì agent mới tra cứu được 
 ## 6. Hạn chế chung (đồ án)
 
 - Chưa có auth đa người dùng: chat truyền `user_id` từ client, khu admin chưa phân quyền.
-- Checkpointer và long-term memory của agent đang in-memory → mất khi restart Worker, chỉ chạy được 1 Worker.
+- Checkpoint hội thoại (lịch sử của agent và `diag`) và long-term memory đều lưu Postgres (schema `langgraph`); chỉ chạy 1 Worker vì khoá chống chạy đè theo hội thoại nằm trong tiến trình.
 - DB và MinIO không cùng transaction thật; chưa có job dọn object mồ côi.
 - Schema tư vấn bác sĩ / video call đã có nhưng chưa có API và màn hình.
 - Chunk sách đã nạp Qdrant nhưng agent chat **chưa có tool tra** collection `derma_document_chunks`.

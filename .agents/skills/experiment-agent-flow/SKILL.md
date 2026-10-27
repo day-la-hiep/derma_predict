@@ -71,8 +71,9 @@ uv run python $E/experiment.py --cases $E/examples/cases.json --variants $E/exam
   so the `budget` check fails there — a real finding, not a driver bug.
 - Conversation id is empty on purpose: `emit_reasoning_step`/`emit_tool_result` skip publishing and
   `AgentContext.reasoning_steps` stays empty. Use the driver's own trace instead.
-- Long-term memory is an in-memory store created per process, so `inject_long_term_memory` has
-  nothing to recall unless a tool (`save_memory`) wrote it earlier in the same run.
+- Long-term memory is keyed by `AgentContext.patient_profile_id` (empty in the driver) and is written by the
+  worker's background batch (`agent/turn.py`), not by a tool; the driver bypasses `turn.py`, so
+  `inject_long_term_memory` has nothing to recall in experiments.
 - `classify_skin_image` needs MinIO and an attached image key; it is not exercised here.
 - `--parallel N` prints traces after all runs finish (not interleaved); rate limits from the LLM
   provider can make parallel runs slow or fail (shows as `error` in the summary).

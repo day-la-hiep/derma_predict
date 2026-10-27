@@ -31,7 +31,7 @@ Cấp 1 số `n` tương ứng module `Mn` trong [requirements.md](requirements.
 | | | 2.3.4 Cảnh báo dấu hiệu nguy hiểm | Khi phát hiện dấu hiệu cần khám ngay, chatbot khuyến nghị bệnh nhân đi khám hoặc yêu cầu tư vấn bác sĩ. |
 | | 2.4 Tra cứu tri thức | 2.4.1 Tra cứu thông tin bệnh lý | Chatbot tra guideline (BYT, WHO, MedlinePlus), sách đã số hoá và web uy tín để trả lời về nguyên nhân, triệu chứng, điều trị, phòng ngừa. |
 | | | 2.4.2 Tra cứu ca bệnh liên quan | Tìm các ca bệnh đã được bác sĩ xác nhận có triệu chứng / hình ảnh tương tự để tham khảo. |
-| | 2.5 Ghi nhớ bệnh nhân | 2.5.1 Lưu thông tin quan trọng | Chatbot tự lưu thông tin đáng nhớ (tiền sử, dị ứng, thuốc đang dùng...) của bệnh nhân. |
+| | 2.5 Ghi nhớ bệnh nhân | 2.5.1 Lưu thông tin quan trọng | Hệ thống tự gom tin nhắn của bệnh nhân và cập nhật bộ nhớ theo batch ở nền (tiền sử, dị ứng, thuốc đang dùng...), theo hồ sơ bệnh nhân. |
 | | | 2.5.2 Sử dụng lại thông tin đã nhớ | Ở các lượt và hội thoại sau, chatbot tự tìm lại thông tin liên quan để không phải hỏi lại. |
 | **3. Tổng hợp thông tin lâm sàng** | 3.1 Clinical fact | 3.1.1 Trích xuất clinical fact | Từ hội thoại với chatbot, hệ thống trích các dữ kiện lâm sàng có cấu trúc: triệu chứng, vị trí, thời gian khởi phát, tiến triển, tiền sử, thuốc, dị ứng, kết quả phân loại ảnh. |
 | | | 3.1.2 Liên kết tin nhắn nguồn | Mỗi clinical fact lưu kèm các tin nhắn gốc làm bằng chứng để bác sĩ kiểm chứng. |

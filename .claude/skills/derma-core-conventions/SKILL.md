@@ -60,10 +60,10 @@ hardcode them. The Core↔Worker contract is `agent/dto/schemas.py` (`TurnReques
 | `agent/middleware/` | `common/` (shared by v1 and v2), `v1/` (reasoning/evidence hooks, v1 only): `@wrap_model_call` / `@wrap_tool_call` / `@after_model` | import `chat_graph` / `pre_diagnosis_graph` |
 | `agent/common/evidence.py` | pure evidence helpers shared by v1 middleware and v2 nodes | import graph/middleware |
 | `agent/common/fact_extractor.py` | clinical-fact extraction shared by v2 node `extract_facts` and the pre-consultation report handler (`extract_facts`, `merge_facts`, `validate_facts_evidence`) | import graph/middleware |
-| `agent/tools/` | one `@tool` per file (or small family) | import FastAPI |
+| `agent/tools/` | one `@tool` per file (or small family); `memory.py` is the long-term memory store + batch update helpers, not a tool | import FastAPI |
 | `agent/context/` | `agent_context.py` = `AgentContext` dataclass (per-turn data tools read via `runtime.context`); `builder.py` = `build_context(req)` that fills it from the DB/request | run the graph |
-| `agent/worker.py` | process entry only: consume queue, per-conversation lock, `main` | hold turn logic |
-| `agent/turn.py` | one turn (agent logic): build `AgentContext`, stream graph, finish (done / `ask_user` question / error) | |
+| `agent/worker.py` | process entry only: consume queue, per-conversation lock, `main` (opens the Postgres store + checkpointer via `agent/persistence.py` and assigns them to `chat_graph`) | hold turn logic |
+| `agent/turn.py` | one turn (agent logic): build `AgentContext`, stream graph, finish (done / `ask_user` question / error), then schedule the background long-term memory update (`_schedule_memory_update`) | |
 | `agent/publisher.py` | worker → backend only (no agent logic): `emit` + `finish_turn` (SSE event → `[DONE]` → `agent_response_queue`) | import graph/tools/middleware |
 | `app/workers/agent_response_consumer.py` | Core-side consumer of `agent_response_queue` that persists the assistant row (runs in Core, not the agent worker) | import from `agent/` beyond `agent/dto/schemas.py` |
 | `agent/prompt/` | `orchestrator.py` (SYSTEM_PROMPT of the pre-diagnosis graph), `triage.py` (short intent-filter prompt), `critic.py` | |
