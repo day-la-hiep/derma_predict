@@ -60,6 +60,22 @@ def label_evidence(tool: str, content: str) -> list[dict[str, str]]:
     return []
 
 
+def add_evidence(evidence: list[dict[str, Any]], items: list[dict[str, str]]) -> int:
+    """Thêm các mục chưa có (cùng loại, nguồn, đầu nội dung thì giữ mã cũ) vào `evidence` kèm mã E#/H#; trả số mục mới."""
+    seen = {(e["kind"], e["source"], e["text"][:300]) for e in evidence}
+    new = 0
+    for item in items:
+        key = (item["kind"], item["source"], item["text"][:300])
+        if key in seen:
+            continue
+        seen.add(key)
+        new += 1
+        prefix = "E" if item["kind"] == "evidence" else "H"
+        n = sum(1 for e in evidence if e["id"].startswith(prefix)) + 1
+        evidence.append({"id": f"{prefix}{n}", **item})
+    return new
+
+
 def ground_hypotheses(
     hypotheses: list[ReflectHypothesis], evidence: list[dict[str, Any]]
 ) -> tuple[list[dict[str, Any]], list[str], list[str]]:

@@ -10,6 +10,12 @@ def _as_list(value: Any) -> Any:
     return value if isinstance(value, list) else [value]
 
 
+def _as_strs(value: Any) -> Any:
+    """Model nhỏ hay chép dạng object của `hypotheses` sang `queries` (`{"disease": "..."}`): lấy giá trị chữ đầu tiên thay vì từ chối."""
+    texts = [next((v for v in item.values() if isinstance(v, str)), "") if isinstance(item, dict) else item for item in _as_list(value)]
+    return [t for t in texts if t != ""]
+
+
 def _first4(value: list[Any]) -> list[Any]:
     """Model hay trả 5+ mục dù prompt nói tối đa 4 — cắt bớt thay vì từ chối cả lần gọi (mỗi lần retry rất tốn thời gian)."""
     return value[:4]
@@ -45,7 +51,7 @@ class PlanInput(BaseModel):
     hypotheses: list[PlanHypothesis] = Field(description="Tối đa 4 giả thuyết")
     queries: list[str] = Field(default_factory=list, description="Tối đa 4 truy vấn tra cứu: cụm từ khoá, mỗi mục tối đa 12 từ, mỗi truy vấn một chủ đề; không phải câu hỏi gửi người dùng. Để RỖNG khi kết quả tra cứu đã có đủ cho câu hỏi này hoặc không cần tra cứu")
 
-    _coerce = field_validator("queries", mode="before")(_as_list)
+    _coerce = field_validator("queries", mode="before")(_as_strs)
     _trim = field_validator("hypotheses", "queries", mode="after")(_first4)
     _short = field_validator("queries", mode="after")(_clip)
 
@@ -69,7 +75,7 @@ class ReflectInput(BaseModel):
     answered: str = Field(description="Một câu ngôi thứ ba (tối đa 25 từ) về điều kết quả vừa rồi cho thấy; không chào hỏi, không xưng hô")
     next_reason: str = Field(description="Một câu ngôi thứ ba (tối đa 25 từ) giải thích lựa chọn `next`")
 
-    _coerce = field_validator("queries", mode="before")(_as_list)
+    _coerce = field_validator("queries", mode="before")(_as_strs)
     _trim = field_validator("hypotheses", "queries", mode="after")(_first4)
     _short = field_validator("queries", "answered", "next_reason", mode="after")(_clip)
 

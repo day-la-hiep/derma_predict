@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import Any, TypeVar, cast
@@ -12,7 +13,8 @@ from agent.common.evidence import message_text
 from agent.common.fact_extractor import extract_facts, facts_text, merge_facts
 from agent.common.llm import get_model
 from agent.context.agent_context import AgentContext
-from agent.graph.v2.evidence import ground_hypotheses, label_evidence
+from agent.graph.v2.image import join_images
+from agent.graph.v2.evidence import add_evidence, ground_hypotheses, label_evidence
 from agent.graph.v2.schemas import PlanInput, ReflectInput, render_plan, render_reflect
 from agent.graph.v2.state import PreDiagState
 from agent.middleware.common.model import inject_memory, load_memory
@@ -107,6 +109,7 @@ async def load_memory_node(state: PreDiagState, runtime: Runtime[AgentContext]) 
     # Node đầu của lượt: đọc memory một lần rồi để trong context; plan / choose_tools / reflect / answer chỉ nối chuỗi này vào prompt.
     ctx = runtime.context
     ctx.memory_text = await load_memory(runtime.store, ctx.patient_profile_id)
+    ctx.image_result = asyncio.get_running_loop().create_future() if ctx.image_keys else None
     return {}
 
 
@@ -133,8 +136,10 @@ async def extract_facts_node(state: PreDiagState, runtime: Runtime[AgentContext]
 async def plan(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
     ctx = runtime.context
     evidence = state.get("evidence", [])
+    # extract_facts và nhánh ảnh chạy song song nên chỉ tới đây mới gộp được dữ kiện từ ảnh vào `facts`.
+    facts = merge_facts(state.get("facts", []), state.get("image_facts", []))
     context = (
-        f"Dữ kiện lâm sàng đã biết:\n{facts_text(state.get('facts', []))}\n\n"
+        f"Dữ kiện lâm sàng đã biết:\n{facts_text(facts)}\n\n"
         f"Giả thuyết đã có căn cứ từ các lượt trước:\n{_plan_text(state.get('plan', []), [])}\n\n"
         f"Đã tra cứu (kèm kết quả): {'; '.join(state.get('call_results', [])) or '(chưa)'}\n\n"
         f"Bằng chứng đã thu được:\n{_digest(evidence)}"
@@ -193,43 +198,36 @@ def choose_tools_node(tools: list[Any]):
             "messages": [ai] if ai.tool_calls else [],
             "done_calls": [*state.get("done_calls", []), *calls],
             "rounds": state.get("rounds", 0) + 1,
+            "new_calls": len(fresh),
         }
 
     return choose_tools
 
 
 async def label_evidence_node(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
+    # Điểm hội tụ của lượt: gộp kết quả node ảnh (đã xong ở các bước trước) cùng kết quả tool trước khi `reflect`.
+    joined = await join_images(state, runtime.context)
+    evidence = list(joined.get("evidence", state.get("evidence", [])))
+    out: dict[str, Any] = {k: v for k, v in joined.items() if k != "evidence"}
     messages = state["messages"]
     last_ai = max((i for i, m in enumerate(messages) if isinstance(m, AIMessage) and m.tool_calls), default=None)
-    if last_ai is None:
-        return {}
-    ai = messages[last_ai]
-    assert isinstance(ai, AIMessage)
-    args_by_id = {c["id"]: c["args"] for c in ai.tool_calls}
-    evidence = list(state.get("evidence", []))
     call_results = list(state.get("call_results", []))
-    # Cùng một đoạn (cùng loại, nguồn, đầu nội dung) trả về ở nhiều lệnh / nhiều vòng chỉ giữ một mục với mã cũ.
-    seen = {(e["kind"], e["source"], e["text"][:300]) for e in evidence}
-    for m in messages[last_ai + 1 :]:
-        if not isinstance(m, ToolMessage):
-            continue
-        name = m.name or ""
-        args = args_by_id.get(m.tool_call_id)
-        await emit_tool_step(runtime.context, name, args, m.content)
-        items = label_evidence(name, message_text(m))
-        new = 0
-        for item in items:
-            key = (item["kind"], item["source"], item["text"][:300])
-            if key in seen:
+    # `new_calls` = 0 khi `choose_tools` không chọn lệnh mới: kết quả tool trong messages là của vòng trước, đã gắn nhãn rồi.
+    if last_ai is not None and state.get("new_calls"):
+        ai = messages[last_ai]
+        assert isinstance(ai, AIMessage)
+        args_by_id = {c["id"]: c["args"] for c in ai.tool_calls}
+        for m in messages[last_ai + 1 :]:
+            if not isinstance(m, ToolMessage):
                 continue
-            seen.add(key)
-            new += 1
-            prefix = "E" if item["kind"] == "evidence" else "H"
-            n = sum(1 for e in evidence if e["id"].startswith(prefix)) + 1
-            evidence.append({"id": f"{prefix}{n}", **item})
-        call_results.append(f"{_call_key(name, args)} → {len(items)} mục, {new} mới")
+            name = m.name or ""
+            args = args_by_id.get(m.tool_call_id)
+            await emit_tool_step(runtime.context, name, args, m.content)
+            items = label_evidence(name, message_text(m))
+            new = add_evidence(evidence, items)
+            call_results.append(f"{_call_key(name, args)} → {len(items)} mục, {new} mới")
     found = any(e["kind"] == "evidence" for e in evidence)
-    return {"evidence": evidence, "evidence_status": "found" if found else "none", "call_results": call_results}
+    return {**out, "evidence": evidence, "evidence_status": "found" if found else "none", "call_results": call_results}
 
 
 async def reflect(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[str, Any]:

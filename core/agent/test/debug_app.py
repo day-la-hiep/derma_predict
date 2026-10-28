@@ -24,9 +24,11 @@ from langgraph.types import Command  # noqa: E402
 from agent.common.llm import get_model  # noqa: E402
 from agent.common.tracing import trace_callback  # noqa: E402
 from agent.context.agent_context import AgentContext  # noqa: E402
+from agent.test.timeline import fmt_ms, spans, tree_rows, tree_text  # noqa: E402
 from agent.graph.v2.nodes import MAX_MODEL_RETRIES, MAX_TOOL_ROUNDS  # noqa: E402
 import agent.middleware.v1.model as v1_model  # noqa: E402
 from agent.graph.chat_graph import build_chat_graph, config_for  # noqa: E402
+from app.api.deps import get_file_store_service  # noqa: E402
 from app.config.settings import settings  # noqa: E402
 
 st.set_page_config(page_title="Debug lập luận agent", layout="wide")
@@ -89,6 +91,8 @@ class CallLog(AsyncCallbackHandler):
         self.calls: list[dict[str, Any]] = []
         self.q: "queue.Queue[tuple[str, Any]] | None" = None
         self.tools: list[dict[str, Any]] = []
+        # Lúc bắt đầu thật của từng node (đường dẫn từ checkpoint_ns), để timeline không phải suy ra từ lúc node trước kết thúc.
+        self.starts: list[dict[str, Any]] = []
         self._parent: dict[str, str] = {}
 
     def _now(self) -> int:
@@ -107,6 +111,11 @@ class CallLog(AsyncCallbackHandler):
     async def on_chain_start(self, serialized, inputs, *, run_id, parent_run_id=None, **kwargs):  # type: ignore[override]
         if parent_run_id:
             self._parent[str(run_id)] = str(parent_run_id)
+        meta = kwargs.get("metadata") or {}
+        # Chỉ chain của chính node (tên trùng `langgraph_node`), bỏ các runnable con bên trong cùng metadata.
+        if meta.get("langgraph_node") and kwargs.get("name") == meta["langgraph_node"]:
+            path = [p.split(":")[0] for p in str(meta.get("langgraph_checkpoint_ns", "")).split("|") if p]
+            self.starts.append({"path": path, "t": self._now()})
 
     async def on_tool_start(self, serialized, input_str, *, run_id, parent_run_id=None, **kwargs):  # type: ignore[override]
         if parent_run_id:
@@ -114,6 +123,7 @@ class CallLog(AsyncCallbackHandler):
         self.tools.append(
             {
                 "run_id": str(run_id),
+                "node": (kwargs.get("metadata") or {}).get("langgraph_node"),
                 "name": kwargs.get("name") or (serialized or {}).get("name") or "tool",
                 "t": self._now(),
                 "input": str(kwargs.get("inputs") or input_str)[:2000],
@@ -241,26 +251,32 @@ async def _drive(graph: Any, payload: Any, config: RunnableConfig, ctx: AgentCon
     # Input của một node = state tích luỹ trước khi áp dụng update của nó (theo từng graph con); lần đầu chỉ có tin nhắn đầu vào.
     initial = _summarize({"messages": payload["messages"]}) if isinstance(payload, dict) else {}
     acc: dict[str, dict[str, Any]] = {}
+
+    def record(ns_key: str, node: str, update: Any, ms: int) -> None:
+        state = acc.setdefault(ns_key, json.loads(json.dumps(initial, default=str)))
+        summary = _summarize(update)
+        q.put(("node", {"t": ms, "ns": ns_key, "node": node, "input": json.loads(json.dumps(state, default=str)), "update": summary}))
+        for k, v in summary.items():
+            if k == "messages":
+                state.setdefault("messages", []).extend(v)
+            else:
+                state[k] = v
+
     try:
         async for ns, mode, chunk in graph.astream(payload, config=config, context=ctx, stream_mode=["updates", "custom"], subgraphs=True):
             ms = int((time.time() - t0) * 1000)
             if mode == "custom":
                 if isinstance(chunk, dict) and chunk.get("type") == "token":
                     q.put(("token", chunk.get("text", "")))
+                elif isinstance(chunk, dict) and chunk.get("type") == "node":
+                    # node của subgraph tầng sâu do `_pre_diagnosis_node` chuyển tiếp: nằm dưới node `pre_diagnosis` của chat graph.
+                    record(f"pre_diagnosis/{chunk['ns']}", chunk["node"], chunk["update"], ms)
                 continue
             for node, update in chunk.items():
                 if node == "__interrupt__":
                     q.put(("interrupt", update[0].value if update else {}))
                     continue
-                ns_key = "/".join(p.split(":")[0] for p in ns)
-                state = acc.setdefault(ns_key, json.loads(json.dumps(initial, default=str)))
-                summary = _summarize(update)
-                q.put(("node", {"t": ms, "ns": ns_key, "node": node, "input": json.loads(json.dumps(state, default=str)), "update": summary}))
-                for k, v in summary.items():
-                    if k == "messages":
-                        state.setdefault("messages", []).extend(v)
-                    else:
-                        state[k] = v
+                record("/".join(p.split(":")[0] for p in ns), node, update, ms)
         q.put(("done", None))
     except Exception:  # noqa: BLE001 — hiển thị traceback lên UI
         q.put(("error", traceback.format_exc()))
@@ -319,8 +335,8 @@ def _autosave() -> None:
 
 def _node_calls(d: dict[str, Any], i: int) -> list[dict[str, Any]]:
     e = d["events"][i]
-    prev = d["events"][i - 1]["t"] if i else -1
-    return [c for c in d["calls"] if c["node"] == e["node"] and prev < c["t"] <= e["t"]]
+    sp = spans(d)[i]
+    return [c for c in d["calls"] if c["node"] == e["node"] and sp["start"] - 50 <= c["t"] <= e["t"]]
 
 
 def _context_text(d: dict[str, Any], i: int) -> str:
@@ -344,20 +360,11 @@ def _context_text(d: dict[str, Any], i: int) -> str:
 
 
 def _timeline_items(d: dict[str, Any]) -> list[dict[str, Any]]:
-    """Mọi thứ có mốc thời gian: node (suy từ lúc node trước xong), lần gọi LLM, lần chạy tool."""
+    """Mọi thứ có mốc thời gian theo thứ tự cây: node chứa node con (container), node lá, tool trong node `tools`, lần gọi LLM trong node."""
     items: list[dict[str, Any]] = []
-    last_end: dict[str, int] = {}
-    for i, e in enumerate(d["events"]):
-        start = last_end.get(e["ns"], 0)
-        last_end[e["ns"]] = e["t"]
-        items.append({"id": f"node-{i}", "kind": "node", "lane": f"node · {e['node']}", "start": start, "end": e["t"], "label": e["node"], "ref": i})
-    for i, c in enumerate(d["calls"]):
-        end = c["t"] + c.get("ms", 1)
-        lane = f"LLM · {c['in_tool']} (nội bộ)" if c.get("in_tool") else f"LLM · {c['node']}"
-        tool_names = ", ".join(x["name"] for x in c["tool_calls"])
-        items.append({"id": f"llm-{i}", "kind": "llm", "lane": lane, "start": c["t"], "end": end, "label": f"{c['model'].split('/')[-1]} → {tool_names or 'văn bản'}", "ref": i})
-    for i, t in enumerate(d.get("tools", [])):
-        items.append({"id": f"tool-{i}", "kind": "tool", "lane": f"tool · {t['name']}", "start": t["t"], "end": t["t"] + t.get("ms", 1), "label": t["name"], "ref": i})
+    for r in tree_rows(d):
+        prefix = "node" if r["kind"] in ("container", "node") else r["kind"]
+        items.append({"id": f"{prefix}-{r['ref']}", "kind": r["kind"], "lane": r["key"], "start": r["start"], "end": r["end"], "label": r["name"], "ref": r["ref"], "depth": r["depth"]})
     return items
 
 
@@ -400,13 +407,26 @@ def _tool_detail(t: dict[str, Any]) -> None:
     st.code(t["output"] or "(chưa có / rỗng)", language="json", wrap_lines=True)
 
 
-def _render_timeline(d: dict[str, Any], uid: str) -> None:
+_CHROME_H = 110  # px dành cho chú giải (trên) và trục thời gian (dưới)
+_LABEL_FRAC = 0.8  # bề rộng cột nhãn so với tổng thời gian lượt, tính theo đơn vị trục x
+_INDENT = 16  # px thụt lề mỗi cấp
+
+
+def _render_timeline(d: dict[str, Any], uid: str, row_h: int = 26) -> None:
     items = _timeline_items(d)
     if not items:
         st.caption("Chưa có mốc thời gian nào.")
         return
-    lanes = [lane for lane, _ in sorted({(it["lane"], it["start"]) for it in items}, key=lambda x: x[1]) ]
-    order = list(dict.fromkeys(lanes))
+    detail = st.segmented_control(
+        "Mức chi tiết",
+        ["Node", "Node + tool", "Tất cả (đến từng lần gọi LLM)"],
+        default="Tất cả (đến từng lần gọi LLM)",
+        key=f"tl-detail-{uid}",
+        help="Thu gọn cây về mức cần xem; node chứa node con luôn hiện.",
+    )
+    shown = {"Node": ("container", "node"), "Node + tool": ("container", "node", "tool")}.get(detail or "", ("container", "node", "tool", "llm"))
+    items = [it for it in items if it["kind"] in shown]
+    order = list(dict.fromkeys(it["lane"] for it in items))  # thứ tự cây: node cha trước, con ngay sau
     df = pd.DataFrame(
         [
             {
@@ -414,34 +434,54 @@ def _render_timeline(d: dict[str, Any], uid: str) -> None:
                 "start_s": round(it["start"] / 1000, 3),
                 "end_s": round(it["end"] / 1000, 3),
                 "draw_end_s": round(max(it["end"], it["start"] + 8) / 1000, 3),
-                "dur_s": round((it["end"] - it["start"]) / 1000, 2),
+                "dur_s": round((it["end"] - it["start"]) / 1000, 3),
+                "dur_txt": fmt_ms(it["end"] - it["start"]),
+                "short": ("▣ " if it["kind"] == "container" else "└ " if it["depth"] else "") + it["label"],
             }
             for it in items
         ]
     )
     pick = alt.selection_point(name="pick", fields=["id"])
-    chart = (
+    y = alt.Y("lane:N", sort=order, title=None, axis=None)
+    # Cột nhãn nằm ngay trong trục x, ở phần âm (trước mốc 0): mọi thứ co giãn theo độ rộng khung. Dùng padding cố định thì khung hẹp sẽ bóp mất vùng thanh.
+    span = max(it["end"] for it in items) / 1000 or 1.0
+    label_span = span * _LABEL_FRAC
+    x_scale = alt.Scale(domain=[-label_span, span * 1.15], nice=False)
+    x_axis = alt.Axis(values=[round(span * k / 5, 2) for k in range(6)], title="giây kể từ lúc bắt đầu lượt", domain=False)
+    bars = (
         alt.Chart(df)
         .mark_bar(cornerRadius=2)
         .encode(
-            x=alt.X("start_s:Q", title="giây kể từ lúc bắt đầu lượt"),
+            x=alt.X("start_s:Q", scale=x_scale, axis=x_axis),
             x2="draw_end_s:Q",
-            y=alt.Y("lane:N", sort=order, title=None),
-            color=alt.Color("kind:N", scale=alt.Scale(domain=["node", "llm", "tool"], range=["#9ca3af", "#3b82f6", "#16a34a"]), legend=alt.Legend(title=None)),
+            y=y,
+            color=alt.Color("kind:N", scale=alt.Scale(domain=["container", "node", "llm", "tool"], range=["#475569", "#9ca3af", "#3b82f6", "#16a34a"]), legend=alt.Legend(title=None, orient="top", direction="horizontal")),
             opacity=alt.condition(pick, alt.value(1.0), alt.value(0.55)),
             tooltip=[
                 alt.Tooltip("lane", title="làn"),
                 alt.Tooltip("label", title="nhãn"),
                 alt.Tooltip("start_s", title="bắt đầu (s)"),
                 alt.Tooltip("end_s", title="kết thúc (s)"),
-                alt.Tooltip("dur_s", title="thời lượng (s)"),
+                alt.Tooltip("dur_txt", title="thời lượng"),
             ],
         )
         .add_params(pick)
-        .properties(height=max(120, 28 * len(order)))
     )
-    event = st.altair_chart(chart, on_select="rerun", key=f"tl-{uid}", width="stretch")
-    st.caption("Bấm vào một thanh để xem chi tiết. Xám = node (suy từ lúc node trước kết thúc), xanh dương = lần gọi LLM, xanh lá = tool.")
+    # Nhãn làn vẽ bằng lớp chữ căn trái, dịch ngang theo cấp: nhãn trục của Vega căn phải nên khoảng trắng đầu dòng không thể hiện được thụt lề.
+    max_depth = max(it["depth"] for it in items)
+    labels = [
+        alt.Chart(df)
+        .transform_filter(alt.datum.depth == depth)
+        .mark_text(align="left", baseline="middle", dx=_INDENT * depth + 4, color="#e6eaf1")
+        .encode(x=alt.XDatum(-label_span, scale=x_scale), y=y, text="short:N")
+        for depth in range(max_depth + 1)
+    ]
+    # Thời lượng ghi ngay sau thanh (đơn vị nhỏ nhất: ms khi dưới 1 giây), để đọc được cả những bước vài mili giây mà thanh gần như vô hình.
+    durations = alt.Chart(df).mark_text(align="left", baseline="middle", dx=4, fontSize=11, color="#e6eaf1").encode(x=alt.X("draw_end_s:Q", scale=x_scale), y=y, text="dur_txt:N")
+    # Streamlit ép cả biểu đồ (kể cả trục và chú giải) vào chiều cao này (autosize fit), nên phải cộng phần trục + chú giải vào số hàng.
+    chart = alt.layer(bars, durations, *labels).properties(height=row_h * len(order) + _CHROME_H)
+    event = st.altair_chart(chart, on_select="rerun", key=f"tl-{uid}", width="stretch", alt="Timeline phân cấp: node chứa node con, tool và lần gọi LLM, mỗi thanh ghi thời lượng")
+    st.caption("Bấm vào một thanh để xem chi tiết. Thụt lề = nằm trong node ở dòng trên; số bên phải thanh là thời lượng. Xám đậm = node chứa node con, xám nhạt = node lá, xanh dương = lần gọi LLM, xanh lá = tool.")
 
     selected = None
     sel = (event.selection or {}).get("pick") if event is not None else None
@@ -464,15 +504,28 @@ def _render_timeline(d: dict[str, Any], uid: str) -> None:
         _tool_detail(d["tools"][int(idx)])
 
 
+@st.dialog("Timeline chi tiết", width="large")
+def _timeline_dialog(d: dict[str, Any], uid: str) -> None:
+    _render_timeline(d, f"{uid}-modal", row_h=36)
+    with st.expander("Cây node (dạng chữ)"):
+        st.code(tree_text(tree_rows(d)) or "(chưa có node nào)", language=None, wrap_lines=False)
+
+
 def _render_debug(d: dict[str, Any], uid: str = "x") -> None:
-    t_time, t_llm, t_reason, t_state = st.tabs(["Timeline", "Lần gọi LLM", "Bước lập luận / tool", "State sau mỗi node"])
+    t_time, t_tree, t_llm, t_reason, t_state = st.tabs(["Timeline", "Cây node", "Lần gọi LLM", "Bước lập luận / tool", "State sau mỗi node"])
     with t_time:
+        if st.button("Mở rộng", icon=":material/open_in_full:", key=f"tl-open-{uid}", help="Mở timeline trong cửa sổ lớn để xem chi tiết"):
+            _timeline_dialog(d, uid)
         _render_timeline(d, uid)
         with st.expander("Bảng node"):
             st.dataframe(
-                [{"giây": round(e["t"] / 1000, 2), "graph": e["ns"] or "chat", "node": e["node"], "cập nhật": ", ".join(e["update"].keys())} for e in d["events"]],
+                [{"giây": round(e["t"] / 1000, 2), "đường dẫn": " › ".join([*(p for p in e["ns"].split("/") if p), e["node"]]), "cập nhật": ", ".join(e["update"].keys())} for e in d["events"]],
                 width="stretch",
             )
+    with t_tree:
+        st.caption("Cái nào chứa cái nào: ▣ node chứa node con · □ node · ▲ tool · ◆ lần gọi LLM. Mỗi dòng: thời lượng và [bắt đầu → kết thúc] tính từ đầu lượt; các node cùng cấp có khoảng thời gian chồng nhau là chạy song song.")
+        rows = tree_rows(d)
+        st.code(tree_text(rows) or "(chưa có node nào)", language=None, wrap_lines=False)
     with t_llm:
         if not d["calls"]:
             st.caption("Không có lần gọi LLM nào được ghi.")
@@ -528,21 +581,101 @@ def _conversation_list() -> list[dict[str, Any]]:
     return items
 
 
+MODE_CHAT, MODE_TOOLS = "💬 Trò chuyện", "🔎 Thử tool tìm kiếm"
+
+# Khối chức năng ghim ở đầu sidebar khi cuộn danh sách hội thoại; cần nền đặc để danh sách không lộ xuyên qua (màu mặc định của sidebar theo theme).
+_sidebar_bg = "#262730" if st.context.theme.type == "dark" else "#f0f2f6"
+st.markdown(
+    f"<style>[data-testid=\"stLayoutWrapper\"]:has(> .st-key-nav_box) {{position: sticky; top: 0; z-index: 10; background: {_sidebar_bg}; padding-bottom: 0.5rem;}} [data-testid=\"stSidebarHeader\"] {{position: absolute; top: 0; right: 0; z-index: 20; height: auto;}}</style>",
+    unsafe_allow_html=True,
+)
+
 with st.sidebar:
-    st.header("Hội thoại")
-    if st.button("➕ Cuộc trò chuyện mới", width="stretch"):
-        for k in ("history", "thread", "pending", "auto_left"):
-            st.session_state.pop(k, None)
-        st.rerun()
-    current = f"auto_{st.session_state['thread']}"
-    for c in _conversation_list():
-        if st.button(f"{c['title']}\n{c['saved_at']}", key=f"open-{c['stem']}", type="primary" if c["stem"] == current else "secondary", width="stretch"):
-            st.session_state["history"] = c["history"]
-            # Bộ nhớ (checkpoint) của agent có thể đã mất; chat tiếp trên thread cũ vẫn ghi vào cùng file.
-            st.session_state["thread"] = c["thread"] or f"dbg-{uuid.uuid4()}"
-            for k in ("pending", "auto_left"):
+    with st.container(key="nav_box"):
+        st.header("Chức năng")
+        mode = st.radio("Chức năng", [MODE_CHAT, MODE_TOOLS], label_visibility="collapsed")
+    if mode == MODE_CHAT:
+        st.divider()
+        st.header("Hội thoại")
+        if st.button("➕ Cuộc trò chuyện mới", width="stretch"):
+            for k in ("history", "thread", "pending", "auto_left"):
                 st.session_state.pop(k, None)
             st.rerun()
+        current = f"auto_{st.session_state['thread']}"
+        for c in _conversation_list():
+            if st.button(f"{c['title']}\n{c['saved_at']}", key=f"open-{c['stem']}", type="primary" if c["stem"] == current else "secondary", width="stretch"):
+                st.session_state["history"] = c["history"]
+                # Bộ nhớ (checkpoint) của agent có thể đã mất; chat tiếp trên thread cũ vẫn ghi vào cùng file.
+                st.session_state["thread"] = c["thread"] or f"dbg-{uuid.uuid4()}"
+                for k in ("pending", "auto_left"):
+                    st.session_state.pop(k, None)
+                st.rerun()
+
+
+def _search_tools() -> dict[str, Any]:
+    from agent.graph.v2.pre_diagnosis_graph import build_tools
+    from agent.tools.query_document_graph import query_document_graph
+
+    return {t.name: t for t in [*build_tools(), query_document_graph]}
+
+
+def _tool_args(tool: Any) -> dict[str, Any]:
+    """Sinh form từ schema của tool; tool cần ToolRuntime (ảnh) không thử được ở đây."""
+    schema = tool.get_input_schema().model_json_schema()
+    required = set(schema.get("required", []))
+    args: dict[str, Any] = {}
+    for name, p in schema.get("properties", {}).items():
+        typ = p.get("type") or next((o.get("type") for o in p.get("anyOf", []) if o.get("type") != "null"), "string")
+        label = f"{name}{' *' if name in required else ''}"
+        default = p.get("default")
+        key = f"tool-{tool.name}-{name}"
+        if typ == "integer":
+            args[name] = int(st.number_input(label, value=int(default or 0), step=1, key=key))
+        elif typ == "boolean":
+            args[name] = st.checkbox(label, value=bool(default), key=key)
+        elif typ == "string":
+            val = st.text_input(label, value=default or "", help=p.get("description"), key=key)
+            if val or name in required:
+                args[name] = val
+        else:
+            raw = st.text_area(f"{label} (JSON)", value=json.dumps(default) if default is not None else "", key=key)
+            if raw.strip():
+                args[name] = json.loads(raw)
+    return args
+
+
+def _tools_page() -> None:
+    st.subheader("Thử tool tìm kiếm")
+    tools = _search_tools()
+    name = st.selectbox("Tool", list(tools))
+    tool = tools[name]
+    with st.expander("Mô tả (prompt LLM nhìn thấy)"):
+        st.text(tool.description)
+    try:
+        args = _tool_args(tool)
+    except ValueError as exc:
+        st.error(f"JSON không hợp lệ: {exc}")
+        return
+    if st.button("▶ Chạy tool", type="primary"):
+        t0 = time.time()
+        try:
+            with st.spinner(f"Đang chạy `{tool.name}`..."):
+                out = asyncio.run_coroutine_threadsafe(tool.ainvoke(args), _loop()).result(timeout=180)
+        except Exception:  # noqa: BLE001 — hiển thị traceback lên UI
+            st.error("Tool lỗi")
+            st.code(traceback.format_exc())
+            return
+        st.caption(f"⏱ {time.time() - t0:.2f}s · args: `{json.dumps(args, ensure_ascii=False)}`")
+        text = _text(out)
+        try:
+            st.json(json.loads(text))
+        except ValueError:
+            st.code(text, wrap_lines=True)
+
+
+if mode == MODE_TOOLS:
+    _tools_page()
+    st.stop()
 
 # Khung chat/cấu hình cao theo chiều cao cửa sổ (container(height=) chỉ nhận px cố định) và bỏ bớt khoảng trống mặc định của Streamlit.
 st.markdown(
@@ -674,14 +807,17 @@ with tab_sim:
 
 # Một nút duy nhất ở ô nhập: "Gửi" khi rảnh, "Ngắt" khi đang chạy (bấm = Streamlit chạy lại script, nhánh stale ở trên sẽ huỷ lượt).
 prompt: str | None = st.session_state.pop("queued_prompt", None)
+images: list[tuple[str, bytes, str]] = st.session_state.pop("queued_images", []) if prompt is not None else []
 with input_box:
     if prompt is None:
         with st.form("send", clear_on_submit=True, border=False):
             c_text, c_btn = st.columns([6, 1], vertical_alignment="bottom")
             typed = c_text.text_input("Tin nhắn", placeholder="Nhập câu hỏi cho agent...", label_visibility="collapsed")
             sent = c_btn.form_submit_button("Gửi ➤", type="primary", width="stretch")
+            files = st.file_uploader("Ảnh đính kèm (tuỳ chọn)", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True)
         if sent and typed.strip():
             st.session_state["queued_prompt"] = typed.strip()
+            st.session_state["queued_images"] = [(f.name, f.getvalue(), f.type or "image/jpeg") for f in files]
             st.rerun()
     else:
         c_text, c_btn = st.columns([6, 1], vertical_alignment="bottom")
@@ -700,15 +836,25 @@ with chat_box:
     if pending:
         st.info(f"Agent đang hỏi lại: {pending.get('question', '')} {pending.get('options') or ''}")
     if prompt:
-        st.session_state["history"].append({"role": "user", "content": prompt})
+        # Ảnh đi vào graph như ở Core: lưu MinIO rồi nối "[Ảnh đính kèm]" vào tin nhắn và đặt key vào ctx.image_keys.
+        image_keys: list[str] = []
+        for name, data, ctype in images:
+            key = f"{uuid.uuid4().hex}.{name.rsplit('.', 1)[-1] if '.' in name else 'jpg'}"
+            get_file_store_service().put_bytes(key, data, ctype)
+            image_keys.append(key)
+        sent_text = prompt + ("\n\n[Ảnh đính kèm]\n" + "\n".join(f'- name="{n}" object_key="{k}"' for (n, _, _), k in zip(images, image_keys)) if images else "")
+        st.session_state["history"].append({"role": "user", "content": prompt + "".join(f"\n\n📷 {n}" for n, _, _ in images)})
         with st.chat_message("user"):
             st.markdown(prompt)
+            for _, data, _ in images:
+                st.image(data, width=200)
 
         graph = _graph(version, triage_on)
         ctx = AgentContext(
             user_id=user_id,
             conversation_id="",
             message_id=f"dbg-{uuid.uuid4().hex[:8]}",
+            image_keys=image_keys,
             model=choices[model_id],
             max_tool_rounds=caps.get("max_tool_rounds"),
             max_model_retries=caps.get("max_model_retries"),
@@ -720,7 +866,7 @@ with chat_box:
         logger.info("lượt mới [%s, %s]: %s", version, choices[model_id], prompt[:120])
         log = CallLog(t0)
         config: RunnableConfig = {**config_for(st.session_state["thread"]), "callbacks": [trace_callback, log], "recursion_limit": int(caps["recursion_limit"])}
-        payload: Any = Command(resume=prompt) if pending else {"messages": [HumanMessage(content=prompt)]}
+        payload: Any = Command(resume=prompt) if pending else {"messages": [HumanMessage(content=sent_text)]}
         st.session_state.pop("pending", None)
 
         q: "queue.Queue[tuple[str, Any]]" = queue.Queue()
@@ -783,7 +929,7 @@ with chat_box:
                 out.markdown(answer)
             else:
                 out.markdown(answer or "(không có câu trả lời)")
-            debug = {"events": events, "calls": log.calls, "steps": list(ctx.reasoning_steps), "meta": live_state["meta"], "tools": log.tools}
+            debug = {"events": events, "calls": log.calls, "steps": list(ctx.reasoning_steps), "meta": live_state["meta"], "tools": log.tools, "starts": log.starts}
             with st.expander("Debug lượt này", expanded=True):
                 _render_debug(debug, f"n{len(st.session_state['history'])}")
         st.session_state["history"].append({"role": "assistant", "content": answer or (f"Lỗi khi chạy graph:\n```\n{error}\n```" if error else ""), "debug": debug})
