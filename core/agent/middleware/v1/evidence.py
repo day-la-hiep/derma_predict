@@ -8,7 +8,7 @@ from agent.context.agent_context import AgentContext
 from agent.tools.reasoning import turn_messages
 
 _NO_EVIDENCE_RULES = (
-    "\n\n[KIỂM SOÁT BẰNG CHỨNG — bắt buộc] Các lần tra cứu trong lượt này KHÔNG trả về bằng chứng (sách / web). Từ giờ tới hết lượt: "
+    "\n\n[KIỂM SOÁT BẰNG CHỨNG — bắt buộc] Các lần tra cứu trong lượt này KHÔNG trả về bằng chứng (sách / ca bệnh). Từ giờ tới hết lượt: "
     "KHÔNG nêu tên bệnh nào như một khả năng, giả thuyết hay chẩn đoán, KHÔNG xếp hạng, KHÔNG nêu độ tin cậy, KHÔNG đưa lời khuyên "
     "điều trị hay chăm sóc cụ thể, KHÔNG ghi dữ kiện nguồn \"user\" nào ngoài đúng lời người dùng đã nói. Khi gọi `record_reasoning` "
     "(stage after_evidence / final) để `hypotheses` là danh sách rỗng. Chỉ được: (1) nói rõ mình chưa tra cứu được nguồn nào để đối "

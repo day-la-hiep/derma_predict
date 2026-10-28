@@ -150,7 +150,7 @@ def _check(steps: list[dict[str, Any]], messages: list[AnyMessage]) -> dict[str,
         # sau tra cứu phải có lập luận cập nhật (after_evidence / final) trước câu trả lời cuối
         later = [a.get("stage") for a in _reasoning_calls(steps)[1:]]
         checks["reasoned_after_evidence"] = any(st in ("after_evidence", "final") for st in later)
-        # không có bằng chứng (sách / web) thì giả thuyết cuối phải rỗng (mục 1)
+        # không có bằng chứng (sách / ca bệnh) thì giả thuyết cuối phải rỗng (mục 1)
         if evidence_status(messages) == "none":
             last = _reasoning_calls(steps)[-1] if _reasoning_calls(steps) else {}
             checks["no_hypothesis_without_evidence"] = not last.get("hypotheses")

@@ -4,11 +4,9 @@ from typing import Any, Literal
 from langchain.messages import AnyMessage, HumanMessage, ToolMessage
 
 
-# Tool tra cứu có thể cho bằng chứng; `search_trusted_web` / `fetch_trusted_page` thành công luôn mở đầu bằng khối đánh dấu này.
 # `knowledge_graph_query` tính là đã tra cứu nhưng không bao giờ cho bằng chứng (kết quả `source="kg"` chỉ là gợi ý).
-RETRIEVAL_TOOLS = {"hybrid_retrieval", "semantic_search", "keyword_search", "knowledge_graph_query", "search_finalize_report", "search_trusted_web", "fetch_trusted_page"}
+RETRIEVAL_TOOLS = {"hybrid_retrieval", "semantic_search", "keyword_search", "knowledge_graph_query", "search_finalize_report"}
 JSON_RESULT_TOOLS = {"hybrid_retrieval", "semantic_search", "keyword_search", "knowledge_graph_query"}
-WEB_MARKER = "[DỮ LIỆU NGOÀI TỪ WEB"
 
 Status = Literal["untried", "none", "found"]
 
@@ -30,7 +28,7 @@ def has_evidence(tool: str, content: str) -> bool:
             return bool(data.get("evidence_found") and data.get("cases"))
         except (ValueError, AttributeError):
             return False
-    return content.startswith(WEB_MARKER)
+    return False
 
 
 def evidence_status(turn: list[AnyMessage]) -> Status:

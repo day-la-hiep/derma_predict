@@ -62,7 +62,7 @@ Yêu cầu: Docker Compose v2, Python 3.12+ và [`uv`](https://docs.astral.sh/uv
 API key OpenRouter.
 
 ```bash
-cp core/.env.example core/.env          # điền OPENROUTER_API_KEY (+ TAVILY_API_KEY nếu dùng web search)
+cp core/.env.example core/.env          # điền OPENROUTER_API_KEY
 cp fe/.env.local.example fe/.env.local  # NEXT_PUBLIC_USE_MOCK=false để gọi Core thật
 
 make infra       # docker compose up -d: Postgres, Redis, RabbitMQ, Qdrant, Neo4j, MinIO
@@ -115,7 +115,6 @@ docker compose up -d       # KHÔNG chạy make migrate / make init-db
 |---|---|
 | `DATABASE_URL`, `REDIS_*`, `RABBITMQ_URL`, `QDRANT_URL`, `NEO4J_*`, `MINIO_*` | kết nối hạ tầng, mặc định khớp `docker-compose.yml` |
 | `AGENT_MODEL`, `AGENT_TEMPERATURE`, `OPENROUTER_API_KEY` | model mặc định của agent |
-| `TAVILY_API_KEY` | tool tra web nguồn uy tín |
 | `NEXT_PUBLIC_USE_MOCK`, `NEXT_PUBLIC_API_URL` | FE dùng mock hay Core thật, URL Core |
 
 `.env` không được commit.

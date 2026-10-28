@@ -27,9 +27,9 @@ Stage = Literal["initial", "after_evidence", "final"]
 
 
 class Observation(BaseModel):
-    fact: str = Field(description="1 dữ kiện ngắn gọn (lời người dùng, kết quả tool, ảnh, web)")
+    fact: str = Field(description="1 dữ kiện ngắn gọn (lời người dùng, kết quả tool, ảnh)")
     source: str = Field(
-        description='Nguồn: "user", "image", "tool:<tên tool>" hoặc "web:<domain>"'
+        description='Nguồn: "user", "image" hoặc "tool:<tên tool>"'
     )
 
 
@@ -85,7 +85,7 @@ class ReasoningInput(BaseModel):
     hypotheses: list[Hypothesis] = Field(
         max_length=4,
         description="1-4 giả thuyết xếp theo mức phù hợp giảm dần. Chỉ được để RỖNG ở stage after_evidence / final khi chưa "
-        "tra cứu được bằng chứng nào (sách / web) — khi đó không có giả thuyết nào đủ căn cứ để nêu",
+        "tra cứu được bằng chứng nào (sách / ca bệnh) — khi đó không có giả thuyết nào đủ căn cứ để nêu",
     )
     red_flags: RedFlags = Field(default_factory=RedFlags)
     next_action: Literal["call_tool", "ask_user", "answer"]
@@ -112,13 +112,13 @@ def validate_reasoning(args: dict[str, Any]) -> tuple[ReasoningInput | None, lis
                 f"Giả thuyết {i} ({h.disease}) tham chiếu dữ kiện không tồn tại: {bad} "
                 f"(chỉ có 1..{n})."
             )
-        # độ tin cậy "vừa"/"cao" cần ít nhất 1 dữ kiện từ tool/web ủng hộ: lời người dùng một mình chỉ cho biết triệu chứng, không
+        # độ tin cậy "vừa"/"cao" cần ít nhất 1 dữ kiện từ tool ủng hộ: lời người dùng một mình chỉ cho biết triệu chứng, không
         # cho biết đó là bệnh gì; kiến thức nền của model không phải bằng chứng (SYSTEM_PROMPT mục 1)
         if data.stage != "initial" and h.confidence != "thấp":
             sources = [data.observations[x - 1].source for x in h.supports if 1 <= x <= n]
-            if not any(src.startswith(("tool:", "web:")) for src in sources):
+            if not any(src.startswith("tool:") for src in sources):
                 problems.append(
-                    f"Giả thuyết {i} ({h.disease}) có độ tin cậy \"{h.confidence}\" nhưng không có dữ kiện nào từ tool/web ủng "
+                    f"Giả thuyết {i} ({h.disease}) có độ tin cậy \"{h.confidence}\" nhưng không có dữ kiện nào từ tool ủng "
                     'hộ — chỉ được để "thấp", hoặc bỏ giả thuyết này nếu chưa tra cứu được bằng chứng.'
                 )
         if not (h.supports or h.contradicts or h.missing):

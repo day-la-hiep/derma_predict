@@ -19,7 +19,7 @@ from agent.graph.v2.schemas import PlanInput, ReflectInput, render_plan, render_
 from agent.graph.v2.state import PreDiagState
 from agent.middleware.common.model import inject_memory, load_memory
 from agent.middleware.common.tool import emit_tool_step
-from agent.prompt.v2 import ANSWER_FOUND, ANSWER_NONE, CHOOSE_SYSTEM, PLAN_SYSTEM, REFLECT_SYSTEM
+from agent.prompt.v2 import ANSWER_FOUND, ANSWER_NONE, CHOOSE_SYSTEM, FINALIZE_REPORT_LINE, PLAN_SYSTEM, REFLECT_SYSTEM
 from agent.tools.reasoning import TOOL_NAME as REASONING_TOOL
 
 logger = logging.getLogger(__name__)
@@ -164,7 +164,8 @@ def choose_tools_node(tools: list[Any]):
             f"Đã gọi (kèm kết quả): {'; '.join(state.get('call_results', [])) or '(chưa)'}\n\n"
             f"Kết quả đã thu được (chỉ tra điều CÒN THIẾU, không tra lại điều đã có):\n{_digest(state.get('evidence', []))}"
         )
-        system = inject_memory(CHOOSE_SYSTEM.format(context=context), ctx.memory_text)
+        finalize_report = FINALIZE_REPORT_LINE if any(getattr(t, "name", "") == "search_finalize_report" for t in tools) else ""
+        system = inject_memory(CHOOSE_SYSTEM.format(context=context, finalize_report=finalize_report), ctx.memory_text)
         model = _model(ctx).bind_tools(tools, tool_choice="any")
         base = [SystemMessage(content=system), *_history(state["messages"])]
         ai = AIMessage(content="")

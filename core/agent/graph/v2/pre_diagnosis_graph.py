@@ -19,22 +19,18 @@ from agent.tools.hybrid_retrieval import (
     knowledge_graph_query,
     semantic_search,
 )
+from agent.tools.query_document_graph import query_document_graph
 from agent.tools.search_finalize_report import search_finalize_report
-from agent.tools.web_search import fetch_trusted_page, search_trusted_web
+from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 
 def build_tools() -> list[Any]:
-    return [
-        hybrid_retrieval,
-        semantic_search,
-        keyword_search,
-        knowledge_graph_query,
-        search_finalize_report,
-        search_trusted_web,
-        fetch_trusted_page,
-    ]
+    tools: list[Any] = [hybrid_retrieval, semantic_search, keyword_search, knowledge_graph_query, query_document_graph]
+    if settings.AGENT_FINALIZE_REPORT_SEARCH_ENABLED:
+        tools.append(search_finalize_report)
+    return tools
 
 
 def _on_tool_error(exc: Exception) -> str:

@@ -29,8 +29,6 @@ TOOL_DISPLAY_NAMES: dict[str, str] = {
     "classify_skin_image": "Phân tích ảnh tổn thương da",
     "analyze_skin_image_multimodal": "Mô tả tổn thương bằng AI đa phương thức",
     "cross_check": "Kiểm tra chéo ảnh và mô tả của người bệnh",
-    "search_trusted_web": "Tra cứu nguồn web uy tín",
-    "fetch_trusted_page": "Đọc trang web uy tín",
 }
 
 
