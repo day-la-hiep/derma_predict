@@ -79,23 +79,6 @@ class Settings(BaseSettings):
     # Từ điển khớp thực thể cho bước trích quan hệ từ tài liệu: dữ liệu đã build của đồ thị nền (`make kg-build`)
     GRAPH_LEXICON_DIR: str = str(_REPO_ROOT / "core" / "graph_base" / "data" / "build")
 
-    # ----- Web search nguồn uy tín (agent/tools/web_search.py) -----
-    # Rỗng = tool trả thông báo "chưa cấu hình", không crash. Tavily lọc domain ngay ở provider
-    # (`include_domains`); code vẫn lọc lại phía server.
-    TAVILY_API_KEY: str = ""
-    TRUSTED_WEB_DOMAINS: list[str] = [
-        "aad.org",
-        "dermnetnz.org",
-        "medlineplus.gov",
-        "who.int",
-        "nih.gov",
-        "cdc.gov",
-        "nhs.uk",
-        "mayoclinic.org",
-        "moh.gov.vn",
-        "kcb.vn",
-    ]
-
     # ----- CORS -----
     CORS_ORIGINS: list[str] = ["*"]
 
@@ -143,6 +126,8 @@ class Settings(BaseSettings):
     # model của hội thoại — đặt model nhỏ, rẻ hơn ở đây cũng được vì việc phân loại đơn giản.
     AGENT_TRIAGE_ENABLED: bool = True
     AGENT_TRIAGE_MODEL: str = ""
+    # Graph v2: cho `choose_tools` dùng tool `search_finalize_report` (tra ca bệnh thực tế tương tự). Tắt thì tool và dòng hướng dẫn trong prompt đều bị bỏ.
+    AGENT_FINALIZE_REPORT_SEARCH_ENABLED: bool = True
 
     # Phiên bản graph tiền chẩn đoán: "v1" = create_agent + middleware (`agent/graph/v1`), "v2" = StateGraph plan → retrieve → reflect → answer
     # (`agent/graph/v2`). Mặc định v1 để hành vi hiện tại không đổi; đổi cần khởi động lại worker.

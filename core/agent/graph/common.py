@@ -28,8 +28,7 @@ TOOL_DISPLAY_NAMES: dict[str, str] = {
     "query_document_graph": "Tra cuu do thi tri thuc tu sach",
     "classify_skin_image": "Phân tích ảnh tổn thương da",
     "analyze_skin_image_multimodal": "Mô tả tổn thương bằng AI đa phương thức",
-    "search_trusted_web": "Tra cứu nguồn web uy tín",
-    "fetch_trusted_page": "Đọc trang web uy tín",
+    "cross_check": "Kiểm tra chéo ảnh và mô tả của người bệnh",
 }
 
 

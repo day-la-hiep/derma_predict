@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Any
 
-from agent.common.evidence import JSON_RESULT_TOOLS, WEB_MARKER
+from agent.common.evidence import JSON_RESULT_TOOLS
 from agent.graph.v2.schemas import ReflectHypothesis
 
 logger = logging.getLogger(__name__)
@@ -51,13 +51,41 @@ def label_evidence(tool: str, content: str) -> list[dict[str, str]]:
             for c in data.get("cases") or []
             if isinstance(c, dict)
         ]
-    if tool in ("search_trusted_web", "fetch_trusted_page"):
-        if content.startswith(WEB_MARKER):
-            return [{"kind": "evidence", "source": "web uy tín", "text": _clip(content)}]
-        return []
+    if tool == "query_document_graph":
+        try:
+            triples = json.loads(content).get("triples") or []
+        except (ValueError, AttributeError) as exc:
+            logger.warning("kết quả tool %s không phải JSON hợp lệ: %s", tool, exc)
+            return []
+        items = []
+        for t in triples:
+            # Cạnh không có câu trích gốc thì không có gì để trích dẫn, nên không tính là bằng chứng.
+            if not isinstance(t, dict) or not str(t.get("evidence") or "").strip():
+                continue
+            pages = ", ".join(str(p) for p in t.get("pages") or [])
+            relation = t.get("display") or t.get("relation")
+            text = f"{t.get('subject')} –{relation}→ {t.get('object')}: “{str(t['evidence']).strip()}”"
+            items.append({"kind": "evidence", "source": "đồ thị sách" + (f", trang {pages}" if pages else ""), "text": _clip(text)})
+        return items
     if tool in _HINT_TOOLS:
         return [{"kind": "hint", "source": tool, "text": _clip(content)}]
     return []
+
+
+def add_evidence(evidence: list[dict[str, Any]], items: list[dict[str, str]]) -> int:
+    """Thêm các mục chưa có (cùng loại, nguồn, đầu nội dung thì giữ mã cũ) vào `evidence` kèm mã E#/H#; trả số mục mới."""
+    seen = {(e["kind"], e["source"], e["text"][:300]) for e in evidence}
+    new = 0
+    for item in items:
+        key = (item["kind"], item["source"], item["text"][:300])
+        if key in seen:
+            continue
+        seen.add(key)
+        new += 1
+        prefix = "E" if item["kind"] == "evidence" else "H"
+        n = sum(1 for e in evidence if e["id"].startswith(prefix)) + 1
+        evidence.append({"id": f"{prefix}{n}", **item})
+    return new
 
 
 def ground_hypotheses(

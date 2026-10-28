@@ -133,7 +133,6 @@ Agent gồm hai graph. **Chat graph** (`chat_graph.py`) lọc intent: tin xã gi
 | `knowledge_graph_query` | (tool riêng) template Cypher theo `intent` (8 intent: ứng viên theo triệu chứng, phân biệt, hồ sơ bệnh, triệu chứng, cờ đỏ/nguy cơ, điều trị, chống chỉ định, hồ sơ thuốc) trên PrimeKG/DermO; `red_flags_risk` hiện luôn trả rỗng (đồ thị không còn dữ liệu BYT), `symptoms_of_disease` / `disease_overview` chỉ có dữ liệu cho một số bệnh; chỉ là gợi ý, không phải bằng chứng | Neo4j PrimeKG/DermO |
 | `classify_skin_image` | CNN 22 lớp phân loại ảnh da — chỉ là **giả thuyết** | MinIO + PyTorch |
 | `analyze_skin_image_multimodal` | (chỉ đăng ký khi `AGENT_VISION_MODEL` không rỗng) model multimodal (vd MedGemma qua Ollama) mô tả hình thái/phân bố + giả thuyết, bổ sung cho CNN — không phải bằng chứng. Xem [notice](../notice/medgemma-image-description.md) | MinIO + model theo `AGENT_VISION_MODEL` |
-| `search_trusted_web`, `fetch_trusted_page` | tra web trong danh sách domain uy tín | Tavily |
 
 ### Long-term memory
 

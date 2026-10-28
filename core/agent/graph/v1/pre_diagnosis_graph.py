@@ -37,7 +37,6 @@ from agent.tools.search_finalize_report_by_image import (
 from agent.tools.skin_image_classifier import classify_skin_image
 from agent.tools.skin_image_multimodal import analyze_skin_image_multimodal
 from app.config.settings import settings
-from agent.tools.web_search import fetch_trusted_page, search_trusted_web
 from agent.common.llm import get_model
 
 
@@ -52,8 +51,6 @@ ALL_TOOLS = [
     search_finalize_report,
     search_finalize_report_by_image,
     classify_skin_image,
-    search_trusted_web,
-    fetch_trusted_page,
 ]
 
 

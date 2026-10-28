@@ -19,7 +19,21 @@ class PreDiagState(TypedDict):
     call_results: NotRequired[list[str]]
     # Số lần `choose_tools` đã chạy trong lượt; `reflect` ép sang `answer` khi chạm `MAX_TOOL_ROUNDS`.
     rounds: NotRequired[int]
+    # Số lệnh tool mới `choose_tools` vừa chọn ở vòng này; 0 thì `label_evidence` không gắn nhãn lại kết quả tool của vòng trước.
+    new_calls: NotRequired[int]
     # Mỗi mục: {"id", "kind": "evidence" | "hint", "source", "text"}
     evidence: NotRequired[list[dict[str, Any]]]
     evidence_status: NotRequired[Literal["none", "found"]]
     next: NotRequired[Literal["retrieve", "answer"]]
+    # Kết quả trung gian bên trong subgraph `image_flow` (mỗi node một khoá); kết quả cuối trao qua `ctx.image_result`, không lưu sang lượt sau.
+    image_cnn: NotRequired[list[dict[str, Any]]]
+    image_cases: NotRequired[dict[str, Any]]
+    image_vision: NotRequired[list[dict[str, Any]]]
+
+
+class ImageState(TypedDict):
+    """State của subgraph `image_flow`: chỉ khoá ảnh, cố ý không có `messages` / `facts` nên làn ảnh không thể đọc lời người bệnh."""
+
+    image_cnn: NotRequired[list[dict[str, Any]]]
+    image_cases: NotRequired[dict[str, Any]]
+    image_vision: NotRequired[list[dict[str, Any]]]

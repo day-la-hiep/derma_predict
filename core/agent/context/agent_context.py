@@ -1,6 +1,15 @@
 """Context riêng cho từng lần chạy graph"""
+import asyncio
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypedDict
+
+
+class ImageResult(TypedDict):
+    hints: list[tuple[str, dict[str, Any], str]]
+    facts: list[dict[str, Any]]
+    # Kết quả riêng của làn ảnh để bước gộp kiểm tra chéo với giả thuyết của làn chữ: nhãn CNN (disease, confidence) và các đoạn mô tả.
+    candidates: list[dict[str, Any]]
+    descriptions: list[str]
 
 
 @dataclass
@@ -23,3 +32,5 @@ class AgentContext:
     max_model_retries: int | None = None
     # Memory dài hạn của người dùng, đọc một lần ở node đầu của lượt (graph v2: `load_memory`); các node sau chỉ nối chuỗi này vào prompt, không chạm store.
     memory_text: str = ""
+    # Làn ảnh (`image_flow`) đặt kết quả vào đây khi xong; `label_evidence` của làn chữ chờ nó. Dùng Future vì state graph cha chỉ được ghi khi cả hai làn kết thúc.
+    image_result: "asyncio.Future[ImageResult] | None" = None

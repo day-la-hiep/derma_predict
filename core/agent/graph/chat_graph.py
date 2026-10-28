@@ -62,15 +62,18 @@ def _pre_diagnosis_node(graph: CompiledStateGraph[Any, AgentContext, Any, Any]):
         before = state["messages"]
         write = get_stream_writer()
         final: dict[str, Any] = {}
+        final_depth = -1
         # Đọc stream của graph con thay vì `ainvoke`: gọi `ainvoke` bên trong node thì token LLM không đi tiếp ra stream của chat graph
         # (chỉ còn tin hoàn chỉnh, gắn tên node của cha). Token của model chính (node "model", không phải các lần gọi LLM phụ như
         # tóm tắt) được chuyển tiếp qua kênh `custom` cho `turn.py` phát `message.delta`.
         # `get_config()`: truyền tiếp config của lượt chạy (checkpoint namespace, thread_id) để `interrupt()` của `ask_user` hoạt động.
-        async for mode, chunk in graph.astream(
+        # `subgraphs=True`: graph v2 đặt `answer` trong subgraph `text_flow`, không bật thì token của nó không ra stream; `values` lấy bản cuối của tầng nông nhất (graph con chạy dưới namespace của chat graph nên không phải ns rỗng).
+        async for ns, mode, chunk in graph.astream(
             {"messages": before, **state.get("diag", {})},
             config=get_config(),
             context=runtime.context,
-            stream_mode=["messages", "values"],
+            stream_mode=["messages", "values", "updates"],
+            subgraphs=True,
         ):
             if mode == "messages":
                 message, meta = cast("tuple[Any, dict[str, Any]]", chunk)
@@ -80,8 +83,14 @@ def _pre_diagnosis_node(graph: CompiledStateGraph[Any, AgentContext, Any, Any]):
                     and message.text
                 ):
                     write({"type": "token", "text": message.text})
-            else:
-                final = cast("dict[str, Any]", chunk)
+            elif mode == "updates":
+                # Node của subgraph tầng sâu (vd `text_flow/plan`) chỉ về tới stream này, không tự lên stream của chat graph: chuyển tiếp qua `custom`
+                # cho UI debug dựng cây node; `turn.py` bỏ qua loại này. `ns[0]` là chính node này; node ngay dưới graph con đã tự lên stream cha nên không gửi lại.
+                if len(ns) > 1:
+                    for node, update in cast("dict[str, Any]", chunk).items():
+                        write({"type": "node", "ns": "/".join(p.split(":")[0] for p in ns[1:]), "node": node, "update": update})
+            elif final_depth < 0 or len(ns) <= final_depth:
+                final, final_depth = cast("dict[str, Any]", chunk), len(ns)
         known = {m.id for m in before}
         kept = {m.id for m in final["messages"]}
         return {
