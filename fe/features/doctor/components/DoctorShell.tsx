@@ -1,14 +1,12 @@
 "use client";
 
-import { ClipboardList, ListTree, MessageSquareText, Network, Stethoscope } from "lucide-react";
+import { ClipboardList, MessageSquareText, Stethoscope } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { AppShell, type ShellNavItem } from "@/components/layout/app-shell";
 
 const NAV: ShellNavItem[] = [
   { href: "/doctor", label: "Ca tư vấn", hint: "Xem báo cáo AI và hội thoại với bệnh nhân", icon: MessageSquareText, exact: true },
   { href: "/doctor/records", label: "Lịch sử khám", hint: "Các báo cáo kết luận bạn đã chốt sau mỗi ca tư vấn", icon: ClipboardList },
-  { href: "/doctor/documents", label: "Sách giáo khoa", hint: "Số hóa sách, chuẩn bị tri thức cho trợ lý AI", icon: ListTree },
-  { href: "/doctor/graph-schema", label: "Quan hệ đồ thị", hint: "Chọn các loại quan hệ và thực thể được trích từ sách vào đồ thị tri thức", icon: Network },
 ];
 
 // màn nhiều cột cần khung cao bằng màn hình, tự cuộn từng cột

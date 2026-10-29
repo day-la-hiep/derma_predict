@@ -6,7 +6,12 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import Response
 
-from app.api.deps import get_document_graph_service, get_document_ingest_pipeline_service, get_document_service
+from app.api.deps import (
+    get_document_graph_service,
+    get_document_ingest_pipeline_service,
+    get_document_service,
+    require_admin,
+)
 from app.dto.common import ApiResponse
 from app.dto.request.document import RunStageInput, DocumentSettings, TocUpdate, TripleUpdate
 from app.dto.response.document import (
@@ -23,7 +28,7 @@ from app.services.document_graph_service import DocumentGraphService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
 from app.services.document_service import DocumentService
 
-router = APIRouter(prefix="/admin/documents", tags=["admin-documents"])
+router = APIRouter(prefix="/admin/documents", tags=["admin-documents"], dependencies=[Depends(require_admin)])
 
 Service = Annotated[
     DocumentIngestPipelineService, Depends(get_document_ingest_pipeline_service)

@@ -9,6 +9,7 @@ import { HintIcon } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog } from "@/features/document-pipeline/components/ConfirmDialog";
 import { EmptyState } from "@/features/document-pipeline/components/bits";
@@ -95,25 +96,38 @@ export function EntityTypeSection() {
           <Plus /> Thêm loại
         </Button>
       </div>
-      <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
-        {(types.data ?? []).map((t) => (
-          <div key={t.id} className="flex items-start gap-4 px-4 py-3">
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium text-foreground">{t.title}</span>
-                <SourceBadge builtin={t.builtin} kg={t.kg} />
-                <span className="font-mono text-[11px] text-muted-foreground">{t.id} · {t.label}</span>
-              </div>
-              <p className="text-xs text-muted-foreground">{t.hint}</p>
-            </div>
-            {!t.builtin && (
-              <div className="flex shrink-0 gap-1">
-                <Button variant="ghost" size="icon-xs" aria-label="Sửa" onClick={() => setEditing(t)}><Pencil /></Button>
-                <Button variant="ghost" size="icon-xs" aria-label="Xóa" className="text-muted-foreground hover:text-destructive" onClick={() => setDeleting(t)}><Trash2 /></Button>
-              </div>
-            )}
-          </div>
-        ))}
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Tên</TableHead>
+              <TableHead>Mã</TableHead>
+              <TableHead>Label Neo4j</TableHead>
+              <TableHead>Nguồn</TableHead>
+              <TableHead>Cách ghi tên</TableHead>
+              <TableHead className="w-20" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(types.data ?? []).map((t) => (
+              <TableRow key={t.id}>
+                <TableCell className="font-medium text-foreground">{t.title}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{t.id}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{t.label}</TableCell>
+                <TableCell><SourceBadge builtin={t.builtin} kg={t.kg} /></TableCell>
+                <TableCell className="max-w-md text-xs whitespace-normal text-muted-foreground">{t.hint}</TableCell>
+                <TableCell>
+                  {!t.builtin && (
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="icon-xs" aria-label="Sửa" onClick={() => setEditing(t)}><Pencil /></Button>
+                      <Button variant="ghost" size="icon-xs" aria-label="Xóa" className="text-muted-foreground hover:text-destructive" onClick={() => setDeleting(t)}><Trash2 /></Button>
+                    </div>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
       {editing && <EntityTypeDialog key={editing === "new" ? "new" : editing.id} editing={editing} onClose={() => setEditing(null)} />}
       <ConfirmDialog

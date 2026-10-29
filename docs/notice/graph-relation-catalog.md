@@ -1,7 +1,7 @@
 # Danh mục quan hệ / loại thực thể của bước graph
 
-Trang `/doctor/graph-schema` (API `/admin/graph-schema/*`). Bước `graph` trích theo `GraphSchema` = bảng core trong code
-(`pipeline/document_ingest/graph_schema.py`) + định nghĩa của bác sĩ trong Postgres (`graph_relations`, `graph_entity_types`).
+Trang `/admin/graph-schema` (API `/admin/graph-schema/*`). Bước `graph` trích theo `GraphSchema` = bảng core trong code
+(`pipeline/document_ingest/graph_schema.py`) + định nghĩa của admin trong Postgres (`graph_relations`, `graph_entity_types`).
 
 - **Core chỉ đọc, luôn bật.** Không seed vào DB để code và DB không lệch nhau.
 - **Đổi danh mục không tự đánh `stale` các tài liệu.** Muốn áp dụng phải chạy lại bước `graph` của từng sách.
@@ -14,5 +14,5 @@ Trang `/doctor/graph-schema` (API `/admin/graph-schema/*`). Bước `graph` trí
   không có nút nào cùng nghĩa để khớp vào (đồ thị nền không còn các nút BYT `typical_location`, `risk_factor`, `red_flag`).
 - Chủ đề chỉ là bệnh hoặc thuốc. Chủ đề thuốc không dùng được đầu kia là DermO.
 - Agent chỉ dùng loại cạnh có trong `agent/tools/hybrid_retrieval/kg_templates.py::RELATION_LABELS`, và chỉ khi
-  `KG_EDGE_SOURCES` có `DOC`. Quan hệ mới của bác sĩ vào được đồ thị nhưng agent chưa truy vấn tới.
+  `KG_EDGE_SOURCES` có `DOC`. Quan hệ mới của admin vào được đồ thị nhưng agent chưa truy vấn tới.
 - Loại quan hệ và label Neo4j được ghép thẳng vào câu Cypher; được chặn bằng regex ở `GraphSchemaService`, đừng nới lỏng.

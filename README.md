@@ -38,7 +38,7 @@ Tổng quan kiến trúc: [docs/module/overview.md](docs/module/overview.md).
 
 ```
 fe/                      Next.js
-  app/                   route: /chats, /doctor/documents
+  app/                   route: /chats, /admin/documents
   features/chat/         store Zustand, types, components chat
   features/document-pipeline/  api, hooks TanStack Query, components admin
   services/              HTTP client, SSE, adapter wire ↔ UI
@@ -75,7 +75,7 @@ make frontend    # FE http://localhost:3010
 make reindex-qdrant  # (khi đổi model embedding / nạp lại kho tri thức) nạp lại Qdrant từ MinIO/Postgres; dry=1 để xem trước
 ```
 
-**Nạp dữ liệu đồ thị tri thức** (Neo4j mới tạo đang trống; chunk sách vào Qdrant qua giao diện `/doctor/documents`), chạy ở thư mục gốc repo:
+**Nạp dữ liệu đồ thị tri thức** (Neo4j mới tạo đang trống; chunk sách vào Qdrant qua giao diện `/admin/documents`), chạy ở thư mục gốc repo:
 
 ```bash
 make kg-download    # tải PrimeKG (~1 GB) và DermO từ nguồn gốc

@@ -19,6 +19,7 @@ import { logout } from "@/features/auth/logout";
 import { getInitials } from "@/features/user";
 import { cn } from "@/lib/utils";
 import { AUTH_STATE_EVENT, getAuthenticatedUser } from "@/services/client";
+import { SidebarShell } from "./sidebar-shell";
 
 export interface ShellNavItem {
   href: string;
@@ -35,6 +36,8 @@ interface AppShellProps {
   nav: ShellNavItem[];
   // trang 3 cột cần khung cao bằng màn hình; trang thường thì cuộn
   fullBleed?: boolean;
+  // sidebar trái (cơ chế như sidebar chat) + nội dung bên phải thay cho thanh trên
+  sidebar?: boolean;
   children: React.ReactNode;
 }
 
@@ -72,18 +75,13 @@ function AccountMenu() {
     <div className="flex shrink-0 items-center">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="flex items-center gap-2 rounded-xl px-2 py-1.5 transition-colors hover:bg-muted"
-          >
+          <button type="button" className="flex items-center gap-2 rounded-xl px-2 py-1.5 transition-colors hover:bg-muted">
             <Avatar className="size-7 shrink-0 rounded-full border border-border">
               <AvatarFallback className="rounded-full bg-brand/15 text-xs font-semibold text-brand">
                 {getInitials(displayName)}
               </AvatarFallback>
             </Avatar>
-            <span className="hidden max-w-40 truncate text-xs font-medium text-foreground sm:inline">
-              {displayName}
-            </span>
+            <span className="hidden max-w-40 truncate text-xs font-medium text-foreground sm:inline">{displayName}</span>
             <ChevronDown className="hidden size-3.5 shrink-0 text-muted-foreground sm:inline" />
           </button>
         </DropdownMenuTrigger>
@@ -104,12 +102,21 @@ function AccountMenu() {
   );
 }
 
-export function AppShell({ brandLabel, brandIcon, navTitle, nav, fullBleed = false, children }: AppShellProps) {
+export function AppShell({ brandLabel, brandIcon, navTitle, nav, fullBleed = false, sidebar = false, children }: AppShellProps) {
   const pathname = usePathname();
   const [client] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, staleTime: 5_000 } } })
   );
   const home = nav[0]?.href ?? "/";
+  if (sidebar) {
+    return (
+      <QueryClientProvider client={client}>
+        <SidebarShell brandLabel={brandLabel} brandIcon={brandIcon} nav={nav}>
+          {children}
+        </SidebarShell>
+      </QueryClientProvider>
+    );
+  }
 
   return (
     <QueryClientProvider client={client}>

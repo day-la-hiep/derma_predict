@@ -18,7 +18,7 @@ structure) — trust this skill and the code over it.
 | Path | Owns | Must not |
 |---|---|---|
 | `app/` | Next.js App Router routes only (`page.tsx` = thin, imports a feature component) | hold business logic or API calls |
-| `app/providers.tsx` | app-wide providers: `QueryClientProvider` (TanStack Query cho mọi trang; khu bác sĩ còn client riêng trong `components/layout/app-shell.tsx`), `ThemeProvider`, `TooltipProvider`, `AccessGate`, `Toaster` | |
+| `app/providers.tsx` | app-wide providers: `QueryClientProvider` (TanStack Query cho mọi trang; khu bác sĩ/quản trị còn client riêng trong `components/layout/app-shell.tsx`), `ThemeProvider`, `TooltipProvider`, `AccessGate`, `Toaster` | |
 | `app/access-gate.tsx` | login gate: shows `features/auth` `AuthScreen` until a JWT is stored (see Gotchas) | |
 | `components/ui/` | shadcn primitives (`components.json`: style `new-york`, baseColor `neutral`) — generated/edited via shadcn conventions | hold feature-specific logic |
 | `features/<name>/` | one folder per feature: `types.ts`, `api.ts` (axios calls + `unwrap`), `hooks.ts` (TanStack Query) or `store.ts` (Zustand), `constants.ts`, `components/` | import another feature's internals directly (go through its exported hooks/store) |
