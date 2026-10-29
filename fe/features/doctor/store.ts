@@ -22,6 +22,8 @@ interface DoctorConsultationState {
   messages: DoctorViewMessage[];
   /** Đang tải danh sách */
   loading: boolean;
+  /** Đã tải xong danh sách ít nhất một lần (từ lúc vào màn này) */
+  loaded: boolean;
   /** Đang tải tin nhắn */
   loadingMessages: boolean;
   /** Đang thực hiện hành động (nhận ca / đóng ca) */
@@ -29,8 +31,8 @@ interface DoctorConsultationState {
   /** Filter theo status */
   statusFilter: ConsultationStatus | "all";
 
-  /** Khởi tạo — load danh sách phiên và nghe ca mới; `preferredSessionId` khi mở từ "Mở ca gốc" */
-  init: (preferredSessionId?: string | null) => Promise<void>;
+  /** Khởi tạo — load danh sách phiên và nghe ca mới; ca đang mở do URL (/doctor/<id>) quyết định, không tự chọn */
+  init: () => Promise<void>;
   /** Rời màn hình — đóng các SSE */
   dispose: () => void;
   /** Chọn phiên tư vấn */
@@ -168,24 +170,17 @@ export const useDoctorStore = create<DoctorConsultationState>((set, get) => {
     activeSessionId: null,
     messages: [],
     loading: false,
+    loaded: false,
     loadingMessages: false,
     actionLoading: false,
     statusFilter: "all",
 
-    async init(preferredSessionId) {
+    async init() {
       set({ loading: true });
       try {
         const sessions = await doctorApi.listSessions();
-        const { statusFilter } = get();
-        const first =
-          sessions.find((s) => s.id === preferredSessionId) ??
-          sessions.find((s) => statusFilter === "all" || s.status === statusFilter) ??
-          sessions[0];
-        set({ sessions, loading: false, activeSessionId: first?.id ?? null });
+        set({ sessions, loading: false, loaded: true });
         openInbox();
-        if (first) {
-          await get().selectSession(first.id);
-        }
       } catch (e) {
         set({ loading: false });
         toast.error(errorMessage(e));
@@ -197,6 +192,8 @@ export const useDoctorStore = create<DoctorConsultationState>((set, get) => {
       closeRoom?.();
       closeInbox = null;
       closeRoom = null;
+      // room đã đóng: quay lại màn này phải chọn lại ca (mở lại room) theo URL
+      set({ loaded: false, activeSessionId: null, messages: [] });
     },
 
     async selectSession(sessionId) {

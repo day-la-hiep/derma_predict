@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { ChevronDown, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +17,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { cn } from "@/lib/utils";
 import { TIME_FILTERS, URGENCY_CONFIG, URGENCY_ORDER } from "../constants";
 import { useMyFinalizeReports } from "../hooks";
+import { doctorPaths, parseDoctorRoute } from "../routes";
 import type { Urgency } from "../types";
 import { FinalizeReportDetail } from "./FinalizeReportDetail";
 import { FinalizeReportTable } from "./FinalizeReportTable";
@@ -66,7 +68,9 @@ export function MedicalHistoryPage() {
   const [query, setQuery] = useState("");
   const [days, setDays] = useState<string>("30");
   const [urgency, setUrgency] = useState<Urgency | "all">("all");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const router = useRouter();
+  const route = parseDoctorRoute(usePathname());
+  const selectedId = route.kind === "records" ? (route.reportId ?? null) : null;
   const { data: all = [], isLoading } = useMyFinalizeReports(useDebouncedValue(query.trim()));
   // mốc "bây giờ" cố định khi mở màn để bộ lọc thời gian không đổi giữa các lần render
   const [now] = useState(() => Date.now());
@@ -77,8 +81,8 @@ export function MedicalHistoryPage() {
       (since === null || new Date(r.createdAt).getTime() >= since) &&
       (urgency === "all" || r.snapshot?.assessment.urgency === urgency)
   );
-  // chưa chọn (hoặc bản đang chọn bị lọc mất) thì hiện bản mới nhất
-  const selected = reports.find((r) => r.id === selectedId) ?? reports[0] ?? null;
+  // báo cáo trên URL (mở link vẫn thấy dù bộ lọc thời gian/khẩn cấp đang loại nó); chưa chọn thì hiện bản mới nhất
+  const selected = all.find((r) => r.id === selectedId) ?? reports[0] ?? null;
   const timeLabel = TIME_FILTERS.find((t) => String(t.days ?? "all") === days)?.label ?? "";
 
   return (
@@ -117,7 +121,7 @@ export function MedicalHistoryPage() {
             total={all.length}
             loading={isLoading}
             selectedId={selected?.id ?? null}
-            onSelect={setSelectedId}
+            onSelect={(id) => router.push(doctorPaths.report(id))}
           />
         </div>
         <div className="w-full max-w-md shrink-0 xl:max-w-lg print:max-w-none">

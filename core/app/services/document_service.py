@@ -204,6 +204,9 @@ class DocumentService:
                     id=did,
                     title=detail.get("title", did),
                     created_at=detail.get("created_at"),
+                    # chỉ đọc số trang đã cache, không tải PDF về để đếm
+                    pdf_pages=self._repo.meta(did).get("pdf_pages") or None,
+                    file_size=(detail.get("source_file") or {}).get("size"),
                     states={k: v.get("state", "not_started") for k, v in detail["stages"].items()},
                 )
             )

@@ -9,6 +9,7 @@ import { HintIcon } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { RELATION_LABELS } from "@/features/document-pipeline/constants";
 import { ConfirmDialog } from "@/features/document-pipeline/components/ConfirmDialog";
@@ -164,39 +165,56 @@ export function RelationSection() {
           <Plus /> Thêm quan hệ
         </Button>
       </div>
-      <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
-        {(relations.data ?? []).map((r) => {
-          const [from, to] = direction(r, titles);
-          return (
-            <div key={`${r.slot_id}:${r.relation_type}`} className="flex items-start gap-4 px-4 py-3">
-              <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-foreground">{r.builtin ? (RELATION_LABELS[r.relation_type] ?? r.title) : r.title}</span>
-                  <SourceBadge builtin={r.builtin} kg={r.kg} />
-                  <span className="font-mono text-[11px] text-muted-foreground">{r.relation_type}</span>
-                </div>
-                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  {from} <ArrowRight className="size-3" /> {to}
-                </p>
-                <p className="text-xs text-muted-foreground">{r.hint}</p>
-              </div>
-              {r.builtin ? (
-                <span className="shrink-0 text-[11px] text-muted-foreground">Luôn bật</span>
-              ) : (
-                <div className="flex shrink-0 items-center gap-2">
-                  <Switch
-                    size="sm"
-                    checked={r.enabled}
-                    aria-label={r.enabled ? "Tắt quan hệ" : "Bật quan hệ"}
-                    onCheckedChange={(v) => r.id && updateRelation.mutate({ id: r.id, body: { enabled: v } })}
-                  />
-                  <Button variant="ghost" size="icon-xs" aria-label="Sửa" onClick={() => setEditing(r)}><Pencil /></Button>
-                  <Button variant="ghost" size="icon-xs" aria-label="Xóa" className="text-muted-foreground hover:text-destructive" onClick={() => setDeleting(r)}><Trash2 /></Button>
-                </div>
-              )}
-            </div>
-          );
-        })}
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Quan hệ</TableHead>
+              <TableHead>Mã</TableHead>
+              <TableHead>Chiều</TableHead>
+              <TableHead>Nguồn</TableHead>
+              <TableHead>Mô tả cho AI</TableHead>
+              <TableHead>Bật</TableHead>
+              <TableHead className="w-20" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {(relations.data ?? []).map((r) => {
+              const [from, to] = direction(r, titles);
+              return (
+                <TableRow key={`${r.slot_id}:${r.relation_type}`}>
+                  <TableCell className="font-medium text-foreground">{r.builtin ? (RELATION_LABELS[r.relation_type] ?? r.title) : r.title}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{r.relation_type}</TableCell>
+                  <TableCell className="text-xs whitespace-nowrap text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5">{from} <ArrowRight className="size-3" /> {to}</span>
+                  </TableCell>
+                  <TableCell><SourceBadge builtin={r.builtin} kg={r.kg} /></TableCell>
+                  <TableCell className="max-w-md text-xs whitespace-normal text-muted-foreground">{r.hint}</TableCell>
+                  <TableCell>
+                    {r.builtin ? (
+                      <span className="text-[11px] whitespace-nowrap text-muted-foreground">Luôn bật</span>
+                    ) : (
+                      <Switch
+                        size="sm"
+                        checked={r.enabled}
+                        aria-label={r.enabled ? "Tắt quan hệ" : "Bật quan hệ"}
+                        onCheckedChange={(v) => r.id && updateRelation.mutate({ id: r.id, body: { enabled: v } })}
+                      />
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {!r.builtin && (
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon-xs" aria-label="Sửa" onClick={() => setEditing(r)}><Pencil /></Button>
+                        <Button variant="ghost" size="icon-xs" aria-label="Xóa" className="text-muted-foreground hover:text-destructive" onClick={() => setDeleting(r)}><Trash2 /></Button>
+                      </div>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       </div>
       {editing && <RelationDialog key={editing === "new" ? "new" : editing.id} editing={editing} entityTypes={entityTypes} onClose={() => setEditing(null)} />}
       <ConfirmDialog

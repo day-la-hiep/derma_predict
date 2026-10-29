@@ -1,11 +1,13 @@
 "use client";
 
-import { ChevronRight, Download } from "lucide-react";
+import { ChevronRight, Download, ListTree, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { Chips, EmptyState, Pager, SearchBox } from "./bits";
+import { Chips, StepTitle, EmptyState, Pager, SearchBox } from "./bits";
 import { errorMessage, documentApi } from "../api";
 import { LEVEL_TONE } from "../constants";
 import { useData, usePage } from "../hooks";
@@ -94,64 +96,64 @@ function TocNav({
   );
 }
 
-function ChunkCard({ c, onPreview, previewPage }: { c: Chunk; onPreview: (p: number) => void; previewPage: number }) {
+const FLAG = "rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] whitespace-nowrap text-amber-600 dark:text-amber-400";
+
+function ChunkRow({ c, onPreview, previewPage }: { c: Chunk; onPreview: (p: number) => void; previewPage: number }) {
   const [open, setOpen] = useState(false);
-  const long = c.text.length > 320;
   const crumbs = [c.part, c.section, c.topic, c.subtopic].filter(Boolean);
+  const words = Math.round(c.tokens / 1.3);
+  const lengthWarn = Boolean(c.review_reason && /dài|ngắn/.test(c.review_reason));
   return (
-    <article className="space-y-2 rounded-2xl border border-border bg-card p-4">
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground">
-        {crumbs.map((h, i) => (
-          <span key={`${h}-${i}`} className="flex items-center gap-1.5">
-            {i > 0 && <span>›</span>}
-            <span className={i === crumbs.length - 1 ? "font-medium text-foreground" : "max-w-48 truncate"} title={h}>
-              {h}
-            </span>
+    <>
+      <TableRow className="cursor-pointer" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <TableCell className="font-mono text-xs text-muted-foreground">{c.chunk_id.split(":").pop()}</TableCell>
+        <TableCell className="max-w-56 whitespace-normal">
+          <p className="truncate text-xs font-medium text-foreground" title={crumbs.join(" › ")}>
+            {crumbs[crumbs.length - 1] ?? <span className="font-normal text-muted-foreground italic">(không thuộc mục nào)</span>}
+          </p>
+          {crumbs.length > 1 && <p className="truncate text-[11px] text-muted-foreground" title={crumbs.join(" › ")}>{crumbs.slice(0, -1).join(" › ")}</p>}
+        </TableCell>
+        <TableCell onClick={(e) => e.stopPropagation()}>
+          <span className="flex flex-wrap items-center gap-1">
+            <PageChip page={c.page_start} onOpen={onPreview} active={previewPage >= c.page_start && previewPage <= c.page_end} />
+            {c.page_end !== c.page_start && <PageChip page={c.page_end} onOpen={onPreview} />}
           </span>
-        ))}
-        {crumbs.length === 0 && <span className="italic">(không thuộc mục nào trong mục lục)</span>}
-      </div>
-      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-        <span className="rounded bg-muted px-1.5 py-0.5 font-mono">{c.chunk_id.split(":").pop()}</span>
-        <PageChip page={c.page_start} onOpen={onPreview} active={previewPage >= c.page_start && previewPage <= c.page_end} />
-        {c.page_end !== c.page_start && <PageChip page={c.page_end} onOpen={onPreview} />}
-        <span className="text-muted-foreground" title="Trang in của sách">
-          in {c.page_printed_start}
+        </TableCell>
+        <TableCell className="text-xs whitespace-nowrap text-muted-foreground tabular-nums" title="Trang in của sách">
+          {c.page_printed_start}
           {c.page_printed_end !== c.page_printed_start && `–${c.page_printed_end}`}
-        </span>
-        {c.pages_hint && (
-          <span className="text-muted-foreground" title="Khoảng trang của mục theo mục lục">
-            mục: tr.{c.pages_hint[0]}
-            {c.pages_hint[1] !== c.pages_hint[0] && `–${c.pages_hint[1]}`}
+        </TableCell>
+        <TableCell className={cn("text-xs whitespace-nowrap tabular-nums", lengthWarn ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")}>
+          ~{words}
+        </TableCell>
+        <TableCell>
+          <span className="flex flex-wrap gap-1">
+            {c.boundary && <span className={FLAG} title="Chưa tìm thấy dòng tiêu đề của mục: vị trí bắt đầu mục chỉ chính xác đến trang">vị trí chưa chắc</span>}
+            {c.suspect && <span className={FLAG}>mục cần kiểm tra</span>}
+            {c.figure_ids?.length > 0 && <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] whitespace-nowrap text-muted-foreground" title="Hình ảnh nằm trong khoảng trang của đoạn này">{c.figure_ids.length} hình</span>}
           </span>
-        )}
-        {c.boundary && (
-          <span
-            className="rounded bg-amber-500/10 px-1.5 py-0.5 text-amber-600 dark:text-amber-400"
-            title="Chưa tìm thấy dòng tiêu đề của mục: vị trí bắt đầu mục chỉ chính xác đến trang"
-          >
-            vị trí mục chưa chắc
-          </span>
-        )}
-        {c.suspect && <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-amber-600 dark:text-amber-400">mục cần kiểm tra</span>}
-        {c.figure_ids?.length > 0 && (
-          <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground" title="Hình ảnh nằm trong khoảng trang của đoạn này">
-            {c.figure_ids.length} hình
-          </span>
-        )}
-        <span className={cn("tabular-nums", c.review_reason && /dài|ngắn/.test(c.review_reason) ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")}>
-          ~{Math.round(c.tokens / 1.3)} từ
-        </span>
-      </div>
-      <p className="text-xs leading-relaxed whitespace-pre-wrap text-foreground">
-        {open || !long ? c.text : c.text.slice(0, 320) + "…"}
-      </p>
-      {long && (
-        <button type="button" onClick={() => setOpen(!open)} className="cursor-pointer text-[11px] text-brand hover:underline">
-          {open ? "Thu gọn" : "Xem đầy đủ"}
-        </button>
+        </TableCell>
+        <TableCell className="max-w-xs whitespace-normal">
+          <p className="line-clamp-2 text-xs text-muted-foreground">{c.text}</p>
+        </TableCell>
+        <TableCell className="w-8 pr-3">
+          <ChevronRight className={cn("size-3.5 text-muted-foreground transition-transform", open && "rotate-90")} />
+        </TableCell>
+      </TableRow>
+      {open && (
+        <TableRow className="bg-muted/30 hover:bg-muted/30">
+          <TableCell colSpan={8} className="space-y-2 whitespace-normal">
+            {c.pages_hint && (
+              <p className="text-[11px] text-muted-foreground">
+                Khoảng trang của mục theo mục lục: tr.{c.pages_hint[0]}
+                {c.pages_hint[1] !== c.pages_hint[0] && `–${c.pages_hint[1]}`}
+              </p>
+            )}
+            <p className="text-xs leading-relaxed whitespace-pre-wrap text-foreground">{c.text}</p>
+          </TableCell>
+        </TableRow>
       )}
-    </article>
+    </>
   );
 }
 
@@ -169,12 +171,14 @@ export function ChunkBrowser({
   const [q, setQ] = useState("");
   const [node, setNode] = useState("");
   const [only, setOnly] = useState("all");
+  const [tocOpen, setTocOpen] = useState(false);
   const [page, setPage] = usePage(`${q}|${node}|${only}`);
   const list = useData(documentId, "chunks", { q, node, only, page }, () =>
     documentApi.chunks(documentId, { q, node, only_review: only === "review", page, pageSize: PAGE_SIZE })
   );
   const data = list.data;
   const counts = data?.counts ?? {};
+  const selectedEntry = toc?.entries.find((e) => e.id === node);
 
   const download = async () => {
     try {
@@ -190,18 +194,30 @@ export function ChunkBrowser({
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
-      <aside className="space-y-2 rounded-2xl border border-border bg-card p-3 lg:sticky lg:top-6 lg:self-start">
-        <p className="px-1 text-[11px] font-medium text-muted-foreground">Theo mục lục</p>
-        {toc ? (
-          <TocNav entries={toc.entries} perNode={counts.per_node ?? {}} selected={node} onSelect={setNode} />
-        ) : (
-          <p className="px-1 text-xs text-muted-foreground">Chưa có mục lục.</p>
-        )}
-      </aside>
-
-      <div className="min-w-0 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="sticky top-[4.5rem] flex h-[calc(100vh-6rem)] min-h-96 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
+        {/* khối cao bằng khung preview, ghim cùng mốc; chỉ phần bảng cuộn bên trong */}
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2">
+          <StepTitle step="chunks" />
+          <Popover open={tocOpen} onOpenChange={setTocOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm">
+                <ListTree /> {selectedEntry ? <span className="max-w-48 truncate">{selectedEntry.title}</span> : "Mục lục"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-80 p-2">
+              {toc ? (
+                <TocNav entries={toc.entries} perNode={counts.per_node ?? {}} selected={node} onSelect={(id) => { setNode(id); setTocOpen(false); }} />
+              ) : (
+                <p className="px-1 text-xs text-muted-foreground">Chưa có mục lục.</p>
+              )}
+            </PopoverContent>
+          </Popover>
+          {node && (
+            <Button variant="ghost" size="icon-xs" onClick={() => setNode("")} aria-label="Bỏ lọc mục lục">
+              <X />
+            </Button>
+          )}
           <Chips
             value={only}
             onChange={setOnly}
@@ -210,6 +226,7 @@ export function ChunkBrowser({
               { value: "review", label: "Cần xem lại", count: counts.review },
             ]}
           />
+          </div>
           <div className="flex items-center gap-2">
             <SearchBox value={q} onChange={setQ} placeholder="Tìm trong nội dung..." className="w-52" />
             <Button variant="outline" size="sm" onClick={download}>
@@ -217,17 +234,34 @@ export function ChunkBrowser({
             </Button>
           </div>
         </div>
+        <div className="min-h-0 flex-1 overflow-auto">
         {data && (data.items ?? []).length === 0 ? (
           <EmptyState title="Không có đoạn nào phù hợp" />
         ) : (
-          <div className="space-y-3">
-            {(data?.items ?? []).map((c) => (
-              <ChunkCard key={c.chunk_id} c={c} onPreview={onPreview} previewPage={previewPage} />
-            ))}
+          <div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Mã</TableHead>
+                  <TableHead>Mục</TableHead>
+                  <TableHead>Trang PDF</TableHead>
+                  <TableHead>Trang in</TableHead>
+                  <TableHead>Số từ</TableHead>
+                  <TableHead>Lưu ý</TableHead>
+                  <TableHead>Nội dung</TableHead>
+                  <TableHead className="w-8" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(data?.items ?? []).map((c) => (
+                  <ChunkRow key={c.chunk_id} c={c} onPreview={onPreview} previewPage={previewPage} />
+                ))}
+              </TableBody>
+            </Table>
           </div>
         )}
-        <Pager page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPage={setPage} />
-      </div>
+        </div>
+        <Pager attached={!(data && (data.items ?? []).length === 0)} page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPage={setPage} />
     </div>
   );
 }

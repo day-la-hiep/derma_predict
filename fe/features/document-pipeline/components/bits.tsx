@@ -5,8 +5,8 @@ import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { STATE_INFO } from "../constants";
-import type { StageState } from "../types";
+import { STATE_INFO, STEP_INFO, STEP_ORDER } from "../constants";
+import type { StageState, StepId } from "../types";
 
 export function StateBadge({ state, className }: { state: StageState; className?: string }) {
   const info = STATE_INFO[state];
@@ -87,15 +87,23 @@ export function Pager({
   pageSize,
   total,
   onPage,
+  attached = false,
 }: {
   page: number;
   pageSize: number;
   total: number;
   onPage: (p: number) => void;
+  // nằm trong khung chung với bảng: chỉ còn đường kẻ trên
+  attached?: boolean;
 }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   return (
-    <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+    <div
+      className={cn(
+        "flex shrink-0 items-center justify-between gap-3 border-border bg-card px-3 py-2 text-xs text-muted-foreground",
+        attached ? "border-t" : "rounded-2xl border"
+      )}
+    >
       <span className="tabular-nums">
         {total === 0 ? "0 mục" : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} / ${total}`}
       </span>
@@ -194,3 +202,13 @@ export function SectionCard({
 
 export const selectCls =
   "h-7 cursor-pointer rounded-lg border border-border bg-background px-2 text-[11px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
+
+/** Tên bước đang xem, đặt đầu thanh lọc ghim để cuộn xuống vẫn biết đang ở bước nào. */
+export function StepTitle({ step }: { step: StepId }) {
+  return (
+    <span className="mr-1 flex items-center gap-1.5 border-r border-border pr-3 text-xs font-semibold text-foreground">
+      <span className="font-mono text-[10px] text-muted-foreground">{STEP_ORDER.indexOf(step) + 1}</span>
+      {STEP_INFO[step].label}
+    </span>
+  );
+}

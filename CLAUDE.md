@@ -22,7 +22,7 @@ Hướng dẫn cho Claude khi làm việc trong repo này.
 Cấu trúc thư mục:
 
 ```
-fe/        Next.js App Router: /chats (chat), /doctor/documents (pipeline admin)
+fe/        Next.js App Router: /chats (chat), /doctor (bác sĩ), /admin (pipeline sách + đồ thị, chỉ admin)
 core/      FastAPI (app/), agent LangGraph (agent/), pipeline (pipeline/document_ingest/),
            migrations Alembic (migrations/), dữ liệu nạp (data_ingest/)
 docs/      tài liệu kiến trúc + hướng dẫn chung; docs/notice/ = các lưu ý dễ bỏ sót,
@@ -38,7 +38,7 @@ make migrate        # alembic upgrade head
 make init-db        # bucket MinIO + dữ liệu mẫu (user-1, bác sĩ, admin) — chạy sau migrate
 make backend        # Core FastAPI :3050
 make worker         # Agent Worker (tiến trình riêng, consume RabbitMQ)
-make ingest-worker  # Ingest Worker: chạy các bước pipeline tài liệu (bắt buộc chạy thì bấm "Chạy" ở /doctor/documents mới có tác dụng)
+make ingest-worker  # Ingest Worker: chạy các bước pipeline tài liệu (bắt buộc chạy thì bấm "Chạy" ở /admin/documents mới có tác dụng)
 make frontend       # Next.js :3010
 make reindex-qdrant # nạp lại Qdrant (sách + ca bệnh) từ MinIO/Postgres; thêm dry=1 để xem trước (xem docs/notice/qdrant-reindex.md)
 ```
@@ -145,7 +145,7 @@ Quy tắc dùng chung:
 
 ## 7. Hạn chế đã biết (đồ án)
 
-- Không có auth đa người dùng cho khu admin (API chưa kiểm tra JWT phía server).
+- Khu admin: `/admin/*` (API `/api/v1/admin/*` bắt buộc vai trò admin qua `require_admin`); `uploaded_by_id` của `documents` vẫn FK tới `doctors` nhưng chưa được ghi.
 - Upload PDF đi qua Core; chưa có presigned upload trực tiếp lên MinIO.
 - Không có job dọn object MinIO mồ côi khi rollback thất bại.
 - Chưa có tài liệu hướng dẫn triển khai cho pipeline; `DEPLOY.md` chỉ mô tả chat.

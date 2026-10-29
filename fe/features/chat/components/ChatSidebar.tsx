@@ -61,6 +61,7 @@ function SidebarInner({
   onOpenProfile,
   onNewChat,
   onSelectConversation,
+  onSwitchProfile,
   setSettingsOpen,
 }: {
   collapsed: boolean;
@@ -70,6 +71,7 @@ function SidebarInner({
   onOpenProfile: () => void;
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
+  onSwitchProfile: (profileId: string) => void;
   setSettingsOpen: (open: boolean) => void;
 }) {
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
@@ -84,11 +86,7 @@ function SidebarInner({
     : allConversations;
   // "Cuộc trò chuyện mới" được coi là đang chọn khi chưa vào hội thoại nào (chưa gửi tin đầu tiên)
   const isNewChatActive = activeView === "chat" && activeId === null;
-  const handleSwitchProfile = (profileId: string) => {
-    // hội thoại đang mở thuộc hồ sơ khác thì về màn hội thoại mới, tránh gửi tiếp vào hồ sơ cũ
-    const open = allConversations.find((c) => c.id === activeId);
-    if (open?.patientProfileId && open.patientProfileId !== profileId) onNewChat();
-  };
+  const handleSwitchProfile = onSwitchProfile;
 
   useEffect(() => {
     setCurrentUser(getAuthenticatedUser());
@@ -207,23 +205,10 @@ function SidebarInner({
         </div>
       </SidebarGroup>
 
-      {/* Chọn hồ sơ cho cuộc trò chuyện mới — tách khỏi nhóm chức năng phía trên để không bị hiểu nhầm là một mục điều hướng */}
+      {/* Chọn hồ sơ thay cho nhãn "Lịch sử tư vấn": danh sách bên dưới chính là lịch sử của hồ sơ đang chọn */}
       {!collapsed && (
-        <div className="border-y border-border/60 bg-muted/30 px-3 py-2.5">
-          <span className="mb-1.5 block font-mono text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground">
-            Hồ sơ đang dùng
-          </span>
-          <ProfileSwitcher onSwitch={handleSwitchProfile} />
-        </div>
-      )}
-
-      {/* Nhãn nhóm */}
-      {!collapsed && (
-        <div className="px-3.5 pt-3 pb-1.5 flex items-center justify-between">
-          <span className="font-mono text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground">
-            Lịch sử tư vấn
-          </span>
-          <span className="size-1.5 rounded-full bg-brand/50" />
+        <div className="px-2.5 pt-2 pb-1">
+          <ProfileSwitcher compact onSwitch={handleSwitchProfile} />
         </div>
       )}
 
@@ -345,6 +330,7 @@ export function ChatSidebar({
   onOpenProfile,
   onNewChat,
   onSelectConversation,
+  onSwitchProfile,
 }: {
   open: boolean;
   collapsed: boolean;
@@ -354,6 +340,7 @@ export function ChatSidebar({
   onOpenProfile: () => void;
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
+  onSwitchProfile: (profileId: string) => void;
 }) {
   const init = useChatStore((s) => s.init);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -376,6 +363,7 @@ export function ChatSidebar({
             onOpenProfile={onOpenProfile}
             onNewChat={onNewChat}
             onSelectConversation={onSelectConversation}
+            onSwitchProfile={onSwitchProfile}
             setSettingsOpen={setSettingsOpen}
           />
         </SheetContent>
@@ -396,6 +384,7 @@ export function ChatSidebar({
           onOpenProfile={onOpenProfile}
           onNewChat={onNewChat}
           onSelectConversation={onSelectConversation}
+            onSwitchProfile={onSwitchProfile}
           setSettingsOpen={setSettingsOpen}
         />
       </aside>

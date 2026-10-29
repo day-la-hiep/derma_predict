@@ -16,7 +16,7 @@ export function GraphSchemaPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <h1 className="flex items-center gap-2 font-serif text-2xl font-bold tracking-tight text-foreground">
+        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-foreground">
           Quan hệ đồ thị
           <HintIcon
             side="right"

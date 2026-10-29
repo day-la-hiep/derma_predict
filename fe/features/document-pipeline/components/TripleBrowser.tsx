@@ -6,8 +6,9 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { Chips, EmptyState, Pager, SearchBox, selectCls } from "./bits";
+import { Chips, EmptyState, Pager, SearchBox, StepTitle, selectCls } from "./bits";
 import { PageChip } from "./PagePreview";
 import { documentApi } from "../api";
 import { useSchemaLabels } from "@/features/graph-schema/hooks";
@@ -106,7 +107,7 @@ function Side({ r, picking, onPick, accepted }: { r: GraphNodeRef; picking: bool
   );
 }
 
-function TripleCard({
+function TripleRow({
   t,
   accepted,
   busy,
@@ -121,65 +122,85 @@ function TripleCard({
 }) {
   const labels = useSchemaLabels();
   const [picking, setPicking] = useState<"subject" | "object" | null>(null);
+  const [full, setFull] = useState(false);
   const sides = { subject: t.subject, object: t.object };
   const newIds = [t.subject, t.object].filter((s) => s.link_method === "new" && s.node_id && !labels.custom(s.type)).map((s) => s.node_id as string);
   const manual = (["subject", "object"] as const).filter((k) => sides[k].link_method === "manual");
   return (
-    <article className={cn("space-y-2 rounded-2xl border bg-card p-3", t.status === "rejected" ? "border-border opacity-60" : t.status === "unlinked" ? "border-amber-500/40" : "border-border")}>
-      <div className="flex items-start gap-2">
-        <Side r={t.subject} accepted={accepted.has(t.subject.node_id ?? "")} picking={picking === "subject"} onPick={() => setPicking(picking === "subject" ? null : "subject")} />
-        <div className="flex shrink-0 flex-col items-center px-1 pt-3">
-          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium whitespace-nowrap text-foreground" title={t.relation}>
-            {labels.relation(t.relation)}
+    <>
+      <TableRow className={cn(t.status === "rejected" && "opacity-60", t.status === "unlinked" && "bg-amber-500/[0.07]", picking && "border-b-0")}>
+        <TableCell className="w-52 max-w-52">
+          <Side r={t.subject} accepted={accepted.has(t.subject.node_id ?? "")} picking={picking === "subject"} onPick={() => setPicking(picking === "subject" ? null : "subject")} />
+        </TableCell>
+        <TableCell className="w-px">
+          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-foreground" title={t.relation}>
+              {labels.relation(t.relation)}
+            </span>
+            <ArrowRight className="size-3.5 text-muted-foreground" />
           </span>
-          <ArrowRight className="size-3.5 text-muted-foreground" />
-        </div>
-        <Side r={t.object} accepted={accepted.has(t.object.node_id ?? "")} picking={picking === "object"} onPick={() => setPicking(picking === "object" ? null : "object")} />
-      </div>
-      {picking && (
-        <NodePicker
-          side={sides[picking]}
-          onClose={() => setPicking(null)}
-          onPick={(id) => {
-            onUpdate({ relink: [{ triple_id: t.triple_id, side: picking, node_id: id }] });
-            setPicking(null);
-          }}
-        />
-      )}
-      <blockquote className="border-l-2 border-border pl-2 text-xs leading-relaxed text-muted-foreground italic">“{t.evidence}”</blockquote>
-      <div className="flex flex-wrap items-center gap-1.5">
-        {t.pages.map((p) => (
-          <PageChip key={p} page={p} onOpen={onPreview} />
-        ))}
-        <span className="flex-1" />
-        {manual.length > 0 && (
-          <Button size="xs" variant="ghost" disabled={busy} onClick={() => onUpdate({ relink: manual.map((side) => ({ triple_id: t.triple_id, side, node_id: null })) })}>
-            <Undo2 /> Bỏ sửa
-          </Button>
-        )}
-        {newIds.length > 0 &&
-          (newIds.every((id) => accepted.has(id)) ? (
-            <Button size="xs" variant="ghost" disabled={busy} onClick={() => onUpdate({ unaccept_nodes: newIds })}>
-              <RotateCcw /> Bỏ chấp nhận
-            </Button>
-          ) : (
-            <Hint content="Chấp nhận thực thể mới cho mọi quan hệ dùng nó trong sách này.">
-              <Button size="xs" variant="outline" disabled={busy} onClick={() => onUpdate({ accept_nodes: newIds })}>
-                <Check /> Chấp nhận
+        </TableCell>
+        <TableCell className="w-52 max-w-52">
+          <Side r={t.object} accepted={accepted.has(t.object.node_id ?? "")} picking={picking === "object"} onPick={() => setPicking(picking === "object" ? null : "object")} />
+        </TableCell>
+        <TableCell className="max-w-xs whitespace-normal">
+          <button type="button" onClick={() => setFull(!full)} className="cursor-pointer text-left" title={full ? "Thu gọn" : "Xem đầy đủ"}>
+            <span className={cn("block border-l-2 border-border pl-2 text-xs leading-relaxed text-muted-foreground italic", !full && "line-clamp-2")}>“{t.evidence}”</span>
+          </button>
+        </TableCell>
+        <TableCell>
+          <span className="flex flex-wrap gap-1">
+            {t.pages.map((p) => (
+              <PageChip key={p} page={p} onOpen={onPreview} />
+            ))}
+          </span>
+        </TableCell>
+        <TableCell>
+          <div className="flex flex-wrap justify-end gap-1">
+            {manual.length > 0 && (
+              <Button size="xs" variant="ghost" disabled={busy} onClick={() => onUpdate({ relink: manual.map((side) => ({ triple_id: t.triple_id, side, node_id: null })) })}>
+                <Undo2 /> Bỏ sửa
               </Button>
-            </Hint>
-          ))}
-        {t.status === "rejected" ? (
-          <Button size="xs" variant="ghost" disabled={busy} onClick={() => onUpdate({ restored: [t.triple_id] })}>
-            <RotateCcw /> Khôi phục
-          </Button>
-        ) : (
-          <Button size="xs" variant="ghost" disabled={busy} onClick={() => onUpdate({ rejected: [t.triple_id] })}>
-            <Ban /> Loại
-          </Button>
-        )}
-      </div>
-    </article>
+            )}
+            {newIds.length > 0 &&
+              (newIds.every((id) => accepted.has(id)) ? (
+                <Button size="xs" variant="ghost" disabled={busy} onClick={() => onUpdate({ unaccept_nodes: newIds })}>
+                  <RotateCcw /> Bỏ chấp nhận
+                </Button>
+              ) : (
+                <Hint content="Chấp nhận thực thể mới cho mọi quan hệ dùng nó trong sách này.">
+                  <Button size="xs" variant="outline" disabled={busy} onClick={() => onUpdate({ accept_nodes: newIds })}>
+                    <Check /> Chấp nhận
+                  </Button>
+                </Hint>
+              ))}
+            {t.status === "rejected" ? (
+              <Button size="xs" variant="ghost" disabled={busy} onClick={() => onUpdate({ restored: [t.triple_id] })}>
+                <RotateCcw /> Khôi phục
+              </Button>
+            ) : (
+              <Button size="xs" variant="ghost" disabled={busy} onClick={() => onUpdate({ rejected: [t.triple_id] })}>
+                <Ban /> Loại
+              </Button>
+            )}
+          </div>
+        </TableCell>
+      </TableRow>
+      {picking && (
+        <TableRow className="hover:bg-transparent">
+          <TableCell colSpan={6} className="whitespace-normal">
+            <NodePicker
+              side={sides[picking]}
+              onClose={() => setPicking(null)}
+              onPick={(id) => {
+                onUpdate({ relink: [{ triple_id: t.triple_id, side: picking, node_id: id }] });
+                setPicking(null);
+              }}
+            />
+          </TableCell>
+        </TableRow>
+      )}
+    </>
   );
 }
 
@@ -199,19 +220,24 @@ export function TripleBrowser({ documentId, onPreview }: { documentId: string; o
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Chips
-          value={status}
-          onChange={setStatus}
-          options={[
-            { value: "all", label: "Tất cả", count: counts.all },
-            { value: "ok", label: "Đã khớp", count: counts.ok },
-            { value: "unlinked", label: "Chưa khớp", count: counts.unlinked },
-            { value: "new", label: "Mới", count: counts.new },
-            { value: "rejected", label: "Đã loại", count: counts.rejected },
-          ]}
-        />
-        <div className="flex items-center gap-2">
+      <div className="sticky top-[4.5rem] flex h-[calc(100vh-6rem)] min-h-96 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
+      {/* khối cao bằng khung preview, ghim cùng mốc; chỉ phần bảng cuộn bên trong */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <StepTitle step="graph" />
+          <Chips
+            value={status}
+            onChange={setStatus}
+            options={[
+              { value: "all", label: "Tất cả", count: counts.all },
+              { value: "ok", label: "Đã khớp", count: counts.ok },
+              { value: "unlinked", label: "Chưa khớp", count: counts.unlinked },
+              { value: "new", label: "Mới", count: counts.new },
+              { value: "rejected", label: "Đã loại", count: counts.rejected },
+            ]}
+          />
+        </div>
+        <div className="ml-auto flex items-center gap-2">
           <Hint content="Quan hệ do AI trích từ sách, chỉ là gợi ý tham khảo, không phải chẩn đoán y khoa.">
             <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">gợi ý</span>
           </Hint>
@@ -229,13 +255,28 @@ export function TripleBrowser({ documentId, onPreview }: { documentId: string; o
       {data && data.items.length === 0 ? (
         <EmptyState title="Không có quan hệ nào phù hợp" />
       ) : (
-        <div className="grid gap-3 2xl:grid-cols-2">
-          {(data?.items ?? []).map((t) => (
-            <TripleCard key={t.triple_id} t={t} accepted={accepted} busy={update.isPending} onUpdate={(b) => update.mutate(b)} onPreview={onPreview} />
-          ))}
+        <div className="min-h-0 flex-1 overflow-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Chủ thể</TableHead>
+                <TableHead>Quan hệ</TableHead>
+                <TableHead>Đối tượng</TableHead>
+                <TableHead>Bằng chứng</TableHead>
+                <TableHead>Trang</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(data?.items ?? []).map((t) => (
+                <TripleRow key={t.triple_id} t={t} accepted={accepted} busy={update.isPending} onUpdate={(b) => update.mutate(b)} onPreview={onPreview} />
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
-      <Pager page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPage={setPage} />
+      <Pager attached={!(data && data.items.length === 0)} page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPage={setPage} />
+      </div>
     </div>
   );
 }

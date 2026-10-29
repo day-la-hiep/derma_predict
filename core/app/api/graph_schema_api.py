@@ -5,14 +5,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import get_document_graph_service, get_graph_schema_service
+from app.api.deps import get_document_graph_service, get_graph_schema_service, require_admin
 from app.dto.base.graph_schema import GraphEntityTypeDefinition, GraphRelationDefinition
 from app.dto.common import ApiResponse
 from app.dto.request.graph_schema import EntityTypeCreate, EntityTypeUpdate, RelationCreate, RelationUpdate
 from app.services.document_graph_service import DocumentGraphService
 from app.services.graph_schema_service import GraphSchemaService
 
-router = APIRouter(prefix="/admin/graph-schema", tags=["admin-graph-schema"])
+router = APIRouter(prefix="/admin/graph-schema", tags=["admin-graph-schema"], dependencies=[Depends(require_admin)])
 
 Schema = Annotated[GraphSchemaService, Depends(get_graph_schema_service)]
 Graph = Annotated[DocumentGraphService, Depends(get_document_graph_service)]
