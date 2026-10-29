@@ -207,23 +207,10 @@ function SidebarInner({
         </div>
       </SidebarGroup>
 
-      {/* Chọn hồ sơ cho cuộc trò chuyện mới — tách khỏi nhóm chức năng phía trên để không bị hiểu nhầm là một mục điều hướng */}
+      {/* Chọn hồ sơ thay cho nhãn "Lịch sử tư vấn": danh sách bên dưới chính là lịch sử của hồ sơ đang chọn */}
       {!collapsed && (
-        <div className="border-y border-border/60 bg-muted/30 px-3 py-2.5">
-          <span className="mb-1.5 block font-mono text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground">
-            Hồ sơ đang dùng
-          </span>
-          <ProfileSwitcher onSwitch={handleSwitchProfile} />
-        </div>
-      )}
-
-      {/* Nhãn nhóm */}
-      {!collapsed && (
-        <div className="px-3.5 pt-3 pb-1.5 flex items-center justify-between">
-          <span className="font-mono text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground">
-            Lịch sử tư vấn
-          </span>
-          <span className="size-1.5 rounded-full bg-brand/50" />
+        <div className="px-2.5 pt-2 pb-1">
+          <ProfileSwitcher compact onSwitch={handleSwitchProfile} />
         </div>
       )}
 
