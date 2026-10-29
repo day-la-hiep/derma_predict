@@ -25,7 +25,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { getAuthenticatedUser } from "@/services/client";
+import { chatPaths } from "@/features/chat/routes";
 import { useChatStore } from "@/features/chat/store";
+import { getActiveProfileId } from "@/features/patient-profile/store";
 import { useComposerStore } from "@/features/chat/composerStore";
 import { BRAND_OPTIONS, useBrandStore } from "../store";
 import { Button } from "@/components/ui/button";
@@ -241,7 +243,8 @@ function SettingsContent({ onClose }: { onClose: () => void }) {
     setDraft(
       "Tôi muốn tạo một skill mới. Bạn hãy hỏi tôi tên, mô tả và chức năng mong muốn, rồi đề xuất cấu hình skill hoàn chỉnh để tôi xác nhận."
     );
-    router.push("/chats");
+    const profileId = getActiveProfileId();
+    router.push(profileId ? chatPaths.new(profileId) : chatPaths.entry);
   };
 
   const toggleIn =

@@ -61,6 +61,7 @@ function SidebarInner({
   onOpenProfile,
   onNewChat,
   onSelectConversation,
+  onSwitchProfile,
   setSettingsOpen,
 }: {
   collapsed: boolean;
@@ -70,6 +71,7 @@ function SidebarInner({
   onOpenProfile: () => void;
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
+  onSwitchProfile: (profileId: string) => void;
   setSettingsOpen: (open: boolean) => void;
 }) {
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
@@ -84,11 +86,7 @@ function SidebarInner({
     : allConversations;
   // "Cuộc trò chuyện mới" được coi là đang chọn khi chưa vào hội thoại nào (chưa gửi tin đầu tiên)
   const isNewChatActive = activeView === "chat" && activeId === null;
-  const handleSwitchProfile = (profileId: string) => {
-    // hội thoại đang mở thuộc hồ sơ khác thì về màn hội thoại mới, tránh gửi tiếp vào hồ sơ cũ
-    const open = allConversations.find((c) => c.id === activeId);
-    if (open?.patientProfileId && open.patientProfileId !== profileId) onNewChat();
-  };
+  const handleSwitchProfile = onSwitchProfile;
 
   useEffect(() => {
     setCurrentUser(getAuthenticatedUser());
@@ -332,6 +330,7 @@ export function ChatSidebar({
   onOpenProfile,
   onNewChat,
   onSelectConversation,
+  onSwitchProfile,
 }: {
   open: boolean;
   collapsed: boolean;
@@ -341,6 +340,7 @@ export function ChatSidebar({
   onOpenProfile: () => void;
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
+  onSwitchProfile: (profileId: string) => void;
 }) {
   const init = useChatStore((s) => s.init);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -363,6 +363,7 @@ export function ChatSidebar({
             onOpenProfile={onOpenProfile}
             onNewChat={onNewChat}
             onSelectConversation={onSelectConversation}
+            onSwitchProfile={onSwitchProfile}
             setSettingsOpen={setSettingsOpen}
           />
         </SheetContent>
@@ -383,6 +384,7 @@ export function ChatSidebar({
           onOpenProfile={onOpenProfile}
           onNewChat={onNewChat}
           onSelectConversation={onSelectConversation}
+            onSwitchProfile={onSwitchProfile}
           setSettingsOpen={setSettingsOpen}
         />
       </aside>

@@ -1,7 +1,4 @@
-"use client";
-
-import { MedicalHistoryPage } from "@/features/doctor";
-
-export default function DoctorReportsPage() {
-  return <MedicalHistoryPage />;
+// nội dung vẽ ở layout; page chỉ giữ route /doctor/records
+export default function DoctorRecordsPage() {
+  return null;
 }

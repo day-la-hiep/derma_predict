@@ -27,6 +27,8 @@ export interface ShellNavItem {
   hint: string;
   icon: LucideIcon;
   exact?: boolean;
+  // đường dẫn nào thì mục này sáng (mặc định theo href)
+  match?: (pathname: string) => boolean;
 }
 
 interface AppShellProps {
@@ -41,8 +43,9 @@ interface AppShellProps {
   children: React.ReactNode;
 }
 
-function isActive(pathname: string, href: string, exact?: boolean) {
-  return exact ? pathname === href : pathname.startsWith(href);
+function isActive(pathname: string, item: Pick<ShellNavItem, "href" | "exact" | "match">) {
+  if (item.match) return item.match(pathname);
+  return item.exact ? pathname === item.href : pathname.startsWith(item.href);
 }
 
 function Brand({ href, label, icon: Icon }: { href: string; label: string; icon: LucideIcon }) {
@@ -124,8 +127,9 @@ export function AppShell({ brandLabel, brandIcon, navTitle, nav, fullBleed = fal
         <header className="sticky top-0 z-30 flex h-14 shrink-0 print:hidden items-center gap-4 border-b border-border bg-card/60 px-4 backdrop-blur-md sm:px-6">
           <Brand href={home} label={brandLabel} icon={brandIcon} />
           <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto" aria-label={navTitle}>
-            {nav.map(({ href, label, hint, icon: Icon, exact }) => {
-              const active = isActive(pathname, href, exact);
+            {nav.map((item) => {
+              const { href, label, hint, icon: Icon } = item;
+              const active = isActive(pathname, item);
               return (
                 <Hint key={href} side="bottom" content={hint}>
                   <Link

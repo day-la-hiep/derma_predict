@@ -528,17 +528,9 @@ export const useChatStore = create<ChatState>((set, get) => {
       chatService.onRoomReconnect?.((id) => void get().syncMissingMessages(id));
 
       try {
+        // không tự chọn hội thoại nào: hội thoại đang mở do route (/chats/<id>) quyết định
         const conversations = await chatService.getConversations();
-        const first = conversations[0];
-        set({
-          conversations,
-          activeId: first?.id ?? null,
-          initialized: true,
-          loadingConversations: false,
-        });
-        if (first) {
-          await get().selectConversation(first.id);
-        }
+        set({ conversations, initialized: true, loadingConversations: false });
       } catch (error) {
         console.error("Không tải được danh sách hội thoại", error);
         set({ loadingConversations: false, initialized: true });

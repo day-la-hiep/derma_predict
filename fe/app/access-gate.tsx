@@ -11,7 +11,7 @@ const ROLE_HOME: Record<string, string> = { patient: "/chats", doctor: "/doctor"
 
 function homeForPath(role: string, pathname: string): string | null {
   const home = ROLE_HOME[role] ?? "/chats";
-  const area = pathname.startsWith("/admin") ? "admin" : pathname.startsWith("/doctor") ? "doctor" : pathname.startsWith("/chats") ? "patient" : null;
+  const area = pathname.startsWith("/admin") ? "admin" : pathname.startsWith("/doctor") ? "doctor" : pathname.startsWith("/chats") || pathname.startsWith("/profile") ? "patient" : null;
   const allowed = area === role;
   return area !== null && !allowed ? home : null;
 }

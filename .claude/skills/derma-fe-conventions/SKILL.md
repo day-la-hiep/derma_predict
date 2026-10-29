@@ -134,6 +134,13 @@ Giao diện chỉ giữ **tên gọi ngắn**; hướng dẫn đầy đủ đặ
 
 ## Gotchas
 
+- Chat có route theo hội thoại (`features/chat/routes.ts`): `/chats/<id>` (hội thoại độc lập, hồ sơ lấy từ chính hội thoại),
+  `/chats/new/<profileId>` (hội thoại mới luôn kèm hồ sơ), `/profile` (màn hồ sơ, không nằm dưới `/chats`); `/chats` chỉ là cổng
+  vào, tự chuyển tới đoạn chat đã nhớ của hồ sơ đang chọn (`lastConversationByProfile` trong `features/patient-profile/store.ts`).
+  `ChatPage` vẽ ở `app/(patient)/layout.tsx` (các page trả `null`) vì page dưới catch-all bị Next dựng lại mỗi lần đổi đường dẫn.
+  URL là nguồn quyết định hội thoại đang mở; `store.init()` không tự chọn nữa.
+- Khu bác sĩ cùng ý tưởng (`features/doctor/routes.ts`): `/doctor/<sessionId>` (một ca), `/doctor` (cổng vào, ca đã nhớ),
+  `/doctor/records/<reportId>`; màn hình vẽ ở layout của route group `(consult)` và `records`, page trả `null`.
 - `NEXT_PUBLIC_USE_MOCK=true` makes the whole chat UI work from `localStorage` with zero backend
   calls — great for isolated UI work, but don't trust it to validate an integration change (see
   `/run-fe`).
