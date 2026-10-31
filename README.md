@@ -49,7 +49,7 @@ Tổng quan kiến trúc: [docs/overview/system-overview.md](docs/overview/syste
 
 ```
 fe/                      Next.js
-  app/                   route: /chats, /doctor (ca tư vấn), /doctor/records, /doctor/documents, /doctor/graph-schema
+  app/                   route: /chats, /doctor (ca tư vấn), /doctor/records, /admin/documents, /admin/graph-schema
   features/chat/         store Zustand, types, components chat
   features/{auth,doctor,patient-profile,video-call,settings}/  đăng nhập, khu bác sĩ, hồ sơ bệnh nhân, gọi video
   features/document-pipeline/  api, hooks TanStack Query, components admin
@@ -89,7 +89,7 @@ make migrate     # alembic upgrade head
 make init-db     # bucket MinIO + dữ liệu mẫu — chạy sau migrate, chạy lại không tạo trùng
 make backend     # Core http://localhost:3050 (Swagger: /docs)
 make worker      # Agent Worker — bắt buộc để agent trả lời
-make ingest-worker  # Ingest Worker — bắt buộc để nút "Chạy" ở /doctor/documents có tác dụng
+make ingest-worker  # Ingest Worker — bắt buộc để nút "Chạy" ở /admin/documents có tác dụng
 make frontend    # FE http://localhost:3010
 
 make migrate-new m="mô tả"   # khi đổi model: sinh migration, đọc lại file trước khi `make migrate`
@@ -98,7 +98,7 @@ make debug-app   # (tuỳ chọn) Streamlit chạy graph agent trực tiếp đ�
 make reindex-qdrant  # (khi đổi model embedding / nạp lại kho tri thức) nạp lại Qdrant từ MinIO/Postgres; dry=1 để xem trước
 ```
 
-**Nạp dữ liệu đồ thị tri thức** (Neo4j mới tạo đang trống; chunk sách vào Qdrant qua giao diện `/doctor/documents`), chạy ở thư mục gốc repo:
+**Nạp dữ liệu đồ thị tri thức** (Neo4j mới tạo đang trống; chunk sách vào Qdrant qua giao diện `/admin/documents`), chạy ở thư mục gốc repo:
 
 ```bash
 make kg-download    # tải PrimeKG (~1 GB) và DermO từ nguồn gốc
@@ -111,7 +111,7 @@ make kg-verify
 
 Chi tiết đồ thị nền: [core/graph_base/README.md](core/graph_base/README.md). (Script cũ trong `core/data_ingest/` chưa dọn, không dùng cho đồ thị nền nữa.)
 
-Chạy tối thiểu để chat: `make infra`, `migrate`, `init-db`, `backend`, `worker`, `frontend`. Muốn agent trả lời có căn cứ thì cần thêm chunk sách (Qdrant, qua `/doctor/documents` + `make ingest-worker`) và đồ thị nền (`make kg-*`).
+Chạy tối thiểu để chat: `make infra`, `migrate`, `init-db`, `backend`, `worker`, `frontend`. Muốn agent trả lời có căn cứ thì cần thêm chunk sách (Qdrant, qua `/admin/documents` + `make ingest-worker`) và đồ thị nền (`make kg-*`).
 
 Tool `classify_skin_image` cần checkpoint CNN tại `SKIN_CNN_CHECKPOINT_PATH`. Tool `analyze_skin_image_multimodal` chỉ bật khi `AGENT_VISION_MODEL` không rỗng.
 Gọi video giữa hai mạng khác nhau cần TURN (`TURN_URL`, `TURN_SECRET`; coturn có trong `docker-compose.yml`), xem [docs/module/doctor-consultation.md](docs/module/doctor-consultation.md).

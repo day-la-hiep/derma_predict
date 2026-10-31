@@ -1,5 +1,6 @@
 "use client";
 
+import { doctorPaths } from "../routes";
 import { useState } from "react";
 import Link from "next/link";
 import { ClipboardList, ExternalLink, History, Printer, TriangleAlert, Network } from "lucide-react";
@@ -228,7 +229,7 @@ export function FinalizeReportDetail({ report }: { report: FinalizeReportItem | 
             {hasSource && (
               <Hint side="bottom" content="Mở ca tư vấn gốc ở màn Ca tư vấn.">
                 <Button variant="outline" size="sm" asChild className="gap-1.5">
-                  <Link href={`/doctor?session=${encodeURIComponent(report.consultationSessionId!)}`}>
+                  <Link href={doctorPaths.session(report.consultationSessionId!)}>
                     <ExternalLink className="size-3.5" /> Mở ca gốc
                   </Link>
                 </Button>

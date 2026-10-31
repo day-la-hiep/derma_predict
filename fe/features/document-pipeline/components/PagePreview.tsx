@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageOff, PanelRightClose } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,7 @@ export function PagePreview({
   caption,
   highlightLine,
   onPage,
+  onCollapse,
 }: {
   documentId: string;
   page: number;
@@ -26,6 +27,7 @@ export function PagePreview({
   caption?: React.ReactNode;
   highlightLine?: number | null;
   onPage: (p: number) => void;
+  onCollapse?: () => void;
 }) {
   const [view, setView] = useState<View>("image");
   const [draft, setDraft] = useState<string | null>(null);
@@ -91,6 +93,11 @@ export function PagePreview({
               </button>
             ))}
           </div>
+          {onCollapse && (
+            <Button variant="ghost" size="icon-xs" onClick={onCollapse} aria-label="Thu gọn khung xem trang" title="Thu gọn khung xem trang" className="text-muted-foreground">
+              <PanelRightClose />
+            </Button>
+          )}
         </div>
         <p className="min-h-4 text-[11px] leading-relaxed text-muted-foreground">
           {caption}

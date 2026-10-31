@@ -34,7 +34,7 @@ Derma Hospital chia thành **7 module** (mã khớp [requirements.md](requiremen
 
 | Thành phần | Vai trò | Vị trí code |
 |---|---|---|
-| **FE** | Next.js App Router. `/chats` (Zustand store + SSE), `/doctor` (ca tư vấn, hồ sơ), `/doctor/documents`, `/doctor/graph-schema` (TanStack Query, poll) | `fe/app/`, `fe/features/{chat,doctor,video-call,document-pipeline,graph-schema,...}/` |
+| **FE** | Next.js App Router. `/chats` (Zustand store + SSE), `/doctor` (ca tư vấn, hồ sơ), `/admin/documents`, `/admin/graph-schema` (TanStack Query, poll) | `fe/app/`, `fe/features/{chat,doctor,video-call,document-pipeline,graph-schema,...}/` |
 | **Core** | REST + SSE gateway, JWT, ghi Postgres, publish turn sang Worker, consume kết quả, publish yêu cầu chạy bước pipeline | `core/app/` (`api/`, `services/`, `repositories/`, `models/`, `dto/`, `infra/`, `workers/agent_response_consumer.py`) |
 | **Agent Worker** | Tiến trình riêng, consume `agent_request_queue`, chạy chat graph (lọc intent → tiền chẩn đoán v1 / v2), stream event lên Redis, ghi checkpoint + memory vào schema `langgraph` | `core/agent/` (`worker.py`, `turn.py`, `graph/`, `tools/`, `middleware/`, `persistence.py`) |
 | **Ingest Worker** | Tiến trình riêng, consume `document_ingest_queue`, chạy từng bước pipeline tài liệu; dừng qua Redis | `core/app/workers/document_ingest_worker.py` |
@@ -83,7 +83,7 @@ make ingest-worker  # Ingest Worker (pipeline tài liệu)
 make frontend  # Next.js :3010
 ```
 
-Đồ thị nền nạp bằng `make kg-download kg-build kg-load kg-verify` (`core/graph_base/`); chunk sách nạp qua giao diện `/doctor/documents`; `make reindex-qdrant` nạp lại Qdrant.
+Đồ thị nền nạp bằng `make kg-download kg-build kg-load kg-verify` (`core/graph_base/`); chunk sách nạp qua giao diện `/admin/documents`; `make reindex-qdrant` nạp lại Qdrant.
 
 ## 5. Tài liệu liên quan
 

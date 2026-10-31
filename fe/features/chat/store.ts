@@ -307,9 +307,30 @@ export const useChatStore = create<ChatState>((set, get) => {
         });
         break;
       }
+      case "message.tool_start": {
+        patchMessage(event.messageId, (m) => {
+          const stepId = event.stepId ?? `${event.messageId}-tool-${event.tool}`;
+          const list = m.reasoning ?? [];
+          const step: ReasoningStep = {
+            id: stepId,
+            title: event.tool,
+            input: event.input,
+            content: "",
+            status: "processing",
+            type: "tool",
+          };
+          return {
+            ...m,
+            reasoning: list.some((s) => s.id === stepId)
+              ? list.map((s) => (s.id === stepId ? step : s))
+              : [...list, step],
+          };
+        });
+        break;
+      }
       case "message.tool_result": {
         patchMessage(event.messageId, (m) => {
-          const stepId = `${event.messageId}-tool-${event.tool}`;
+          const stepId = event.stepId ?? `${event.messageId}-tool-${event.tool}`;
           const list = m.reasoning ?? [];
           const step: ReasoningStep = {
             id: stepId,
@@ -329,9 +350,16 @@ export const useChatStore = create<ChatState>((set, get) => {
         });
         break;
       }
+      case "message.delta": {
+        patchMessage(event.messageId, (m) => ({ ...m, content: `${m.content}${event.delta}` }));
+        break;
+      }
       case "message.done": {
         patchMessage(event.messageId, (m) => {
-          const existingList = m.reasoning ?? [];
+          // node lỗi giữa chừng thì không có tool_result; đóng bước còn quay để spinner không treo
+          const existingList = (m.reasoning ?? []).map((s) =>
+            s.status === "processing" && !s.choice ? { ...s, status: "done" as const } : s
+          );
           const incomingList = event.reasoning ?? [];
 
           // Backend thật gửi `content` cuối cùng ở đây (không gửi `reasoning`) — mock
@@ -340,7 +368,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           const content = event.content ?? m.content;
 
           if (incomingList.length === 0) {
-            return { ...m, status: "done", content };
+            return { ...m, status: "done", content, reasoning: existingList };
           }
 
           const existingMap = new Map(existingList.map((s) => [s.id, s]));
@@ -500,17 +528,9 @@ export const useChatStore = create<ChatState>((set, get) => {
       chatService.onRoomReconnect?.((id) => void get().syncMissingMessages(id));
 
       try {
+        // không tự chọn hội thoại nào: hội thoại đang mở do route (/chats/<id>) quyết định
         const conversations = await chatService.getConversations();
-        const first = conversations[0];
-        set({
-          conversations,
-          activeId: first?.id ?? null,
-          initialized: true,
-          loadingConversations: false,
-        });
-        if (first) {
-          await get().selectConversation(first.id);
-        }
+        set({ conversations, initialized: true, loadingConversations: false });
       } catch (error) {
         console.error("Không tải được danh sách hội thoại", error);
         set({ loadingConversations: false, initialized: true });

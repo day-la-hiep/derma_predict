@@ -386,3 +386,6 @@ def require_role(*allowed_roles: str):
 
     return role_checker
 
+
+# dùng chung cho mọi router admin; test override đúng object này
+require_admin = require_role("admin")

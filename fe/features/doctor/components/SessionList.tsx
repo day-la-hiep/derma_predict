@@ -1,9 +1,11 @@
 "use client";
 
 import { Inbox } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { FILTER_OPTIONS, STATUS_CONFIG } from "../constants";
+import { doctorPaths } from "../routes";
 import { useDoctorStore } from "../store";
 import type { ConsultationSession } from "../types";
 
@@ -54,7 +56,7 @@ export function SessionList() {
   const activeSessionId = useDoctorStore((s) => s.activeSessionId);
   const loading = useDoctorStore((s) => s.loading);
   const statusFilter = useDoctorStore((s) => s.statusFilter);
-  const selectSession = useDoctorStore((s) => s.selectSession);
+  const router = useRouter();
   const setStatusFilter = useDoctorStore((s) => s.setStatusFilter);
 
   const filtered = sessions.filter((s) => statusFilter === "all" || s.status === statusFilter);
@@ -108,7 +110,7 @@ export function SessionList() {
             <p className="text-xs">Chưa có ca</p>
           </div>
         ) : (
-          filtered.map((s) => <SessionRow key={s.id} session={s} active={s.id === activeSessionId} onSelect={selectSession} />)
+          filtered.map((s) => <SessionRow key={s.id} session={s} active={s.id === activeSessionId} onSelect={(id) => router.push(doctorPaths.session(id))} />)
         )}
       </div>
     </div>

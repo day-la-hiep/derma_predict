@@ -21,6 +21,7 @@
 \usepackage{setspace}
 \usepackage{eso-pic}
 \usepackage{titlesec}
+\usepackage{fancyhdr}
 \usepackage{tocloft}
 \usepackage[unicode,hidelinks]{hyperref}
 
@@ -67,6 +68,18 @@
 \titlespacing*{\paragraph}{0pt}{10pt}{3pt}
 \titleformat{\subparagraph}[block]{\normalfont\bfseries\itshape}{}{0pt}{}
 \titlespacing*{\subparagraph}{0pt}{8pt}{3pt}
+
+% Đầu trang: tên chương hiện tại (trái); chân trang: số trang (phải).
+% Trang bìa (titlepage) tự không có đầu/chân trang; trang mở đầu chương dùng kiểu plain nên khai báo lại giống kiểu chính.
+\newcommand{\hfsetup}{%
+  \fancyhf{}%
+  \fancyhead[L]{\small\itshape\nouppercase{\leftmark}}%
+  \fancyfoot[R]{\small\thepage}%
+  \renewcommand{\headrulewidth}{0.4pt}%
+  \renewcommand{\footrulewidth}{0pt}}
+\setlength{\headheight}{15pt}
+\pagestyle{fancy}\hfsetup
+\fancypagestyle{plain}{\hfsetup}
 
 \begin{document}
 \normalsize

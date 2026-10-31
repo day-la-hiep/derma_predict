@@ -62,7 +62,7 @@ Nguồn: `dermatology.obo` v1.19 (GitHub `dermatology-ontology/dermatology`, cù
 
 - Cạnh thêm: `(x)-[r:<REL> {document_id, display_relation, source:'DOC', evidence, chunk_ids, pages, source_ref, triple_id}]->(y)`.
 - Nút thêm (nếu chưa có): `:Entity` hoặc `:DermoTerm` với `added_by = [document_id,…]` để gỡ khi xoá sách.
-- Loại thực thể và quan hệ trích được lấy từ `GraphSchema` = bảng core trong `pipeline/document_ingest/graph_schema.py` + định nghĩa của bác sĩ trong Postgres (`graph_entity_types`, `graph_relations`, trang `/doctor/graph-schema`). Xem `docs/notice/graph-relation-catalog.md`.
+- Loại thực thể và quan hệ trích được lấy từ `GraphSchema` = bảng core trong `pipeline/document_ingest/graph_schema.py` + định nghĩa của admin trong Postgres (`graph_entity_types`, `graph_relations`, trang `/admin/graph-schema`). Xem `docs/notice/graph-relation-catalog.md`.
 - Loại thực thể do bác sĩ tự định nghĩa thành nút `doc_<loại>_<slug tên tiếng Anh>`, `source='DOC'`.
 
 ## 2. Cơ chế nạp

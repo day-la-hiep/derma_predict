@@ -193,6 +193,15 @@ export type FlatStreamEvent =
       status: "pending" | "active" | "resolved";
       doctorId: string | null;
     }
+  /** Tool bắt đầu chạy; `stepId` trùng với `message.tool_result` sau đó để cùng một bước. */
+  | {
+      type: "message.tool_start";
+      messageId: string;
+      conversationId: string;
+      stepId?: string;
+      tool: string;
+      input?: unknown;
+    }
   /** Kết quả 1 tool nghiệp vụ (không phải `ask_user`) vừa chạy xong — chỉ backend thật
    * gửi (`core/app/agent/graph.py::_emit_tool_result`), hiển thị như 1 bước trong
    * `ReasoningSection`. */
@@ -200,6 +209,7 @@ export type FlatStreamEvent =
       type: "message.tool_result";
       messageId: string;
       conversationId: string;
+      stepId?: string;
       tool: string;
       input?: unknown;
       content: string;

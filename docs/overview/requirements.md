@@ -18,10 +18,10 @@ Trạng thái được đối chiếu với code ngày **2026-10-31** (nhánh `d
 
 | Tác nhân | Mô tả | Hiện trạng trong code |
 |---|---|---|
-| **Người dùng** | người đã đăng ký và đăng nhập; quản lý tài khoản của mình, đăng xuất | đã có đăng ký / đăng nhập / đăng xuất / làm mới token / sửa thông tin (JWT, `/auth/*`). Chat, hồ sơ bệnh nhân, tư vấn, video call buộc có token; API `/admin/*` (tài liệu, schema đồ thị) chưa kiểm tra token / vai trò |
+| **Người dùng** | người đã đăng ký và đăng nhập; quản lý tài khoản của mình, đăng xuất | đã có đăng ký / đăng nhập / đăng xuất / làm mới token / sửa thông tin (JWT, `/auth/*`). Chat, hồ sơ bệnh nhân, tư vấn, video call buộc có token; API `/admin/*` (tài liệu, schema đồ thị) yêu cầu vai trò admin |
 | **Bệnh nhân** | dùng hệ thống để tiền chẩn đoán và trao đổi về bệnh da liễu: chat với chatbot (gửi ảnh, mô tả triệu chứng), tra cứu bệnh và ca bệnh từ KB, đặt lịch khám, quản lý báo cáo kết luận / lịch sử khám / ảnh, trao đổi với bác sĩ qua chat hoặc video call (bác sĩ chưa tiếp nhận thì tiếp tục hỏi chatbot). Cuộc trò chuyện được tổng hợp thành clinical fact và báo cáo cho bác sĩ | bảng `patient_profiles` (một user có nhiều hồ sơ). Phần chat với chatbot đã chạy |
 | **Bác sĩ** | xem báo cáo tổng hợp, clinical fact, nguồn lập luận từ KB, lịch sử và hồ sơ bệnh nhân; cập nhật hồ sơ sau khám; lưu ca bệnh và ảnh đã xác nhận (làm dữ liệu tham khảo, huấn luyện CNN); chat / video call với bệnh nhân và truy xuất tin nhắn nguồn làm bằng chứng; trực quan hoá Knowledge Graph; tải giáo trình / guideline lên để bổ sung KB | bảng `doctors`, seed `doctor-1`. Có màn hình riêng ở `/doctor` (hàng đợi ca, chat, báo cáo, lịch sử khám) |
-| *(Admin — có trong code, không có trong yêu cầu)* | hiện nạp sách ở `/doctor/documents` và quản lý schema đồ thị ở `/doctor/graph-schema` | bảng `admins` (seed `admin-1`). Theo yêu cầu thì việc tải tài liệu là của **bác sĩ**, cần thống nhất lại vai trò |
+| *(Admin — có trong code, không có trong yêu cầu)* | người dùng khu `/admin` (nhập sách ở `/admin/documents`, schema đồ thị ở `/admin/graph-schema`) | bảng `admins` (seed `admin-1`). Đã tách khỏi khu bác sĩ; API `/admin/*` yêu cầu vai trò admin. Theo yêu cầu thì việc tải tài liệu là của **bác sĩ**, cần thống nhất lại vai trò |
 
 ## 2. Tổng quan theo module
 
@@ -29,7 +29,7 @@ Cách chia bám theo ranh giới trong code (service / API / FE feature / worker
 
 | Mã | Module | Tác nhân | Trạng thái | Tài liệu |
 |---|---|---|---|---|
-| M1 | Tài khoản & hồ sơ bệnh nhân | Người dùng | 🟡 JWT + hồ sơ xong; `/admin/*` chưa phân quyền | — |
+| M1 | Tài khoản & hồ sơ bệnh nhân | Người dùng | 🟡 JWT + hồ sơ xong; `/admin/*` đã yêu cầu admin | — |
 | M2 | Chatbot tư vấn AI (agent, memory) | Bệnh nhân | ✅ phần lõi, 🟡 memory / sources | [chat.md](../module/chat.md) |
 | M3 | Tư vấn với bác sĩ (báo cáo tiền tư vấn, chat, video, báo cáo kết luận, đồ thị hành trình) | Bệnh nhân, Bác sĩ | ✅ luồng chính, 🟡 một số phần phụ | [doctor-consultation.md](../module/doctor-consultation.md), [patient-journey-graph.md](../module/patient-journey-graph.md) |
 | M4 | Kho tri thức: số hoá tài liệu | Bác sĩ (hiện là Admin) | ✅ pipeline sách → Qdrant, chatbot tra được | [book-ingest-pipeline.md](../module/book-ingest-pipeline.md) |
@@ -46,7 +46,7 @@ Cách chia bám theo ranh giới trong code (service / API / FE feature / worker
 | M1.1 | Đăng ký tài khoản | ✅ | `POST /auth/register` (`auth_api.py`), màn đăng ký ở FE (`AuthScreen`) |
 | M1.2 | Đăng nhập / đăng xuất | ✅ | `POST /auth/login`, `/refresh`, `/logout`, `GET /auth/me`; FE giữ token và gắn `Authorization: Bearer` (`fe/app/access-gate.tsx`); `get_current_user` (`app/api/deps.py`) buộc token ở chat, hồ sơ, tư vấn, video call |
 | M1.3 | Quản lý tài khoản cá nhân (xem / sửa thông tin) | ✅ | `PATCH /auth/me`; FE `AccountSettingsDialog` |
-| M1.4 | Phân quyền theo vai trò (bệnh nhân / bác sĩ / admin) | 🟡 | `require_role` dùng cho API bác sĩ (`doctor_api.py`); `/admin/*` chưa dùng nên ai có token (hoặc không) cũng gọi được |
+| M1.4 | Phân quyền theo vai trò (bệnh nhân / bác sĩ / admin) | 🟡 | `require_role` dùng cho API bác sĩ (`doctor_api.py`); `/admin/*` dùng `require_admin` |
 | M1.5 | Quản lý hồ sơ bệnh nhân (một tài khoản nhiều hồ sơ, ví dụ cho người nhà) | ✅ | API `/patient-profiles` (CRUD theo tài khoản trong JWT; chặn xoá hồ sơ cuối / hồ sơ đã có hội thoại hoặc báo cáo kết luận). Hồ sơ có quan hệ, SĐT, dị ứng và tiền sử tự khai. UI: dialog "Hồ sơ" ở menu tài khoản + chọn hồ sơ cho cuộc trò chuyện mới ở sidebar chat |
 | M1.6 | Thư viện ảnh bệnh đã lưu của bệnh nhân | 🟡 | ảnh chat nằm trong `files` + `message_files`; ảnh đã gắn báo cáo kết luận nằm trong `patient_images`. Chưa có màn xem tập trung |
 
@@ -95,11 +95,11 @@ Cách chia bám theo ranh giới trong code (service / API / FE feature / worker
 
 | Mã | Chức năng | Trạng thái | Hiện trạng / việc cần làm |
 |---|---|---|---|
-| M4.1 | Tải lên giáo trình PDF, số hoá theo mục lục, nạp Qdrant | ✅ | `/doctor/documents`, các bước `ingest → toc → chunks → index`, có người duyệt, chạy ở Ingest Worker (`make ingest-worker`) |
+| M4.1 | Tải lên giáo trình PDF, số hoá theo mục lục, nạp Qdrant | ✅ | `/admin/documents`, các bước `ingest → toc → chunks → index`, có người duyệt, chạy ở Ingest Worker (`make ingest-worker`) |
 | M4.2 | Tải lên guideline / tài liệu y khoa dạng khác | 🟡 | guideline hiện nạp bằng script (`data_ingest/`); pipeline chỉ nhận `type="book"` |
 | M4.3 | Chatbot tra cứu tài liệu đã nạp | ✅ | `hybrid_retrieval`, `semantic_search`, `keyword_search` (Qdrant `derma_document_chunks_v4`), `query_document_graph` (cạnh `DOC` trong Neo4j) |
 | M4.4 | Phối hợp chatbot để làm giàu KB (gợi ý / bổ sung tri thức) | ⏸ | chưa chốt luồng — đề xuất ở [docs/pending/kb-enrichment.md](../pending/kb-enrichment.md) |
-| M4.5 | Quyền tải tài liệu dành cho bác sĩ | 🟡 | đã có `documents.uploaded_by_id` → `doctors`; API `/admin/*` chưa kiểm tra vai trò, phụ thuộc M1.4 |
+| M4.5 | Quyền tải tài liệu dành cho bác sĩ | 🟡 | đã có `documents.uploaded_by_id` → `doctors`; `uploaded_by_id` vẫn FK tới `doctors` nhưng chưa được ghi (admin upload) |
 | M4.6 | Nạp lại Qdrant (đổi model embedding, mất collection) | ✅ | `make reindex-qdrant`, xem [qdrant-reindex](../notice/qdrant-reindex.md) |
 
 ### M5 — Đồ thị tri thức
@@ -110,7 +110,7 @@ Cách chia bám theo ranh giới trong code (service / API / FE feature / worker
 | M5.2 | Chatbot truy vấn KG | ✅ | tool `knowledge_graph_query` (template Cypher theo intent: ứng viên, phân biệt, điều trị, chống chỉ định, hồ sơ thuốc...) |
 | M5.3 | Trích quan hệ từ sách và nạp Neo4j (cạnh `source='DOC'`) | ✅ | các bước `chunks → graph → graph_index` của pipeline; LLM trích theo ô quan hệ, người duyệt qua override |
 | M5.4 | Người duyệt xem / sửa quan hệ trích từ sách | ✅ | `GET\|PATCH /admin/documents/{id}/triples`, FE `TripleBrowser`; tìm nút bằng `GET /admin/graph/nodes` |
-| M5.5 | Admin định nghĩa loại thực thể và quan hệ cho bước trích | ✅ | `/doctor/graph-schema`, API `/admin/graph-schema/*`, bảng `graph_entity_types`, `graph_relations` |
+| M5.5 | Admin định nghĩa loại thực thể và quan hệ cho bước trích | ✅ | `/admin/graph-schema`, API `/admin/graph-schema/*`, bảng `graph_entity_types`, `graph_relations` |
 | M5.6 | Chatbot truy vấn đồ thị trích từ sách (kèm câu trích + trang) | 🟡 | tool `query_document_graph`; dữ liệu còn thưa, khớp theo chuỗi nên tên tiếng Việt thường không khớp |
 | M5.7 | Chuẩn hoá thuật ngữ bệnh nhân sang DermO | 🟡 | chạy bên trong `hybrid_retrieval` / `knowledge_graph_query`, chưa là chức năng độc lập |
 

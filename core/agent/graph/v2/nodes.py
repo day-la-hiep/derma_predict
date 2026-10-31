@@ -18,7 +18,7 @@ from agent.graph.v2.evidence import add_evidence, ground_hypotheses, label_evide
 from agent.graph.v2.schemas import PlanInput, ReflectInput, render_plan, render_reflect
 from agent.graph.v2.state import PreDiagState
 from agent.middleware.common.model import inject_memory, load_memory
-from agent.middleware.common.tool import emit_tool_step
+from agent.middleware.common.tool import emit_tool_start, emit_tool_step
 from agent.prompt.v2 import ANSWER_FOUND, ANSWER_NONE, CHOOSE_SYSTEM, FINALIZE_REPORT_LINE, PLAN_SYSTEM, REFLECT_SYSTEM
 from agent.tools.reasoning import TOOL_NAME as REASONING_TOOL
 
@@ -145,6 +145,7 @@ async def plan(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[str,
         f"Bằng chứng đã thu được:\n{_digest(evidence)}"
     )
     system = inject_memory(PLAN_SYSTEM.format(context=context), ctx.memory_text)
+    await emit_tool_start(ctx, REASONING_TOOL, {"stage": "initial"})
     result = await _structured(ctx, PlanInput, [SystemMessage(content=system), *_history(state["messages"])])
     await emit_tool_step(ctx, REASONING_TOOL, {"stage": "initial"}, render_plan(result))
     grounded = {h["disease"] for h in state.get("plan", [])}
@@ -193,6 +194,8 @@ def choose_tools_node(tools: list[Any]):
             logger.warning("mọi lệnh đều trùng lệnh đã gọi, bỏ qua tra cứu vòng này")
         if len(fresh) != len(ai.tool_calls):
             ai = ai.model_copy(update={"tool_calls": fresh})
+        for c in fresh:
+            await emit_tool_start(ctx, c["name"], c["args"])
         calls = [_call_key(c["name"], c["args"]) for c in fresh]
         # AIMessage chữ không kèm tool_calls không được vào lịch sử (sẽ bị `_history` tính nhầm là câu trả lời của trợ lý).
         return {
@@ -246,6 +249,7 @@ async def reflect(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[s
         f"Bằng chứng và gợi ý truy xuất được:\n{_evidence_text(evidence)}"
     )
     system = inject_memory(REFLECT_SYSTEM.format(context=context), ctx.memory_text)
+    await emit_tool_start(ctx, REASONING_TOOL, {"stage": "after_evidence"})
     result = await _structured(ctx, ReflectInput, [SystemMessage(content=system), *_history(state["messages"])])
     plan_, unsupported, notes = ground_hypotheses(result.hypotheses, evidence)
     next_action = result.next
