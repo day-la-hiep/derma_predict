@@ -1,0 +1,42 @@
+% Mở đầu (không đánh số chương)
+\chapter*{Mở đầu}
+\addcontentsline{toc}{chapter}{Mở đầu}
+
+\section*{Giới thiệu chung}
+
+Da liễu là chuyên khoa có số lượng bệnh lý lớn, biểu hiện đa dạng và mang tính trực quan cao: phần lớn tổn thương có thể quan sát bằng mắt thường hoặc ghi lại bằng ảnh chụp. Tuy nhiên, người bệnh thường khó mô tả chính xác tình trạng của mình bằng ngôn ngữ y khoa, dễ nhầm lẫn giữa các bệnh có biểu hiện tương tự, còn bác sĩ phải mất nhiều thời gian khai thác lại bệnh sử chưa được chuẩn hóa ở đầu mỗi buổi khám.
+
+Đề tài \textbf{``Hệ thống hỗ trợ tiền chẩn đoán bệnh về da dựa trên Multi-scale CNN, Knowledge Graph và RAG''} hướng tới xây dựng một công cụ hỗ trợ ở bước tiền chẩn đoán. Hệ thống tiếp nhận đồng thời mô tả bằng văn bản và ảnh chụp vùng da của người bệnh, kết hợp ba thành phần chính:
+\begin{itemize}
+  \item \textbf{Mạng CNN đa tỷ lệ (Multi-scale CNN)} phân loại ảnh tổn thương da, cho ra giả thuyết bệnh kèm độ tin cậy.
+  \item \textbf{Truy xuất tăng cường sinh văn bản (RAG)} tra cứu các đoạn giáo trình, hướng dẫn chẩn đoán điều trị đã được số hóa để làm căn cứ có nguồn trích dẫn.
+  \item \textbf{Đồ thị tri thức (Knowledge Graph)} lưu quan hệ giữa bệnh, triệu chứng, thuốc và chuẩn hóa thuật ngữ, đóng vai trò gợi ý cho quá trình lập luận.
+\end{itemize}
+Một trợ lý hội thoại (chatbot) điều phối các thành phần trên, chủ động hỏi thêm khi thiếu thông tin bệnh sử và trả lời kèm nguồn tham khảo. Khi cần thăm khám chuyên sâu, người bệnh có thể chuyển sang tư vấn trực tiếp với bác sĩ qua nhắn tin hoặc cuộc gọi video; nội dung đã trao đổi với chatbot được tổng hợp thành báo cáo tiền tư vấn cho bác sĩ.
+
+\textbf{Giới hạn y khoa.} Hệ thống chỉ cung cấp thông tin tham khảo. Kết quả không phải là chẩn đoán xác định, hệ thống không kê đơn thuốc và luôn khuyến nghị người bệnh gặp bác sĩ khi có dấu hiệu cần thăm khám.
+
+\section*{Mục tiêu của báo cáo}
+
+Báo cáo trình bày cơ sở lý thuyết, thiết kế và quá trình xây dựng hệ thống nói trên, cụ thể:
+\begin{itemize}
+  \item Làm rõ bài toán và phạm vi của đề tài, đề xuất giải pháp tổng thể.
+  \item Trình bày kỹ thuật xử lý ảnh bằng CNN, gồm kiến trúc AdaptiveCNN xây dựng trên ResNet-18 với cơ chế tích chập đa kernel (AMKC) và tổng hợp đặc trưng thích nghi (Adaptive GeM).
+  \item Thiết kế và đánh giá luồng truy xuất tài liệu (ngữ nghĩa, từ khóa, hỗn hợp) cùng luồng đồ thị tri thức.
+  \item Thiết kế luồng lập luận của chatbot, phân tích và thiết kế hệ thống (tác nhân, usecase, cơ sở dữ liệu).
+  \item Mô tả công nghệ, kiến trúc triển khai và kết quả thử nghiệm.
+\end{itemize}
+
+\section*{Bố cục của báo cáo}
+
+Báo cáo gồm bảy chương, nội dung từng chương như sau.
+
+\begin{itemize}
+  \item \textbf{Chương~\ref{ch:chuong1}: Giới thiệu chung} -- nêu bối cảnh, phạm vi và giải pháp tổng thể của đề tài.
+  \item \textbf{Chương~\ref{ch:chuong2}: Kỹ thuật xử lý CNN} -- cơ sở lý thuyết, kiến trúc AdaptiveCNN (ResNet-18, AMKC, Adaptive GeM), huấn luyện và các chỉ số đánh giá.
+  \item \textbf{Chương~\ref{ch:chuong3}: Thiết kế luồng truy xuất tài liệu} -- các luồng tìm kiếm ngữ nghĩa, từ khóa, hỗn hợp và đồ thị tri thức, kèm đánh giá.
+  \item \textbf{Chương~\ref{ch:chuong4}: Thiết kế luồng lập luận chatbot} -- cách chatbot phối hợp các công cụ để lập luận và trả lời có nguồn (đang hoàn thiện).
+  \item \textbf{Chương~\ref{ch:chuong5}: Phân tích và thiết kế hệ thống} -- tác nhân, usecase và thiết kế cơ sở dữ liệu.
+  \item \textbf{Chương~\ref{ch:chuong6}: Cài đặt và triển khai hệ thống} -- công nghệ, kiến trúc triển khai và kết quả thử nghiệm (đang hoàn thiện).
+  \item \textbf{Chương~\ref{ch:chuong7}: Kết luận} -- tổng kết kết quả đạt được, hạn chế và hướng phát triển của đề tài.
+\end{itemize}

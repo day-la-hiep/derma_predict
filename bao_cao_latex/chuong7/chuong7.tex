@@ -1,0 +1,29 @@
+% Chương 7
+\chapter{Kết luận}
+\label{ch:chuong7}
+
+\section{Kết quả đạt được}
+
+Báo cáo đã trình bày việc xây dựng hệ thống hỗ trợ tiền chẩn đoán bệnh về da kết hợp ba thành phần: mạng CNN đa tỷ lệ phân loại ảnh, truy xuất tăng cường sinh văn bản (RAG) và đồ thị tri thức. Cụ thể:
+\begin{itemize}
+  \item Về xử lý ảnh, đề tài xây dựng nền tảng lý thuyết và kiến trúc AdaptiveCNN trên backbone ResNet-18, tích hợp tích chập đa kernel (AMKC) và tổng hợp đặc trưng thích nghi (Adaptive GeM) cùng bộ chỉ số đánh giá phù hợp với dữ liệu mất cân bằng lớp.
+  \item Về truy xuất tri thức, đề tài thiết kế luồng tìm kiếm ngữ nghĩa, từ khóa và hỗn hợp (RRF kết hợp xếp hạng lại), cùng luồng đồ thị tri thức có gắn nguồn gốc; luồng hỗn hợp đạt hit@5 = 1.00 và recall@10 = 0.94 trên bộ kiểm thử.
+  \item Về phân tích thiết kế, đề tài xác định các tác nhân, usecase và thiết kế cơ sở dữ liệu cho cả chatbot, tư vấn trực tiếp với bác sĩ và quản lý cơ sở tri thức.
+\end{itemize}
+
+\section{Hạn chế}
+
+\begin{itemize}
+  \item Bộ dữ liệu kiểm thử luồng truy xuất còn nhỏ (24 câu hỏi) và chủ yếu dựa trên một nguồn tài liệu, nên kết quả mới mang tính tham khảo.
+  \item Kết quả thực nghiệm của mô hình AdaptiveCNN, luồng lập luận của chatbot và kết quả triển khai hệ thống (các chương~\ref{ch:chuong4} và~\ref{ch:chuong6}) chưa được trình bày đầy đủ.
+  \item Kết quả của hệ thống chỉ mang tính hỗ trợ tham khảo, không phải chẩn đoán y khoa; nội dung tri thức chưa được bác sĩ chuyên khoa duyệt đầy đủ.
+\end{itemize}
+
+\section{Hướng phát triển}
+
+\begin{itemize}
+  \item Hoàn thiện thực nghiệm CNN và cho phép bệnh nhân lựa chọn mô hình phân tích ảnh.
+  \item Hoàn thiện, thử nghiệm và đánh giá luồng lập luận của chatbot trên nhiều tình huống bệnh sử.
+  \item Mở rộng cơ sở tri thức (thêm tài liệu, đồ thị quan hệ trích từ sách) và xây dựng bộ kiểm thử lớn hơn, đa ngôn ngữ.
+  \item Có chuyên gia da liễu duyệt nội dung tri thức và kết quả của hệ thống trước khi đưa vào sử dụng thực tế.
+\end{itemize}

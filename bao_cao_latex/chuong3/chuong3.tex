@@ -1,0 +1,185 @@
+% Chương 3
+\chapter{Thiết kế luồng truy xuất tài liệu}
+\label{ch:chuong3}
+
+\section{Luồng truy xuất ngữ nghĩa}
+
+\subsection{Tổng quan}
+
+\textbf{Cơ chế Tìm kiếm ngữ nghĩa (Semantic Search):}
+\begin{itemize}
+  \item Phương pháp tìm kiếm ngữ nghĩa xử lý truy vấn dựa trên ngữ nghĩa của chuỗi văn bản thay vì thực hiện khớp chuỗi ký tự chính xác (Keyword Matching).
+  \item Cơ chế này xử lý hiện tượng Vocabulary Mismatch --- trường hợp tập truy vấn ($Query$) và tập tài liệu ($Document$) cùng biểu thị một khái niệm nhưng sử dụng tập các từ vựng (tokens) giao nhau bằng rỗng.
+  \item Ví dụ: Với truy vấn "da tôi đỏ và ngứa, nổi thành mảng" và tài liệu chứa chuỗi "erythematous pruritic plaques", phương pháp khớp từ khóa trả về điểm số tương đồng bằng $0$ do không có token chung. Tìm kiếm ngữ nghĩa tính toán độ tương đồng dựa trên không gian ẩn (latent space) để xác định mức độ liên quan giữa hai chuỗi.
+\end{itemize}
+
+\textbf{Biểu diễn bằng Dense Vector trong kiến trúc RAG:}
+\begin{itemize}
+  \item Trong kiến trúc RAG (Retrieval-Augmented Generation), mô hình ngôn ngữ (LLM) nhận đầu vào là các đoạn văn cảnh (context) thu được từ tầng truy xuất.
+  \item Phương pháp Dense Vector biểu diễn mỗi đoạn văn bản thành một vector số thực trong không gian $d$ chiều cố định ($d=4096$). Quá trình mã hóa này biến đổi bài toán tra cứu văn bản thành bài toán hình học: xác định các khoảng cách giữa vector truy vấn (${v}_{q}$) và tập hợp các vector tài liệu (${v}_{d}$) trong không gian vector đa chiều.
+\end{itemize}
+
+\textbf{Mô hình sử dụng}
+\begin{itemize}
+  \item Hệ thống sử dụng mô hình embedding qwen/qwen3-embedding-8b (kích thước $8\times10^{9}$ tham số) thông qua API OpenRouter, đầu ra là vector $4096$ chiều. Các đặc tính kỹ thuật bao gồm:
+  \item \textbf{Cơ chế Instruction-tuned:} Áp dụng định dạng tiền tố (prefix/instruction) đối với chuỗi truy vấn đầu vào để định hình không gian nhúng, trong khi các đoạn văn bản trong cơ sở tri thức được mã hóa ở dạng nguyên bản (raw text).
+  \item \textbf{Xử lý Đa ngôn ngữ:} Mô hình ánh xạ chuỗi truy vấn tiếng Việt và tài liệu tiếng Anh về cùng một không gian biểu diễn $4096$ chiều để tính toán độ tương đồng.
+\end{itemize}
+
+\subsection{Cơ chế hoạt động}
+
+\textbf{Ánh xạ Không gian Vector}: Hàm embedding $f$ ánh xạ văn bản đầu vào thành vector thuộc không gian $d$ chiều. Quy trình xử lý chia thành hai giai đoạn:
+\begin{itemize}
+  \item Giai đoạn Indexing (Nạp dữ liệu): Mỗi đoạn tài liệu trong cơ sở tri thức được mã hóa một lần duy nhất $d=f(document)$, sau đó lưu trữ vào cơ sở dữ liệu vector.
+  \item Giai đoạn Querying (Truy vấn): Hệ thống chỉ thực hiện tính toán một lần vector truy vấn $q=f(query)$ tại thời điểm nhận yêu cầu. Kiến trúc Bi-Encoder tách biệt hoàn toàn quá trình sinh vector của tài liệu và truy vấn, giúp giảm thiểu độ trễ thời gian thực.
+  \item Tính toán Độ tương đồng Cosine (Cosine Similarity): Độ liên quan giữa vector truy vấn $q$ và vector tài liệu $d$ xác định bằng góc giữa hai vector trong không gian đa chiều, tính theo công thức:
+\begin{equation}
+  \mathrm{sim}(q,d)=\frac{q\cdot d}{\Vert q\Vert \Vert d\Vert }
+\end{equation}
+  \begin{itemize}
+    \item Giá trị $\mathrm{sim}(q,d)$ thuộc khoảng $[-1,1]$. Phép đo này tính toán dựa trên hướng của vector và loại bỏ sai số do độ dài chuỗi văn bản ($d$) khác nhau.
+  \end{itemize}
+  \item Xếp hạng và Chọn Top-k: Sắp xếp kết quả theo điểm số tương đồng giảm dần, trích xuất $k$ đoạn văn bản có giá trị cao nhất.
+  \item Truy xuất Payload (Metadata Retrieval): Lấy nội dung văn bản thô và siêu dữ liệu tương ứng từ cơ sở dữ liệu dựa trên vector ID.
+  \item Chuyển tiếp Ngữ cảnh (Context Injection): Đưa các đoạn tài liệu này vào tầng tạo sinh của mô hình ngôn ngữ (LLM).
+\end{itemize}
+
+\section{Luồng search keyword}
+
+\subsection{Lý thuyết tổng quan về tìm kiếm từ vựng và TF-IDF}
+\begin{itemize}
+  \item Vai trò của Tìm kiếm Từ vựng: Khớp chính xác chuỗi ký tự nhằm khắc phục nhược điểm "làm mờ" token chuyên biệt của tìm kiếm ngữ nghĩa (như tên thuốc, hoạt chất, mã bệnh, liều lượng).
+  \item Mô hình TF-IDF (Term Frequency - Inverse Document Frequency): Nền tảng của tìm kiếm từ vựng truyền thống, tính điểm dựa trên tích của tần suất từ trong tài liệu ($tf$) và độ hiếm của từ đó trong toàn bộ kho tài liệu ($idf$):
+\begin{equation}
+  \mathrm{score}_{\mathrm{TF\text{-}IDF}}(D,Q)=\sum _{t\in Q} \mathrm{tf}(t,D)\cdot \mathrm{idf}(t)
+\end{equation}
+  \item Hạn chế cốt lõi của TF-IDF:
+  \begin{itemize}
+    \item Không bão hòa (Lack of Term Frequency Saturation): Khi tần suất xuất hiện của một từ tăng cao, điểm số tăng tuyến tính vô hạn mà không phản ánh đúng thực tế rằng ý nghĩa liên quan sẽ đạt ngưỡng bão hòa sau một số lần nhất định.
+    \item Không chuẩn hóa độ dài (Lack of Length Normalization): Các tài liệu có độ dài lớn tự nhiên chứa nhiều từ hơn, dẫn đến lợi thế thiên vị không công bằng so với tài liệu ngắn.
+  \end{itemize}
+\end{itemize}
+
+\subsection{Thuật toán BM25}
+\begin{itemize}
+  \item Cải tiến từ TF-IDF: BM25 (Best Matching 25) khắc phục trực tiếp hai nhược điểm của TF-IDF bằng cách đưa vào các tham số điều chỉnh độ bão hòa và độ dài tài liệu.
+\begin{equation}
+  \mathrm{score}(D,Q)=\sum_{t\in Q}\mathrm{IDF}(t)\cdot\frac{\mathrm{tf}\cdot(k_1+1)}{\mathrm{tf}+k_1\cdot\left(1-b+b\cdot\frac{|D|}{\mathrm{avgdl}}\right)}
+\end{equation}
+\begin{equation}
+  \mathrm{IDF}(t)=\ln\left( 1+\frac{N-n(t)+0.5}{n(t)+0.5}\right)
+\end{equation}
+  \item Tham số cấu hình:
+  \begin{itemize}
+    \item $\mathrm{tf}(t,D)$ và $IDF(t)$: Tần suất xuất hiện và hệ số nghịch đảo tài liệu.
+    \item ${k}_{1}=1.2$: Kiểm soát độ bão hòa tần suất từ.
+    \item $b=0.75$: Chuẩn hóa độ dài văn bản dựa trên độ dài trung bình $\mathrm{avgdl}$.
+  \end{itemize}
+  \item Cấu trúc Inverted Index: Lưu trữ ánh xạ từ từ khóa sang danh sách tài liệu chứa từ kèm trọng số, giúp tối ưu hóa tốc độ truy xuất mà không cần duyệt toàn bộ kho dữ liệu.
+\end{itemize}
+
+\subsection{Cơ chế hoạt động}
+\begin{itemize}
+  \item \textbf{Xử lý bất tương hợp ngôn ngữ (Việt – Anh):} Sử dụng LLM trích xuất thực thể y khoa, bổ sung đồng thời tên chuẩn tiếng Việt và tiếng Anh vào câu truy vấn.
+  \item \textbf{Tiền xử lý văn bản:} Tách từ ghép đa âm tiết, giữ lại token không dấu, token phủ định và đơn vị liều lượng.
+  \item \textbf{Tích hợp hệ thống:} Triển khai độc lập cho các truy vấn tra cứu định danh chính xác và đóng vai trò là một nhánh trong luồng Hybrid Search (mục 3.3).
+\end{itemize}
+
+\section{Luồng search hỗn hợp}
+
+\subsection{Tổng quan}
+
+\textbf{Sự Bù trừ giữa hai luồng:}
+\begin{itemize}
+  \item \textit{Semantic Search:} Mạnh về diễn đạt tự nhiên, đồng nghĩa và đa ngôn ngữ; yếu ở token hiếm hoặc khớp chính xác.
+  \item \textit{BM25:} Khớp chính xác tên thuốc, hoạt chất và thuật ngữ; không hiểu ngữ nghĩa.
+  \item Sự kết hợp này khắc phục các điểm mù lẫn nhau.
+\end{itemize}
+
+\textbf{Mục tiêu tối ưu hóa Độ phủ (Recall) và Độ chính xác (Precision):} Kiến trúc hai tầng giúp tối đa hóa Recall ở tầng một (gộp Semantic, BM25 và Graph) và tập trung tối ưu Precision ở tầng hai (Rerank) trên tập ứng viên thu gọn.
+
+\subsection{Thuật toán Gộp kết quả (Fusion Algorithms)}
+
+\textbf{Thuật toán Reciprocal Rank Fusion (RRF):}
+
+Hệ thống sử dụng RRF để gộp kết quả dựa trên vị trí thứ hạng (rank) thay vì giá trị điểm số thô:
+\begin{equation}
+  \mathrm{RRF}(d)=\sum_{i\in \mathrm{lists}} \frac{1}{k+\mathrm{rank}_{i}(d)},k=60
+\end{equation}
+\begin{itemize}
+  \item Cơ chế: Tài liệu xuất hiện ở nhiều danh sách được cộng dồn trọng số thứ hạng; tham số $k=60$ làm giảm độ chênh lệch quá lớn giữa các vị trí đầu, hạn chế sự chi phối độc quyền của một luồng.
+  \item Lựa chọn phương pháp: Hệ thống không sử dụng phương pháp chuẩn hóa điểm số có trọng số ($\alpha$-Balancing) do phương pháp này phụ thuộc vào giá trị ngoại lai (outliers) trong từng truy vấn và yêu cầu tối ưu hóa tham số $\alpha$ qua thực nghiệm trong điều kiện thiếu tập dữ liệu đánh giá chuẩn.
+\end{itemize}
+
+\textbf{Xếp hạng lại (Reranking) bằng Cross-Encoder:}
+
+Danh sách sau RRF được xử lý qua mô hình qwen/qwen3-reranker-8b theo kiến trúc Cross-Encoder. Khác với Bi-Encoder (mã hóa độc lập), Cross-Encoder xử lý đồng thời cặp $(query,document)$ để đánh giá tương tác ngữ nghĩa sâu, cung cấp điểm số từ $0$ đến $1$ trước khi chọn tập kết quả cuối cùng.
+
+\subsection{Cơ chế hoạt động trong hệ thống}
+
+\textbf{Phân định vai trò:}
+\begin{itemize}
+  \item \textbf{Knowledge Graph (Neo4j):} Lưu trữ quan hệ bệnh – triệu chứng – thuốc, chuẩn hóa thuật ngữ (đóng vai trò gợi ý).
+  \item \textbf{RAG:} Truy xuất tài liệu chuyên ngành (đóng vai trò \textbf{bằng chứng lâm sàng chính thức}).
+\end{itemize}
+
+\textbf{Quy trình Thực thi Đồng thời:} Gọi song song ba hướng (Vector DB, BM25, Đồ thị tri thức). Hai nhánh sách được gộp qua RRF, kết hợp với dữ liệu đồ thị, sau đó đưa qua Cross-Encoder Reranking và gán nhãn nguồn (book hoặc kg) trước khi chuyển cho LLM.
+
+\section{Luồng Knowledge Graph}
+
+\subsection{Chuẩn hoá thực thể và quan hệ}
+\begin{itemize}
+  \item Trong bước này các thực thể được lấy từ các guideline (BYT, WHO, VDA, Fitzpatrick…) và so sánh với ontology DermO. Khi một thực thể khớp với một thuật ngữ trong DermO, nó được ánh xạ sang tên chuẩn và ID DermO (ví dụ “atopic dermatitis” → DermoTerm\_00123). Việc ánh xạ loại bỏ các dạng viết khác nhau, đồng nghĩa và lỗi đánh máy, đồng thời chuẩn hoá tiêu chuẩn chữ thường và loại bỏ ký tự đặc biệt.
+  \item Tiếp theo, các quan hệ được truy vấn từ PrimeKG, một đồ thị tri thức đã được xây dựng sẵn. PrimeKG cung cấp các quan hệ như “bệnh → triệu chứng”, “bệnh → thuốc”, “bệnh → yếu tố nguy cơ”… Nhờ đó mỗi thực thể được nối với các thực thể liên quan trong đồ thị. Sau khi entity-linking và relation-extraction hoàn tất, mọi thực thể và quan hệ được chuẩn hoá (lower-case, không ký tự đặc biệt) và gán ID duy nhất (ID DermO cho node thực thể, ID PrimeKG cho quan hệ).
+\end{itemize}
+
+\subsection{Gắn nguồn bằng chứng (Provenance)}
+\begin{itemize}
+  \item Mỗi node và relationship trong Neo4j được gắn các trường provenance:
+  \begin{itemize}
+    \item prov\_document\_id – UUID của tài liệu gốc (guideline, PrimeKG, DermO).
+    \item prov\_page / prov\_section – số trang hoặc mục trong PDF mà thực thể/quan hệ xuất hiện.
+    \item prov\_chunk\_id – ID của chunk trong Qdrant (đối với nội dung sách/guide).
+    \item prov\_source – loại nguồn (guideline, primekg, dermo).
+  \end{itemize}
+  \item Những siêu dữ liệu này cho phép bác sĩ khi xem một thực thể hoặc một quan hệ nhanh chóng truy ngược lại nguồn tài liệu gốc, xem trang, mục hoặc chunk thực tế, từ đó tăng độ tin cậy và khả năng kiểm chứng của thông tin hiển thị.
+\end{itemize}
+
+\subsection{Lưu trữ trong Knowledge Graph}
+\begin{itemize}
+  \item Cuối cùng, tất cả các node và relationship, cùng với siêu dữ liệu provenance, được ghi vào Neo4j. Hai sub-graph độc lập – PrimeKG (bệnh-triệu chứng-thuốc) và DermO (ontology thuật ngữ) – được nạp vào Neo4j và liên kết với các thực thể đã chuẩn hoá.
+  \item Khi chatbot cần tra cứu, công cụ knowledge\_graph\_search thực hiện các câu lệnh để truy vấn các node, quan hệ và các trường provenance, rồi trả về kết quả (thực thể, quan hệ và nguồn bằng chứng) cho người dùng. Điều này cho phép chatbot cung cấp câu trả lời có cấu trúc, có nguồn gốc rõ ràng, đồng thời cho phép người dùng (bác sĩ) kiểm tra và xác nhận thông tin một cách nhanh chóng.
+\end{itemize}
+
+\section{Đánh giá luồng truy vấn hỗn hợp}
+
+\subsection{Bộ dữ liệu}
+
+Bộ dữ liệu gồm 378 chunk từ sách Hướng dẫn chẩn đoán điều trị Da liễu (Bộ Y tế) lưu tại Qdrant, sử dụng qwen/qwen3-embedding-8b để biểu diễn vector và qwen/qwen3-reranker-8b để tái xếp hạng.
+
+Quy trình sinh bắt đầu từ việc chọn 120 chunk hợp lệ (loại bỏ chunk ngắn <300 ký tự, mục lục, phụ lục), dùng RAGAS dựng đồ thị tri thức và mô hình LLM để tạo 42 câu hỏi đóng vai bệnh nhân (đơn bước và đa bước) kèm nhãn chuẩn reference\_contexts. Kết quả thu được bộ test 24 câu hỏi (10 đơn bước, 14 đa bước) và 36 nhãn chunk.
+
+Bộ test có các hạn chế kỹ thuật: kích thước nhỏ ($n=24$) cho khoảng tin cậy rộng; nhãn cố định theo RAGAS khiến hit@k/recall@k chỉ là cận dưới; văn phong sinh từ chunk tạo thiên vị cho BM25; chưa được nghiệm thu thủ công toàn diện và chưa thể đánh giá truy vấn xuyên ngôn ngữ do giới hạn tài liệu đơn ngữ.
+
+\subsection{Kết quả}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.220\dimexpr\linewidth-14\tabcolsep\relax}|>{\raggedright\arraybackslash}p{0.123\dimexpr\linewidth-14\tabcolsep\relax}|>{\raggedright\arraybackslash}p{0.121\dimexpr\linewidth-14\tabcolsep\relax}|>{\raggedright\arraybackslash}p{0.102\dimexpr\linewidth-14\tabcolsep\relax}|>{\raggedright\arraybackslash}p{0.120\dimexpr\linewidth-14\tabcolsep\relax}|>{\raggedright\arraybackslash}p{0.155\dimexpr\linewidth-14\tabcolsep\relax}|>{\raggedright\arraybackslash}p{0.159\dimexpr\linewidth-14\tabcolsep\relax}|}
+\caption{Kết quả đánh giá các luồng truy xuất trên bộ dữ liệu kiểm thử}\\
+\hline
+\textbf{\textbf{Luồng truy xuất}} & \textbf{\textbf{hit@1}} & \textbf{\textbf{hit@3}} & \textbf{\textbf{hit@5}} & \textbf{\textbf{hit@10}} & \textbf{\textbf{recall@10}} & \textbf{\textbf{MRR@10}} \\ \hline
+\endhead
+Ngữ nghĩa & 0.58 & 0.75 & 0.83 & 0.96 & 0.90 & 0.70 \\ \hline
+Từ khóa BM25 & 0.50 & 0.67 & 0.83 & 0.88 & 0.73 & 0.63 \\ \hline
+\textbf{Hỗn hợp} & \textbf{0.83} & \textbf{0.92} & \textbf{1.00} & \textbf{1.00} & \textbf{0.94} & \textbf{0.90} \\ \hline
+\end{longtable}
+
+Luồng hỗn hợp (Hybrid) tối ưu nhất: Đạt hit@5 = hit@10 = 1.00 (100\% câu có chunk đúng trong top-5), hit@1 = 0.83 và MRR@10 = 0.90. So với luồng ngữ nghĩa, hit@5 tăng +0.17 (95\% CI [+0.04, +0.33], có ý nghĩa thống kê).
+
+Ngữ nghĩa phủ tốt hơn BM25: Đạt recall@10 = 0.90 (BM25 đạt 0.73), giải quyết tốt hơn các câu hỏi đa bước. BM25 giữ được hit@5 = 0.83 do từ vựng câu hỏi gần văn bản gốc.
+
+Cộng hưởng RRF \& Rerank: Gộp hai luồng qua RRF nâng recall@10 lên 0.94, còn bước Rerank quyết định thứ hạng đầu (hit@1 tăng từ 0.67 lên 0.83+).
+
+\section{Kết luận chương}
+
+Chương này đã thiết kế các luồng truy xuất kiến thức cho chatbot. Tìm kiếm ngữ nghĩa bằng vector nhúng xử lý tốt cách diễn đạt tự nhiên, đồng nghĩa và việc lệch ngôn ngữ giữa câu hỏi tiếng Việt và tài liệu tiếng Anh; tìm kiếm từ khóa BM25 khớp chính xác tên thuốc, hoạt chất và thuật ngữ. Hai luồng bổ sung điểm yếu cho nhau nên được gộp bằng Reciprocal Rank Fusion rồi xếp hạng lại bằng Cross-Encoder, song song với luồng đồ thị tri thức đóng vai trò gợi ý và chuẩn hóa thuật ngữ, trong đó sách giáo khoa là bằng chứng chính thức.
+
+Kết quả trên bộ dữ liệu kiểm thử cho thấy luồng hỗn hợp tốt nhất, đạt hit@5 = 1.00, recall@10 = 0.94 và MRR@10 = 0.90, vượt cả hai luồng đơn lẻ. Do bộ kiểm thử còn nhỏ (24 câu hỏi) và chỉ dùng tài liệu đơn ngữ, các số liệu này mới có giá trị tham khảo và cần được kiểm chứng trên tập dữ liệu lớn hơn.

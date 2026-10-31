@@ -1,0 +1,97 @@
+% Báo cáo tiến độ đồ án: Hệ thống hỗ trợ tiền chẩn đoán bệnh về da
+% Biên dịch bằng XeLaTeX:  xelatex main.tex  (chạy 2 lần để có mục lục)
+%
+% Cấu trúc thư mục:
+%   main.tex            file chính (khai báo gói, định dạng, nạp các chương)
+%   bia/                trang bìa (+ hinh/)
+%   mo_dau/             phần mở đầu (giới thiệu chung, mục tiêu, bố cục báo cáo)
+%   chuong1 ... chuong7 mỗi chương (chuong7 = kết luận chung) một thư mục: chuongN.tex (+ hinh/ nếu có)
+% Đánh số tự động: Chương 1, mục 1.1, mục con 1.1.1 (\chapter, \section, \subsection).
+\documentclass[12pt,a4paper]{report}
+
+\usepackage{fontspec}
+\setmainfont{Times New Roman}[Ligatures=TeX]
+\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=3cm,right=2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{setspace}
+\usepackage{eso-pic}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage[unicode,hidelinks]{hyperref}
+
+% Quy chuẩn trình bày: A4 dọc; lề trên/dưới 2,5 cm, trái 3 cm, phải 2 cm; Times New Roman 13 pt;
+% giãn dòng 1,3; lùi đầu dòng 1,27 cm; cách đoạn 6 pt; căn đều hai bên.
+% (class report không có tuỳ chọn 13pt nên khai báo cỡ chữ ở đây)
+\renewcommand{\normalsize}{\fontsize{13pt}{15pt}\selectfont}
+\renewcommand{\small}{\fontsize{12pt}{14pt}\selectfont}
+\renewcommand{\footnotesize}{\fontsize{11pt}{13pt}\selectfont}
+\setstretch{1.3}
+\setlength{\parindent}{1.27cm}
+\setlength{\parskip}{6pt plus 1pt}
+\hyphenpenalty=10000 \exhyphenpenalty=10000 \emergencystretch=3em
+\setlist{itemsep=2pt,topsep=3pt}
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{3}
+\numberwithin{equation}{chapter}
+\setlength{\LTpre}{6pt}\setlength{\LTpost}{6pt}
+
+% Mục lục, danh mục hình/bảng: tiêu đề và các dòng căn lề trái, không thụt theo cấp
+\renewcommand{\cfttoctitlefont}{\normalfont\fontsize{16pt}{19pt}\selectfont\bfseries}
+\renewcommand{\cftlottitlefont}{\normalfont\fontsize{16pt}{19pt}\selectfont\bfseries}
+\renewcommand{\cftloftitlefont}{\normalfont\fontsize{16pt}{19pt}\selectfont\bfseries}
+\setlength{\cftbeforetoctitleskip}{0pt}
+\setlength{\cftchapindent}{0pt}\setlength{\cftsecindent}{0pt}\setlength{\cftsubsecindent}{0pt}
+\setlength{\cftchapnumwidth}{2.2em}\setlength{\cftsecnumwidth}{2.6em}\setlength{\cftsubsecnumwidth}{3.4em}
+\setlength{\cftfignumwidth}{3em}\setlength{\cfttabnumwidth}{3em}
+
+% Tên tiếng Việt
+\renewcommand{\contentsname}{Mục lục}
+\renewcommand{\listfigurename}{Danh mục hình}
+\renewcommand{\listtablename}{Danh mục bảng}
+\renewcommand{\chaptername}{Chương}
+\renewcommand{\figurename}{Hình}
+\renewcommand{\tablename}{Bảng}
+
+% Tiêu đề: Chương N (dòng trên) + tên chương (dòng dưới); mục 1.1, 1.1.1
+\titleformat{\chapter}[display]{\normalfont\fontsize{16pt}{19pt}\selectfont\bfseries\centering}{\chaptername\ \thechapter}{8pt}{\uppercase}
+\titlespacing*{\chapter}{0pt}{-10pt}{20pt}
+\titleformat{\section}{\normalfont\fontsize{14pt}{17pt}\selectfont\bfseries}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\normalfont\fontsize{13pt}{16pt}\selectfont\bfseries}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalfont\bfseries\itshape}{\thesubsubsection}{0.6em}{}
+\titleformat{\paragraph}[block]{\normalfont\bfseries}{}{0pt}{}
+\titlespacing*{\paragraph}{0pt}{10pt}{3pt}
+\titleformat{\subparagraph}[block]{\normalfont\bfseries\itshape}{}{0pt}{}
+\titlespacing*{\subparagraph}{0pt}{8pt}{3pt}
+
+\begin{document}
+\normalsize
+
+\input{bia/bia}
+
+\pagenumbering{roman}
+\tableofcontents
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
+\clearpage
+\pagenumbering{arabic}
+
+% ===== Mở đầu =====
+\input{mo_dau/mo_dau}
+
+% ===== Các chương của báo cáo đồ án =====
+\input{chuong1/chuong1}
+\input{chuong2/chuong2}
+\input{chuong3/chuong3}
+\input{chuong4/chuong4}
+\input{chuong5/chuong5}
+\input{chuong6/chuong6}
+\input{chuong7/chuong7}
+
+\end{document}
