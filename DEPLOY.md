@@ -90,7 +90,7 @@ Script chạy trong container `derma-core-api`, nạp đồ thị tri thức và
 |---|---|---|
 | PrimeKG (36k node, 474k cạnh) | Neo4j | `knowledge_graph_query`, gợi ý câu hỏi của `record_reasoning` |
 | DermO (3.4k thuật ngữ) | Neo4j | `knowledge_graph_query` |
-| Chunk sách (pipeline `document_ingest`) | Qdrant `derma_document_chunks_v4` | `hybrid_retrieval` (semantic + BM25), `semantic_search`, `keyword_search` — **không** nạp bằng script này mà qua giao diện admin `/admin/documents` |
+| Chunk sách (pipeline `document_ingest`) | Qdrant `derma_document_chunks_v4` | `hybrid_retrieval` (semantic + BM25), `semantic_search`, `keyword_search` — **không** nạp bằng script này mà qua giao diện admin `/doctor/documents` (cần chạy `document-ingest-worker`) |
 
 - Chạy lại nhiều lần không sao (idempotent).
 - `./reset-and-gen-data.sh --reset` — **xoá sạch** rồi nạp lại từ đầu (dùng khi đổi dữ liệu/model embedding).
@@ -115,7 +115,7 @@ curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:3010/api/v1/co
 docker compose -f docker-compose.prod.yml exec -T derma-core-api python -c "
 import asyncio
 from app.api.deps import get_knowledge_base_service
-print('Chunk sách trong Qdrant:', asyncio.run(get_knowledge_base_service().count_document_chunks()))"   # 0 tới khi index sách đầu tiên ở /admin/documents
+print('Chunk sách trong Qdrant:', asyncio.run(get_knowledge_base_service().count_document_chunks()))"   # 0 tới khi index sách đầu tiên ở /doctor/documents
 ```
 
 Rồi mở `http://<host>:3010`, đăng ký/đăng nhập, gửi thử một tin nhắn.

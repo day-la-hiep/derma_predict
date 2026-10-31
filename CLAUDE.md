@@ -16,7 +16,7 @@ Hướng dẫn cho Claude khi làm việc trong repo này.
 
 | Hệ thống | Mô tả | Đọc thêm |
 |---|---|---|
-| **Chat tư vấn da liễu** | FE chat + Core API + Agent Worker (LangGraph) tra guideline, knowledge graph, phân loại ảnh da | `README.md`, `docs/kien-truc-he-thong.md`, `core/app/kien-truc-agent.md` |
+| **Chat tư vấn da liễu** | FE chat + Core API + Agent Worker (LangGraph) tra guideline, knowledge graph, phân loại ảnh da | `README.md`, `docs/overview/system-overview.md`, `core/app/kien-truc-agent.md` |
 | **Pipeline số hoá sách giáo khoa** (`document_ingest`) | Admin upload PDF → OCR/đọc chữ → AI đọc mục lục (người duyệt) → cắt chunk theo mục lục → nạp Qdrant | skill `derma-pipeline-conventions`, `core/pipeline/document_ingest/README.md` |
 
 Cấu trúc thư mục:

@@ -7,8 +7,8 @@ description: Conventions for the Derma document-ingest pipeline (`core/pipeline/
 
 Paths are relative to `core/`. Turns an uploaded PDF (currently: textbooks, `Document.type ==
 "book"`) into table-of-contents-anchored chunks in Qdrant, reviewed stage-by-stage by a human via
-`/doctor/documents` (FE: `derma-fe-conventions`'s `features/document-pipeline/`). No CLI — Core runs each stage
-in a background thread; everything lives in Postgres (`documents`, `document_stages`,
+`/doctor/documents` (FE: `derma-fe-conventions`'s `features/document-pipeline/`). No CLI — Core records `running` and publishes to RabbitMQ, the Ingest Worker (`make ingest-worker`) runs each stage;
+everything lives in Postgres (`documents`, `document_stages`,
 `document_overrides`) + MinIO (`derma-documents` bucket) + Qdrant (`derma_document_chunks_v4`), never
 on local disk except a PDF scratch copy.
 
@@ -41,7 +41,7 @@ graph — `nodes.csv` + DermO `terms.json` built by `core/graph_base`, loaded by
 PrimeKG ids are unique only per node type, so nodes are always addressed by `(type, id)` / Neo4j label + id, never by `Entity.id` alone.
 Reviewer overrides (stage `graph`): `rejected`, `relink` (per triple side, expanded to every triple with the same
 term), `accepted_nodes` (new `doc_*` entities, only when `profile.graph.allow_new_entities`). Gotchas (PrimeKG id
-collisions across node types, topic misclassification, `KG_EDGE_SOURCES`): `docs/notice/document-graph-extract.md`.
+collisions across node types, topic misclassification, `KG_EDGE_SOURCES`): `docs/module/knowledge-graph.md` / `knowledge-graph-flow.md`.
 
 Stage order/deps live in `app/models/document_stage.py` (`STAGES`, `downstream()`) — the single
 source of truth, shared by repository, runner, and API. `toc` does **not** depend on `ingest`:

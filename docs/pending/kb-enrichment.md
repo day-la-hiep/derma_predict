@@ -1,6 +1,6 @@
 # [Pending] Làm giàu Knowledge Base cùng chatbot
 
-Requirement M9.4 (xem [requirements.md](../overview/requirements.md)): bác sĩ phối hợp với chatbot để tra cứu và làm
+Requirement M4.4 (xem [requirements.md](../overview/requirements.md)): bác sĩ phối hợp với chatbot để tra cứu và làm
 giàu KB. Chưa làm, chưa có entity trong `dto/base`. Tài liệu này ghi lại ý tưởng để chốt luồng trước khi làm.
 
 ## 1. Vấn đề
@@ -66,4 +66,4 @@ Bảng `knowledge_suggestions` tương ứng: FK `origin_message_id` → `messag
 ## 5. Phụ thuộc
 
 - M1 (đăng nhập + vai trò) để biết ai đề xuất / ai duyệt.
-- M9.3 (chatbot tra được tài liệu đã nạp) nên làm trước, để đo được KB đang thiếu gì.
+- M4.3 (chatbot tra được tài liệu đã nạp) nên làm trước, để đo được KB đang thiếu gì.

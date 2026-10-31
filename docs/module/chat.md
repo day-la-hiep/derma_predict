@@ -1,7 +1,8 @@
 # Module Chat tư vấn da liễu
 
-Bệnh nhân chat với trợ lý AI (có thể kèm ảnh da). Agent suy luận nhiều bước, gọi tool tra guideline,
-knowledge graph, phân loại ảnh; thiếu thông tin thì hỏi lại; câu trả lời được stream realtime.
+Bệnh nhân chat với trợ lý AI (có thể kèm ảnh da). Agent suy luận nhiều bước, gọi tool tra sách giáo khoa đã số hoá,
+knowledge graph, ca bệnh tương tự, phân loại ảnh; thiếu thông tin thì hỏi lại (chỉ v1); câu trả lời được stream realtime.
+Mọi API ở đây yêu cầu đăng nhập JWT (`Authorization: Bearer ...`); chủ hội thoại luôn là tài khoản trong token.
 
 > Kết quả AI **không phải chẩn đoán y khoa**; guideline đang chờ bác sĩ duyệt.
 
@@ -13,8 +14,8 @@ knowledge graph, phân loại ảnh; thiếu thông tin thì hỏi lại; câu t
 | API | `core/app/api/conversation_api.py`, `core/app/api/upload_api.py` |
 | Service | `core/app/services/conversation_service.py`, `message_service.py` |
 | Repository / Model | `conversation_repository.py`, `message_repository.py`, `file_repository.py`; `models/conversation.py`, `message.py`, `file.py` |
-| Worker | `core/agent/worker.py` (vòng đời, khoá theo hội thoại), `turn.py` (chạy 1 turn), `publisher.py`, `core/app/workers/agent_response_consumer.py` (chạy trong Core) |
-| Agent | `core/agent/graph/` (`chat_graph.py` lọc intent → `graph/v1/pre_diagnosis_graph.py` tiền chẩn đoán (v1; v2 ở `graph/v2/`, chọn bằng `AGENT_GRAPH_VERSION`)), `tools/`, `middleware/`, `prompt/` |
+| Worker | `core/agent/worker.py` (vòng đời, khoá theo hội thoại), `turn.py` (chạy 1 turn), `persistence.py` (checkpoint + memory ở Postgres), `core/app/workers/agent_response_consumer.py` (chạy trong Core) |
+| Agent | `core/agent/graph/` (`chat_graph.py` → `triage.py` lọc intent → tiền chẩn đoán `graph/v1/pre_diagnosis_graph.py` (mặc định) hoặc `graph/v2/`, chọn bằng `AGENT_GRAPH_VERSION`, xem [agent-graph-versions](../notice/agent-graph-versions.md)), `tools/`, `middleware/`, `prompt/`, `state/` |
 
 ## 2. API
 
@@ -23,7 +24,7 @@ Base `/api/v1`, response bọc `{"data": ...}`.
 | Method | Path | Việc |
 |---|---|---|
 | GET | `/models` | danh sách model cho người dùng chọn (`AGENT_MODEL_CHOICES`) |
-| GET | `/conversations?user_id=` | danh sách hội thoại của user |
+| GET | `/conversations` | danh sách hội thoại của tài khoản đăng nhập |
 | POST | `/conversations` | tạo hội thoại + tin đầu tiên (cần user đã có hồ sơ bệnh nhân) |
 | PATCH | `/conversations/{id}/model` | đổi model, áp dụng từ turn kế tiếp |
 | GET | `/conversations/{id}/messages` | lịch sử tin nhắn (kể cả assistant đang `question`) |
@@ -32,6 +33,10 @@ Base `/api/v1`, response bọc `{"data": ...}`.
 | GET | `/conversations/{id}/stream` | SSE dài hạn của "room" hội thoại (bệnh nhân, bác sĩ, agent) — forward nguyên văn event từ Redis, có heartbeat; chỉ chủ hội thoại hoặc bác sĩ liên quan được nghe |
 | GET | `/doctor/consultations/stream` | SSE cho bác sĩ: ca tư vấn mới / đổi trạng thái (`consultation.updated`) |
 | POST | `/uploads` | upload ảnh đính kèm → MinIO + bảng `files` |
+| POST | `/conversations/{id}/request-consultation` | bệnh nhân xin tư vấn bác sĩ (tạo `consultation_sessions`) |
+
+Các endpoint của bác sĩ (`/doctor/consultations/*`, báo cáo kết luận, đồ thị hành trình) và video call (`/video-calls/*`) nằm ở `doctor_api.py`,
+`video_call_api.py`; xem [doctor-consultation](doctor-consultation.md).
 
 ## 3. Luồng một turn
 
@@ -112,14 +117,18 @@ bảo vệ cuối, vì `create_agent` không cho chạy song song trên cùng `t
 
 ## 6. Agent
 
-Agent gồm hai graph. **Chat graph** (`chat_graph.py`) lọc intent: tin xã giao / hỏi về trợ lý / ngoài phạm vi da liễu được trả lời luôn, còn lại chuyển sang **graph tiền chẩn đoán** (`pre_diagnosis_graph.py`), dùng `create_agent` (LangChain) — vòng lặp ReAct có sẵn — với:
+Agent gồm hai tầng. **Chat graph** (`chat_graph.py`) lọc intent bằng `triage` (`AGENT_TRIAGE_ENABLED`): tin xã giao / hỏi về trợ lý / ngoài phạm vi da liễu được trả lời luôn, còn lại chuyển sang **graph tiền chẩn đoán**, chọn bằng `AGENT_GRAPH_VERSION`:
+
+- **v1** (mặc định, `graph/v1/pre_diagnosis_graph.py`): `create_agent` (LangChain) — vòng lặp ReAct có sẵn — với middleware và tool mô tả dưới đây.
+- **v2** (`graph/v2/`): `StateGraph` tự dựng (`load_memory → text_flow ∥ image_flow`), bằng chứng gắn mã `E#`/`H#` bằng code, không có `ask_user`, tối đa 3 vòng tra cứu, state tiền chẩn đoán (`diag`) lưu qua các lượt. Chi tiết và rủi ro: [agent-graph-versions](../notice/agent-graph-versions.md).
+
+Phần dưới mô tả chung và v1:
 
 - **`thread_id = conversation_id`**: checkpointer nối mọi turn của một hội thoại (short-term memory).
 - **Model theo hội thoại**: `conversations.model` lưu id ngắn, Worker map sang `"provider:model"` qua
   `AGENT_MODEL_CHOICES`; middleware `select_model` áp dụng, rỗng thì dùng `AGENT_MODEL`. Gọi LLM qua OpenRouter.
-- **Middleware** đang bật: `select_model`, `inject_long_term_memory`, `force_reasoning`,
-  `enforce_initial_reasoning`, `emit_tool_result`. Đang tắt: `critic_review` (LLM chấm bản nháp),
-  `SummarizationMiddleware`.
+- **Middleware v1** đang bật: `select_model`, `inject_long_term_memory`, `force_reasoning`, `critic_review` (LLM chấm bản nháp),
+  `enforce_initial_reasoning`, `evidence_rules`, `emit_reasoning_step`, `emit_tool_result`. Đang tắt: `SummarizationMiddleware`. v2 không dùng middleware (logic nằm ở node).
 
 ### Tool
 
@@ -130,9 +139,12 @@ Agent gồm hai graph. **Chat graph** (`chat_graph.py`) lọc intent: tin xã gi
 | `hybrid_retrieval` | tool tra cứu **mặc định** cho yêu cầu chung: sách giáo khoa đã số hoá + đồ thị tri thức, chạy semantic + BM25 + KG (trích thực thể → DermO → PrimeKG, bệnh ứng viên) rồi rerank bằng Qwen3-Reranker (OpenRouter); trả đoạn kèm nguồn (sách, mục, trang) | Qdrant `derma_document_chunks` + Neo4j PrimeKG/DermO |
 | `semantic_search` | (chuyên biệt) tra sách giáo khoa đã số hoá theo ngữ nghĩa (embedding → Qdrant), rerank bằng Qwen3-Reranker (OpenRouter); trả đoạn kèm nguồn (sách, mục, trang) | Qdrant `derma_document_chunks` |
 | `keyword_search` | (chuyên biệt) tra sách giáo khoa theo từ khoá (BM25 do Qdrant chấm trên sparse vector) — bắt tên thuốc, thuật ngữ; cùng dạng kết quả với `semantic_search` | Qdrant `derma_document_chunks` |
+| `query_document_graph` | tra **đồ thị trích từ sách** (cạnh `source='DOC'`, bước `graph_index`) theo thực thể + quan hệ; mỗi cạnh có câu trích gốc + trang, nên v2 xếp vào bằng chứng `E#`. Dữ liệu còn thưa, khớp theo chuỗi (nên dùng tên tiếng Anh y khoa) | Neo4j |
+| `search_finalize_report` | tìm ca bệnh tương tự trong kho **báo cáo kết luận** do bác sĩ chốt (cùng pipeline hybrid, bật bằng `AGENT_FINALIZE_REPORT_SEARCH_ENABLED`) | Qdrant `derma_finalize_reports` |
+| `search_finalize_report_by_image` | tìm ca bệnh tương tự theo ảnh (v1; v2 làm việc này trong làn ảnh) | Qdrant + MinIO |
 | `knowledge_graph_query` | (tool riêng) template Cypher theo `intent` (8 intent: ứng viên theo triệu chứng, phân biệt, hồ sơ bệnh, triệu chứng, cờ đỏ/nguy cơ, điều trị, chống chỉ định, hồ sơ thuốc) trên PrimeKG/DermO; `red_flags_risk` hiện luôn trả rỗng (đồ thị không còn dữ liệu BYT), `symptoms_of_disease` / `disease_overview` chỉ có dữ liệu cho một số bệnh; chỉ là gợi ý, không phải bằng chứng | Neo4j PrimeKG/DermO |
 | `classify_skin_image` | CNN 22 lớp phân loại ảnh da — chỉ là **giả thuyết** | MinIO + PyTorch |
-| `analyze_skin_image_multimodal` | (chỉ đăng ký khi `AGENT_VISION_MODEL` không rỗng) model multimodal (vd MedGemma qua Ollama) mô tả hình thái/phân bố + giả thuyết, bổ sung cho CNN — không phải bằng chứng. Xem [notice](../notice/medgemma-image-description.md) | MinIO + model theo `AGENT_VISION_MODEL` |
+| `analyze_skin_image_multimodal` | (v1, chỉ đăng ký khi `AGENT_VISION_MODEL` không rỗng; v2 gọi trong làn ảnh) model multimodal (vd MedGemma qua Ollama) mô tả hình thái/phân bố + giả thuyết, bổ sung cho CNN — không phải bằng chứng. Xem [notice](../notice/medgemma-image-description.md) | MinIO + model theo `AGENT_VISION_MODEL` |
 
 ### Long-term memory
 
@@ -149,10 +161,10 @@ kiểm tra file đã tồn tại, nối vào tin qua `message_files`; chỉ ản
 
 ## 8. Hạn chế / đơn giản hoá có chủ ý
 
-- Chưa có auth: `user_id` truyền từ client (FE dùng `user-1`).
+- Quyền truy cập theo JWT (chủ hội thoại, bác sĩ của ca); chưa có phân quyền chi tiết hơn (xem [doctor-consultation](doctor-consultation.md)).
 - Checkpoint hội thoại (lịch sử của agent và `diag`) và long-term memory đều lưu Postgres (schema `langgraph`); chỉ chạy 1 Worker vì khoá chống chạy đè theo hội thoại nằm trong tiến trình.
 - Không có Steer: người dùng phải chờ turn xong (hoặc trả lời câu hỏi đang chờ) mới gửi được tin mới.
 - Row assistant có thể kẹt `queued` nếu FE gửi tin nhưng không mở SSE (key Redis có TTL, row DB thì không);
   chưa có job dọn.
 - Chưa trả `sources` (trích dẫn) có cấu trúc cho FE.
-- Tư vấn với bác sĩ (`consultation_sessions`, `sender="doctor"`, `video_calls`) mới có schema.
+- v2 chưa chạy qua Worker + RabbitMQ + API thật; v1 vẫn là mặc định.
