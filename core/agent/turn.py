@@ -60,6 +60,7 @@ async def _stream_graph(
     base: dict[str, Any],
     context: AgentContext,
     req: TurnRequest,
+    streamed_text: list[str],
 ) -> tuple[AIMessage | None, Interrupt | None]:
     """Chạy chat graph, forward token; trả `(AIMessage cuối, Interrupt nếu tạm dừng)`."""
     interrupt: Interrupt | None = None
@@ -77,6 +78,7 @@ async def _stream_graph(
             payload = cast("dict[str, Any]", chunk)
             if payload.get("type") == "token" and payload.get("text"):
                 streamed = True
+                streamed_text.append(payload["text"])
                 await emit(
                     channel,
                     {"type": "message.delta", "delta": payload["text"], **base},
@@ -156,10 +158,24 @@ async def _drive(req: TurnRequest, input_: object) -> None:
         channel, {"type": "message.started", "corr_id": req.corr_id, **base}
     )
 
+    streamed_text: list[str] = []
     try:
         final_message, interrupt = await _stream_graph(
-            input_, channel, base, context, req
+            input_, channel, base, context, req, streamed_text
         )
+    except asyncio.CancelledError:
+        # người dùng bấm Dừng: giữ phần đã stream; nuốt CancelledError vì turn phải đóng bình thường (xoá active key, ack)
+        logger.info("turn %s bị người dùng dừng", req.message_id)
+        partial = "".join(streamed_text)
+        await finish_turn(
+            channel,
+            req,
+            {"type": "message.done", "content": partial, **base},
+            content=partial,
+            status="done",
+            reasoning=context.reasoning_steps,
+        )
+        return
     except Exception as exc:  # noqa: BLE001
         # Không để lỗi lọt ra ngoài (turn sẽ treo, message kẹt "queued"); coi như "done" với nội dung báo lỗi
         # vì thêm status "error" phải sửa cả DTO/FE/DB enum.

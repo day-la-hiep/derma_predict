@@ -11,6 +11,7 @@ CONVERSATION_ROOM_CHANNEL = "conversation:room:{conversation_id}"
 USER_CALL_CHANNEL = "user:calls:{user_id}"  # Core -> SSE cuộc gọi của một tài khoản (không phụ thuộc đang xem hội thoại nào)
 DOCTOR_INBOX_CHANNEL = "doctor:inbox"  # Core -> SSE danh sách ca của bác sĩ (ca mới / đổi trạng thái)
 DOCUMENT_INGEST_CANCEL_CHANNEL = "document:ingest:cancel"  # Backend -> Ingest worker (bấm Dừng bước đang chạy)
+AGENT_CANCEL_CHANNEL = "agent:turn:cancel"  # Core -> Agent worker (người dùng bấm Dừng turn đang chạy)
 STREAM_DONE_SENTINEL = "[DONE]"  # hết 1 turn; stream room dài hạn nên client bỏ qua, không đóng kết nối
 
 # ----- Redis key (không phải Pub/Sub) -----
