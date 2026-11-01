@@ -1,3 +1,262 @@
 % Chương 4
-\chapter{Thiết kế luồng lập luận chatbot}
+\chapter[\MakeUppercase{Thiết kế luồng lập luận chatbot}]{Thiết kế luồng lập luận chatbot}
 \label{ch:chuong4}
+
+Chương này mô tả cách tác nhân (agent) của chatbot lập luận trong một lượt hội thoại: lọc ý định, trích dữ kiện, tra cứu, đánh giá bằng chứng và trả lời.
+
+\section{Nguyên tắc lập luận}
+
+\subsection{Mục tiêu}
+
+Chatbot hỗ trợ tiền chẩn đoán nên phải tuân thủ ba ràng buộc:
+\begin{itemize}
+  \item Mọi khẳng định y khoa dựa trên điều người bệnh nói hoặc trên bằng chứng đã tra cứu. Kiến thức nội tại của LLM không được tính là bằng chứng.
+  \item Khi thiếu bệnh sử, chatbot hỏi thêm thay vì suy đoán.
+  \item Chatbot không chẩn đoán xác định, không kê đơn, không nêu liều thuốc.
+\end{itemize}
+
+\subsection{Bằng chứng và gợi ý}
+
+Hệ thống chia kết quả tra cứu thành hai loại và cấp mã riêng. Việc phân loại do mã chương trình thực hiện dựa trên tên công cụ và nội dung kết quả, không do LLM quyết định.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{2.8cm}|p{6.2cm}|p{5.0cm}|}
+\hline
+\textbf{Loại (mã)} & \textbf{Nguồn} & \textbf{Vai trò} \\ \hline
+Bằng chứng (\texttt{E\#}) & Đoạn giáo trình; ca bệnh thực tế do bác sĩ chốt; cạnh đồ thị trích từ sách có câu trích và trang & Căn cứ cho giả thuyết và câu trả lời \\ \hline
+Gợi ý (\texttt{H\#}) & Quan hệ đồ thị PrimeKG và DermO; nhãn CNN; mô tả ảnh; kết quả đối chiếu chéo ảnh với lời người bệnh & Định hướng tra cứu, không dùng làm căn cứ \\ \hline
+\end{tabular}
+\caption{Hai loại kết quả tra cứu}
+\label{tab:evidence-hint}
+\end{table}
+
+\subsection{Quy tắc khi thiếu bằng chứng}
+
+Một giả thuyết bệnh chỉ được giữ khi trích dẫn ít nhất một mã \texttt{E\#} hợp lệ. Khi không có giả thuyết nào đạt điều kiện này, chatbot không nêu tên bệnh, không xếp hạng và không nêu độ tin cậy. Câu trả lời gồm ba phần: nói rõ chưa tra cứu được nguồn để đối chiếu, nhắc lại điều người bệnh đã mô tả, rồi hỏi thêm hoặc khuyên khám da liễu kèm dấu hiệu cần đi khám ngay.
+
+\section{Luồng xử lý một lượt chat}
+
+Một lượt chat đi qua các thành phần sau:
+\begin{enumerate}
+  \item Giao diện gửi tin nhắn tới Core. Core lưu tin và đẩy yêu cầu vào hàng đợi RabbitMQ.
+  \item Agent Worker nhận yêu cầu và chạy luồng chat. Luồng này có hai nút: lọc ý định (\texttt{triage}) và tiền chẩn đoán (\texttt{pre\_diagnosis}).
+  \item Trong lúc chạy, Worker phát từng bước lập luận và từng đoạn chữ của câu trả lời lên Redis. Core chuyển nguyên văn các sự kiện này về giao diện qua SSE.
+  \item Khi lượt kết thúc, Worker gửi kết quả về Core qua hàng đợi. Core ghi vào PostgreSQL. Chỉ Core ghi dữ liệu nghiệp vụ.
+\end{enumerate}
+
+Mỗi hội thoại là một phiên (\texttt{thread}) của LangGraph. Trạng thái của luồng được lưu bằng checkpoint trong PostgreSQL nên lượt sau đọc lại được lịch sử và trạng thái tiền chẩn đoán của lượt trước. Mỗi hội thoại chỉ chạy một lượt tại một thời điểm.
+
+\section{Lọc ý định}
+
+Nút \texttt{triage} phân loại tin nhắn thành hai nhánh:
+\begin{itemize}
+  \item \textbf{Trả lời ngay (\texttt{answer}):} chào hỏi, câu hỏi về trợ lý, câu ngoài phạm vi da liễu. LLM sinh câu trả lời ngắn và luồng kết thúc.
+  \item \textbf{Tiền chẩn đoán (\texttt{diagnose}):} câu hỏi y khoa, chuyển sang luồng tiền chẩn đoán.
+\end{itemize}
+
+LLM nhận sáu tin gần nhất để hiểu ngữ cảnh, vì các câu như ``vâng'' hay ``3 ngày'' chỉ có nghĩa khi đặt sau câu hỏi trước đó. Tin có ảnh luôn đi thẳng sang tiền chẩn đoán, không gọi LLM để phân loại.
+
+\section{Luồng tiền chẩn đoán}
+
+\subsection{Tổng quan}
+
+Luồng tiền chẩn đoán là một máy trạng thái gồm các nút nối với nhau (LangGraph \texttt{StateGraph}). Bước đầu \texttt{load\_memory} đọc bộ nhớ dài hạn của bệnh nhân (mục~\ref{sec:bo-nho}). Sau đó luồng chạy song song hai làn:
+\begin{itemize}
+  \item \textbf{Làn chữ (\texttt{text\_flow}):} suy luận từ mô tả của người bệnh. Luôn chạy.
+  \item \textbf{Làn ảnh (\texttt{image\_flow}):} suy luận từ ảnh đính kèm. Chỉ chạy khi tin nhắn có ảnh.
+\end{itemize}
+
+Hai làn gặp nhau ở nút \texttt{label\_evidence} của làn chữ (Hình~\ref{fig:luong-tien-chan-doan}).
+
+\begin{figure}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  node distance=0pt,
+  n/.style={draw, rounded corners=2pt, minimum width=3.1cm, minimum height=0.8cm, align=center, font=\small},
+  io/.style={draw, rounded corners=2pt, minimum width=3.1cm, minimum height=0.8cm, align=center, font=\small, fill=gray!15},
+  ar/.style={-{Stealth[length=2.2mm]}, thick},
+  lb/.style={font=\scriptsize\itshape, fill=white, inner sep=1pt}
+]
+% bước đầu
+\node[io] (mem) at (3.4,1.8) {\texttt{load\_memory}};
+% làn chữ
+\node[n] (ef) at (0,0) {\texttt{extract\_facts}};
+\node[n] (pl) at (0,-1.8) {\texttt{plan}};
+\node[n] (ct) at (0,-3.6) {\texttt{choose\_tools}};
+\node[n] (tl) at (0,-5.4) {\texttt{tools}};
+\node[n] (le) at (0,-7.2) {\texttt{label\_evidence}};
+\node[n] (rf) at (0,-9.0) {\texttt{reflect}};
+\node[n] (an) at (0,-10.8) {\texttt{answer}};
+% làn ảnh
+\node[n] (ic) at (5.0,-3.6) {\texttt{image\_cnn}};
+\node[n] (iv) at (8.4,-3.6) {\texttt{image\_vision}};
+\node[n] (id) at (6.7,-5.4) {\texttt{image\_done}};
+% khung hai làn
+\draw[dashed, rounded corners=4pt] (-1.9,0.9) rectangle (1.9,-11.7);
+\node[font=\small\bfseries, anchor=south] at (0,0.95) {\texttt{text\_flow}};
+\draw[dashed, rounded corners=4pt] (3.2,-2.5) rectangle (10.1,-6.4);
+\node[font=\small\bfseries, anchor=south] at (6.65,-2.45) {\texttt{image\_flow}};
+% mũi tên làn chữ
+\draw[ar] (ef) -- (pl);
+\draw[ar] (pl) -- node[lb, right] {có truy vấn} (ct);
+\draw[ar] (ct) -- (tl);
+\draw[ar] (tl) -- (le);
+\draw[ar] (le) -- (rf);
+\draw[ar] (rf) -- node[lb, right] {đủ căn cứ} (an);
+% rẽ nhánh sang answer khi plan không có truy vấn
+\draw[ar] (pl.west) -- ++(-2.8,0) |- (an.west);
+\node[lb, rotate=90] at (-4.75,-6.3) {không có truy vấn};
+% vòng tra cứu
+\draw[ar] (rf.west) -- ++(-1.0,0) |- (ct.west);
+\node[lb, rotate=90] at (-3.45,-6.3) {còn thiếu ($\leq$ 3 vòng)};
+% nhánh từ load_memory
+\draw[ar] (mem.south west) -- ++(0,-0.4) -| (ef.north);
+\draw[ar] (mem.south east) -- ++(0,-0.4) -| node[lb, pos=0.25, above] {có ảnh} (ic.north);
+\draw[ar] (mem.south east) -- ++(0,-0.4) -| (iv.north);
+% làn ảnh gom
+\draw[ar] (ic.south) |- ([yshift=0.15cm]id.west);
+\draw[ar] (iv.south) |- ([yshift=0.15cm]id.east);
+% hai làn gặp nhau
+\draw[ar, dashed] (id.south) -- ++(0,-1.0) -| node[lb, pos=0.25, below] {kết quả ảnh (một lần mỗi lượt)} (le.east);
+\end{tikzpicture}}
+\caption{Luồng tiền chẩn đoán: hai làn chạy song song và gặp nhau ở \texttt{label\_evidence}}
+\label{fig:luong-tien-chan-doan}
+\end{figure}
+
+Mỗi bước suy luận là một nút riêng với một nhiệm vụ và một prompt riêng, đầu ra là lời gọi hàm có cấu trúc. Thiết kế này phù hợp với mô hình ngôn ngữ cỡ nhỏ (mặc định Gemma qua OpenRouter), vì mô hình nhỏ dễ lệch khi phải tự điều phối cả quy trình trong một prompt dài.
+
+\subsection{Làn chữ}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{3.0cm}|p{11.0cm}|}
+\hline
+\textbf{Nút} & \textbf{Nhiệm vụ} \\ \hline
+\texttt{extract\_facts} & Trích dữ kiện lâm sàng từ các tin nhắn mới (triệu chứng, thời gian, vị trí, tiền sử, thuốc, dị ứng) và gộp với dữ kiện đã có. \\ \hline
+\texttt{plan} & Nêu tối đa 4 giả thuyết ban đầu và tối đa 4 truy vấn tra cứu. Giả thuyết ở bước này chỉ dùng để chọn nội dung tra cứu, chưa phải kết luận. Không có truy vấn mới thì luồng chuyển thẳng sang \texttt{answer}. \\ \hline
+\texttt{choose\_tools} & Chọn công cụ theo kế hoạch và gọi song song nhiều công cụ khác loại trong một vòng. Bỏ các lệnh trùng với lệnh đã gọi. \\ \hline
+\texttt{tools} & Thực thi các công cụ đã chọn. \\ \hline
+\texttt{label\_evidence} & Gắn nhãn \texttt{E\#} hoặc \texttt{H\#} cho kết quả. Gộp kết quả của làn ảnh (nếu có). \\ \hline
+\texttt{reflect} & Cập nhật toàn bộ giả thuyết, mỗi giả thuyết ghi mức tin cậy (cao, vừa, thấp) và các mã \texttt{E\#} ủng hộ. Quyết định tra cứu thêm hay trả lời. \\ \hline
+\texttt{answer} & Sinh câu trả lời cho người bệnh từ các giả thuyết có căn cứ và bằng chứng được trích dẫn. \\ \hline
+\end{tabular}
+\caption{Các nút của làn chữ}
+\label{tab:nut-lan-chu}
+\end{table}
+
+Luồng điều khiển:
+\begin{enumerate}
+  \item \texttt{extract\_facts} $\rightarrow$ \texttt{plan}.
+  \item Nếu \texttt{plan} có truy vấn: \texttt{choose\_tools} $\rightarrow$ \texttt{tools} $\rightarrow$ \texttt{label\_evidence} $\rightarrow$ \texttt{reflect}. Nếu không: sang \texttt{answer}.
+  \item Sau \texttt{reflect}: quay lại \texttt{choose\_tools} khi còn thiếu thông tin quan trọng và có hướng tra cứu mới, ngược lại sang \texttt{answer}.
+\end{enumerate}
+
+\textbf{Điều kiện dừng.} Vòng tra cứu (\texttt{choose\_tools} đến \texttt{reflect}) chạy tối đa 3 lần. Khi hết lượt, \texttt{reflect} bắt buộc chuyển sang \texttt{answer} và ghi chú lý do vào bước lập luận. Giới hạn này khống chế độ trễ, vì mô hình nhỏ có xu hướng chọn tra cứu tiếp và mỗi vòng gọi nhiều lần LLM.
+
+\textbf{Kiểm soát trích dẫn.} Sau \texttt{reflect}, hệ thống kiểm tra từng giả thuyết:
+\begin{itemize}
+  \item Mã trích dẫn phải tồn tại và thuộc loại \texttt{E\#}. Mã \texttt{H\#} bị loại khỏi danh sách trích dẫn.
+  \item Giả thuyết không còn mã hợp lệ nào bị bỏ khỏi kế hoạch, ghi vào danh sách chưa có căn cứ và hiển thị lý do ở bước lập luận.
+\end{itemize}
+
+\textbf{Đầu ra có cấu trúc.} \texttt{plan} và \texttt{reflect} dùng structured output qua lời gọi hàm. Khi mô hình viết văn bản thay vì gọi hàm, nút gọi lại tối đa 2 lần kèm nhắc ``chỉ gọi hàm''. Các trường quá dài bị cắt và các giá trị sai dạng (một chuỗi thay vì danh sách) được chuẩn hóa thay vì từ chối cả lần gọi.
+
+\subsection{Làn ảnh}
+
+Làn ảnh xử lý tối đa 3 ảnh mỗi lượt, gồm ba nút:
+\begin{itemize}
+  \item \texttt{image\_cnn}: mô hình AdaptiveCNN (Chương~\ref{ch:chuong2}) trả 5 lớp bệnh có xác suất cao nhất cho mỗi ảnh.
+  \item \texttt{image\_vision}: mô hình đa phương thức mô tả hình thái và phân bố tổn thương. Nút này bỏ qua khi chưa cấu hình mô hình mô tả ảnh.
+  \item \texttt{image\_done}: gom kết quả của hai nút trên.
+\end{itemize}
+
+\texttt{image\_cnn} và \texttt{image\_vision} chạy song song.
+
+\textbf{Tách hai làn.} Làn ảnh là một luồng con riêng với trạng thái riêng, không chứa tin nhắn và dữ kiện của người bệnh. Có hai lý do. Thứ nhất, nút mô tả ảnh mất 10 đến 17 giây; nếu nằm cùng bước với \texttt{plan}, làn chữ phải chờ. Thứ hai, làn ảnh không thấy lời người bệnh nên nhận định từ ảnh độc lập với mô tả bằng chữ.
+
+\textbf{Gộp hai làn.} \texttt{label\_evidence} chờ kết quả làn ảnh một lần mỗi lượt, rồi:
+\begin{itemize}
+  \item Thêm nhãn CNN và mô tả ảnh vào danh sách gợi ý \texttt{H\#}.
+  \item Thêm mô tả ảnh vào dữ kiện lâm sàng với ghi chú ``AI mô tả, chưa xác nhận''.
+  \item Đối chiếu chéo nhãn CNN và mô tả ảnh với giả thuyết của làn chữ, kết quả là một gợi ý \texttt{H\#} gồm ba nhóm: trùng khớp, chỉ ảnh gợi ý, chỉ mô tả của người bệnh gợi ý. Việc so khớp tên bệnh dùng bảng tên cho 22 lớp của CNN (tiếng Anh và tiếng Việt).
+\end{itemize}
+
+Kết quả ảnh luôn là gợi ý. Dù nhãn CNN trùng với giả thuyết, giả thuyết vẫn cần bằng chứng \texttt{E\#} từ tra cứu.
+
+\section{Công cụ của tác nhân}
+
+Làn chữ gọi các công cụ trong bảng~\ref{tab:cong-cu}. Mỗi công cụ có cơ chế truy xuất đã trình bày ở Chương~\ref{ch:chuong3}.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{4.2cm}|p{6.0cm}|p{3.3cm}|}
+\hline
+\textbf{Công cụ} & \textbf{Chức năng} & \textbf{Loại kết quả} \\ \hline
+\texttt{hybrid\_retrieval} & Tra giáo trình theo ngữ nghĩa và từ khóa, xếp hạng lại. Công cụ mặc định & \texttt{E\#} \\ \hline
+\texttt{semantic\_search}, \texttt{keyword\_search} & Tra giáo trình theo từng hướng riêng, dùng khi cần đúng một loại tìm kiếm & \texttt{E\#} \\ \hline
+\texttt{query\_document\_graph} & Tra quan hệ trích từ giáo trình, kèm câu trích và trang & \texttt{E\#} (cạnh có câu trích) \\ \hline
+\texttt{knowledge\_graph\_query} & Truy vấn PrimeKG và DermO theo ý định & \texttt{H\#} \\ \hline
+\texttt{search\_finalize\_report} & Tìm ca bệnh tương tự trong kho báo cáo kết luận của bác sĩ (bật bằng cấu hình) & \texttt{E\#} \\ \hline
+\end{tabular}
+\caption{Công cụ của làn chữ và loại kết quả}
+\label{tab:cong-cu}
+\end{table}
+
+Quy tắc chọn công cụ trong prompt:
+\begin{itemize}
+  \item Câu hỏi chung hoặc chưa rõ cần loại thông tin nào: \texttt{hybrid\_retrieval}.
+  \item Cần quan hệ bệnh -- triệu chứng -- thuốc: \texttt{knowledge\_graph\_query}, kết hợp \texttt{hybrid\_retrieval} để kiểm chứng.
+  \item Gọi song song các công cụ khác loại trong cùng vòng để giảm số vòng.
+\end{itemize}
+
+Mỗi mục kết quả được cắt tối đa 600 ký tự. Hai mục trùng loại, nguồn và 300 ký tự đầu được coi là một và giữ mã cũ. Cơ chế này giúp prompt của các vòng sau gọn, và tránh kết quả lặp được đếm là hai bằng chứng.
+
+\section{Dữ kiện lâm sàng và câu trả lời}
+
+\subsection{Dữ kiện lâm sàng}
+
+Nút \texttt{extract\_facts} lưu dữ kiện thành danh sách mục có cấu trúc \{nhãn, loại, chi tiết, tin nhắn nguồn\}. Mỗi lượt nút chỉ đọc các tin nhắn mới kể từ lần trích trước, cùng với dữ kiện đã biết, nên chi phí không tăng theo độ dài hội thoại. Danh sách giữ tối đa 30 mục và khử trùng theo (loại, nhãn). Khi trích lỗi, hệ thống giữ dữ kiện cũ và ghi cảnh báo.
+
+Dữ kiện về người bệnh (lời người bệnh) tách khỏi kết quả tra cứu (tri thức). Kết quả tra cứu không được ghi vào dữ kiện lâm sàng của hồ sơ.
+
+\subsection{Trạng thái giữ qua các lượt}
+
+Trạng thái giữ lại giữa các lượt gồm dữ kiện, giả thuyết có căn cứ, giả thuyết chưa có căn cứ, bằng chứng, danh sách lệnh đã gọi và kết quả của chúng. Nhờ đó lượt sau không gọi lại công cụ đã gọi và \texttt{plan} biết điều đã tra cứu. Mở hội thoại mới thì trạng thái rỗng.
+
+\subsection{Câu trả lời}
+
+Nút \texttt{answer} là nút duy nhất nói chuyện với người bệnh, và là nút duy nhất phát từng đoạn chữ (stream) về giao diện. Prompt dùng giọng thân thiện, ít thuật ngữ. Hai trường hợp:
+\begin{itemize}
+  \item \textbf{Có giả thuyết có căn cứ:} nêu 1 đến 3 khả năng xếp theo mức phù hợp, mỗi khả năng kèm lý do ngắn và độ tin cậy; trích nguồn dưới dạng tự nhiên (``theo sách\ldots''), không nêu mã \texttt{E\#}, \texttt{H\#} hay tên công cụ; nêu điều chưa chắc và dấu hiệu cần đi khám ngay; chỉ nêu lời khuyên chăm sóc nếu có trong bằng chứng.
+  \item \textbf{Không có giả thuyết có căn cứ:} trả lời theo quy tắc ở mục 4.1.3.
+\end{itemize}
+
+Cả hai trường hợp kết bằng một câu nhắc đây là thông tin tham khảo, không phải chẩn đoán và không thay thế thăm khám.
+
+Câu hỏi làm rõ (ví dụ vị trí, thời gian, hình thái tổn thương) đặt ở cuối câu trả lời khi một câu trả lời của người bệnh giúp phân biệt các giả thuyết. Lượt không dừng để chờ; người bệnh trả lời ở tin nhắn kế tiếp.
+
+\subsection{Hiển thị lập luận}
+
+\texttt{plan} và \texttt{reflect} đều phát một bước lập luận dạng văn bản (giả thuyết, điều còn thiếu, truy vấn dự định, nguồn trích dẫn, kết quả kiểm tra trích dẫn, bước tiếp theo). Giao diện hiển thị các bước này cùng kết quả của từng công cụ, và Core lưu chúng cùng tin nhắn. Người dùng và bác sĩ xem lại được quá trình dẫn tới câu trả lời.
+
+\section{Bộ nhớ dài hạn}
+\label{sec:bo-nho}
+
+Bộ nhớ dài hạn lưu thông tin dùng lâu dài của một bệnh nhân: tiền sử, bệnh nền, thuốc đang dùng, dị ứng, tình trạng mang thai. Triệu chứng tức thời không lưu ở đây.
+\begin{itemize}
+  \item \textbf{Khóa theo hồ sơ bệnh nhân,} không theo tài khoản, vì một tài khoản quản lý nhiều hồ sơ (ví dụ cho người nhà).
+  \item \textbf{Lưu ở PostgreSQL,} không dùng vector. Chỉ tối đa 10 bản ghi mới cập nhật nhất được đưa vào prompt.
+  \item \textbf{Đọc một lần mỗi lượt} ở nút \texttt{load\_memory}, các nút sau chỉ nối nội dung vào prompt.
+  \item \textbf{Ghi ở nền sau khi trả lời:} hệ thống gom tin nhắn của người bệnh vào bộ đệm, rồi gọi LLM đối chiếu với bộ nhớ cũ để thêm, ghi đè hoặc bỏ qua. Ghi nền giúp không làm chậm câu trả lời.
+\end{itemize}
+
+\section{Kết luận}
+
+Luồng lập luận của chatbot tách thành các nút nhỏ: trích dữ kiện, lập kế hoạch, chọn công cụ, gắn nhãn bằng chứng, đánh giá và trả lời. Mã chương trình gắn nhãn bằng chứng (\texttt{E\#}) và gợi ý (\texttt{H\#}); chỉ giả thuyết có trích dẫn \texttt{E\#} hợp lệ mới được dùng để trả lời. Khi không có bằng chứng, chatbot không nêu bệnh và chuyển sang hỏi thêm hoặc khuyên khám.
+
+Làn ảnh và làn chữ chạy song song, độc lập, gặp nhau ở bước gắn nhãn; kết quả ảnh chỉ là gợi ý. Vòng tra cứu giới hạn 3 lần. Trạng thái tiền chẩn đoán và bộ nhớ dài hạn được lưu ở PostgreSQL để các lượt sau tái sử dụng.

@@ -1,16 +1,16 @@
 % Chương 5
-\chapter{Phân tích và thiết kế hệ thống}
+\chapter[\MakeUppercase{Phân tích và thiết kế hệ thống}]{Phân tích và thiết kế hệ thống}
 \label{ch:chuong5}
 
 \section{Các tác nhân hệ thống}
 \begin{longtable}{|>{\raggedright\arraybackslash}p{0.095\dimexpr\linewidth-6\tabcolsep\relax}|>{\raggedright\arraybackslash}p{0.179\dimexpr\linewidth-6\tabcolsep\relax}|>{\raggedright\arraybackslash}p{0.726\dimexpr\linewidth-6\tabcolsep\relax}|}
-\caption{Các tác nhân của hệ thống}\\
 \hline
 \textbf{STT} & \textbf{Tên tác nhân} & \textbf{Mô tả} \\ \hline
 \endhead
 1 & Người dùng & Là người dùng hệ thống đã được đăng ký tài khoản và đăng nhập vào ứng dụng có quyền quản lý tài khoản của mình và đăng xuất \\ \hline
 2 & Bệnh nhân & Là người sử dụng hệ thống để hỗ trợ tiền chẩn đoán và trao đổi thông tin về bệnh da liễu.\newline Có thể hỏi đáp với chatbot, gửi hình ảnh và mô tả triệu chứng để hỗ trợ dự đoán bệnh.\newline Có thể tra cứu thông tin bệnh lý, các ca bệnh liên quan từ KB và đặt lịch khám với bác sĩ.\newline Có thể xem và quản lý hồ sơ bệnh án, lịch sử khám và các hình ảnh bệnh đã lưu trữ.\newline Có thể trao đổi trực tiếp với bác sĩ thông qua chat hoặc video call. Trong trường hợp bác sĩ chưa thể tiếp nhận, bệnh nhân có thể tiếp tục hỏi đáp với chatbot.\newline Thông tin từ cuộc trò chuyện với chatbot được hệ thống tổng hợp thành clinical fact và báo cáo hỗ trợ bác sĩ trước khi tư vấn. \\ \hline
 3 & Bác sĩ & Là người sử dụng hệ thống để tiếp nhận, thăm khám, tư vấn và quản lý thông tin bệnh nhân.\newline Có thể xem báo cáo tổng hợp trước khi thực hiện thăm khám.\newline Có thể xem clinical fact, nguồn lập luận từ KB, lịch sử bệnh án và hồ sơ bệnh nhân.\newline Có thể chỉnh sửa, cập nhật hồ sơ sau mỗi lượt khám; lưu trữ ca bệnh và hình ảnh đã được xác nhận để làm dữ liệu tham khảo và phục vụ phát triển mô hình CNN.\newline Có thể trao đổi trực tiếp với bệnh nhân qua chat hoặc video call. Trong quá trình trao đổi, bác sĩ có thể xem các thông tin được chatbot tổng hợp và truy xuất tin nhắn nguồn làm bằng chứng cho từng kết luận.\newline Có thể trực quan hóa Knowledge Graph liên quan đến bệnh nhân.\newline Có thể tải lên giáo trình, guideline và tài liệu y khoa để bổ sung KB; phối hợp với chatbot để tra cứu và làm giàu KB. \\ \hline
+\caption{Các tác nhân của hệ thống}
 \end{longtable}
 
 \section{Usecase tổng quan}
@@ -359,7 +359,7 @@ type & varchar(16) & không, mặc định book & book | image | video | other. 
 source\_file\_id & varchar(64) FK → files.id & có & File gốc người dùng upload (source.pdf). ON DELETE SET NULL. \\ \hline
 ingested\_file\_id & varchar(64) FK → files.id & có & Kết quả bước ingest (pages.jsonl); chỉ có khi đã qua bước ingest. ON DELETE SET NULL. \\ \hline
 pdf\_pages & int & có & Số trang PDF; chỉ có với type = book. \\ \hline
-profile & jsonb & có & Cấu hình xử lý của tài liệu (engine đọc chữ, tham số...), đọc / ghi qua Pydantic (app/models/document\_profile.py::Profile). \\ \hline
+profile & jsonb & có & Cấu hình xử lý của tài liệu (engine đọc chữ, tham số...), đọc / ghi qua Pydantic (app/\allowbreak models/\allowbreak document\_profile.py::\allowbreak Profile). \\ \hline
 uploaded\_by\_id & varchar(64) FK → doctors.user\_id & có & Bác sĩ tải lên (chỉ bác sĩ được tải). ON DELETE SET NULL; NULL với tài liệu tạo trước khi có đăng nhập. \\ \hline
 created\_at & timestamptz & không & Lúc tạo. \\ \hline
 updated\_at & timestamptz & không & Lần cập nhật gần nhất (tự cập nhật). \\ \hline
@@ -397,7 +397,7 @@ data & jsonb & không, mặc định \{\} & Nội dung sửa tay. Ví dụ bư�
 updated\_at & timestamptz & không & Lần sửa gần nhất (tự cập nhật). \\ \hline
 \end{longtable}
 
-\section{Kết luận chương}
+\section{Kết luận}
 
 Chương này đã phân tích và thiết kế hệ thống. Hệ thống có ba tác nhân chính là người dùng, bệnh nhân và bác sĩ, với các usecase từ đăng ký, đăng nhập, quản lý thông tin cá nhân, hỏi đáp với chatbot, tư vấn trực tiếp với bác sĩ, xem báo cáo tiền khám, quản lý hồ sơ bệnh án đến quản lý cơ sở tri thức. Cơ sở dữ liệu được thiết kế theo các nhóm: người dùng, hội thoại và tư vấn, bệnh án, dữ kiện lâm sàng, tệp và tài liệu, bảo đảm lưu vết nguồn gốc của dữ kiện từ tin nhắn tới báo cáo.
 
