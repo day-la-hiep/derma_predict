@@ -143,6 +143,5 @@ worker restart is needed to pick up `.env` changes. Model choices for the UI are
 ## Known loose ends (verify before relying on them)
 
 The live consumer is `app/workers/agent_response_consumer.py`, imported by `main.py`.
-`README.md` (root + `core/`) and `core/docs/quy-uoc.md`/`async-api-doc.md` still mention the old
-`app/agent/...` paths and `python -m app.agent.worker` — that layout no longer exists (it's
-`agent/...` and `python -m agent.worker`); don't follow those docs for paths.
+The old `app/agent/...` paths and `python -m app.agent.worker` no longer exist (it's `agent/...` and
+`python -m agent.worker`); if a doc still mentions them, don't follow it for paths.

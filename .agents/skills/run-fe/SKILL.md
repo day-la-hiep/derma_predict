@@ -44,7 +44,7 @@ navigate(tabId, url: "http://localhost:3010/chats")   # MUST be http:// explicit
                                                         # host defaults to https:// and hits
                                                         # "Frame ... showing error page" (no TLS here)
 computer(action: "screenshot", tabId, save_to_disk: true)
-navigate(tabId, url: "http://localhost:3010/admin/toc")
+navigate(tabId, url: "http://localhost:3010/doctor/documents")
 computer(action: "screenshot", tabId, save_to_disk: true)
 tabs_close_mcp(tabId)                         # clean up when done
 ```

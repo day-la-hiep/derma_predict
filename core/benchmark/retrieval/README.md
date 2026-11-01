@@ -3,8 +3,8 @@
 Đo xem bước tra sách của agent (`hybrid_retrieval`) tìm đúng đoạn sách đến đâu, và từng thành phần (semantic, BM25, mở rộng query Việt-Anh, RRF, rerank) đóng góp bao nhiêu.
 Chỉ đo **retrieval**: chưa đo Knowledge Graph, chưa đo câu trả lời của agent.
 
-Kế hoạch và lý do thiết kế: [`docs/benchmark/ke-hoach-retrieval-chi-tiet.md`](../../../docs/benchmark/ke-hoach-retrieval-chi-tiet.md).
-Các điểm dễ hiểu nhầm: [`docs/notice/retrieval-benchmark.md`](../../../docs/notice/retrieval-benchmark.md).
+Kế hoạch và kết quả: [`benchmark_implementation.md`](../../../benchmark_implementation.md), [`docs/benchmark/bao-cao-benchmark-retrieval.md`](../../../docs/benchmark/bao-cao-benchmark-retrieval.md).
+
 
 ## Luồng chạy
 

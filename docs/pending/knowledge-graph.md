@@ -8,7 +8,7 @@ chọn việc khi còn thời gian; không phải cam kết.
 
 | # | Việc | Vì sao | Gợi ý cách làm |
 |---|---|---|---|
-| 1 | **Trực quan hoá KG theo bệnh nhân (M8.3)** | Yêu cầu còn thiếu trong [requirements.md](../overview/requirements.md) | API trả subgraph quanh thực thể của bệnh nhân (từ clinical fact M3.1) + thư viện vẽ graph ở FE |
+| 1 | **Trực quan hoá KG theo bệnh nhân (mở rộng M3.15)** | Đồ thị hành trình bệnh nhân (M3.15) đã có; phần KG tri thức quanh bệnh nhân vẫn chưa làm, xem [requirements.md](../overview/requirements.md) | API trả subgraph quanh thực thể của bệnh nhân (từ clinical fact M3.9) + thư viện vẽ graph ở FE |
 | 2 | **Khớp thực thể tiếng Việt ngay trên đồ thị** | KG chỉ khớp tên tiếng Anh; việc dịch phụ thuộc hoàn toàn vào một lần gọi LLM, LLM yếu thì dịch sai là mất cả nhánh | Bảng alias Việt → Anh/DermO (từ DermO synonyms + `dermo_terms`, bổ sung tay các bệnh thường gặp) tra trước khi hỏi LLM |
 | 3 | **Khớp tên bằng `CONTAINS`** | `_PRIMEKG_SEARCH_QUERY` dùng `toLower(n.name) CONTAINS ...`: có thể ra thực thể không liên quan ("acne" ra cả tên dài chứa "acne") và không dùng index | Ưu tiên khớp chính xác (`exact_dermo`) rồi mới `CONTAINS`; hoặc full-text index của Neo4j |
 | 4 | **Điểm bệnh ứng viên là heuristic** | Trọng số `3 / ln(2 + degree)` và trần 2-hop chưa được kiểm chứng với ca thật | Bộ ca có đáp án để chỉnh trọng số; so thứ hạng với chẩn đoán của bác sĩ |
@@ -24,7 +24,7 @@ chọn việc khi còn thời gian; không phải cam kết.
 - Kết quả KG chỉ là **gợi ý**, không phải bằng chứng lâm sàng và không phải chẩn đoán: `hybrid_retrieval` đã báo
   `evidence_found=false` khi chỉ có KG mà không có đoạn sách, giữ nguyên hành vi này.
 - Thay đổi dữ liệu KG không được làm mất dữ liệu đã nạp (nạp lại phải idempotent).
-- Entity nghiệp vụ nằm ở `core/app/dto/base/`; nếu cần entity mới (vd cho M8.3) phải hỏi duyệt trước.
+- Entity nghiệp vụ nằm ở `core/app/dto/base/`; nếu cần entity mới (vd cho M3.15) phải hỏi duyệt trước.
 
 ## 3. Danh mục quan hệ hiện có trong đồ thị nền
 

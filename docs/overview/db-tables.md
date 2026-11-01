@@ -9,7 +9,7 @@ Entity nghiệp vụ tương ứng nằm ở `core/app/dto/base/` (mỗi bounded
 - **Không dùng Postgres ENUM**: các cột trạng thái / loại (`status`, `sender`, `fact_type`...) là `varchar`, giá trị hợp lệ do code (`app/common/constant.py`) kiểm soát, để thêm giá trị mới không cần migration.
 - **Thời gian** là `timestamptz` (có múi giờ, lưu UTC).
 - **Nơi lưu dữ liệu khác**: file lớn (PDF, ảnh, `pages.jsonl`, chunk) ở **MinIO**, bảng `files` chỉ giữ metadata + `storage_key`; vector ở **Qdrant**; Knowledge Graph ở **Neo4j**.
-- **Trạng thái triển khai**: bảng ghi "mới có schema" nghĩa là đã có bảng + entity nhưng **chưa có API / luồng nghiệp vụ** dùng nó.
+- **Trạng thái triển khai**: bảng ghi "mới có schema" (nếu có) nghĩa là đã có bảng + entity nhưng **chưa có API / luồng nghiệp vụ** dùng nó. Hiện mọi nhóm bảng đều đã có luồng dùng.
 - **Kiểu quan hệ**: `1-n` (một cha, nhiều con), `1-1`, `n-n` (qua bảng nối có khoá chính kép).
 
 ### Nhóm bảng
@@ -22,6 +22,7 @@ Entity nghiệp vụ tương ứng nằm ở `core/app/dto/base/` (mỗi bounded
 | Lâm sàng | `clinical_fact_templates`, `clinical_facts`, `clinical_provenances`, `pre_consultation_reports` |
 | File | `files` |
 | Tài liệu (pipeline số hoá sách) | `documents`, `document_stages`, `document_overrides` |
+| Schema đồ thị (admin) | `graph_entity_types`, `graph_relations` |
 
 ### Bản đồ quan hệ
 
@@ -205,7 +206,7 @@ Kết luận cuối cùng do **bác sĩ** chốt từ **một phiên tư vấn**
 
 ## 4. Nhóm Lâm sàng
 
-Luồng ý tưởng: agent trích **dữ kiện lâm sàng** từ hội thoại, mỗi dữ kiện luôn tạo từ một **mẫu chuẩn**, ghi lại **tin nhắn nguồn**, và khi bệnh nhân nhờ bác sĩ thì có một **báo cáo tóm tắt** cho phiên đó. Cả nhóm mới có schema, chưa có bước trích xuất.
+Luồng ý tưởng: agent trích **dữ kiện lâm sàng** từ hội thoại, mỗi dữ kiện luôn tạo từ một **mẫu chuẩn**, ghi lại **tin nhắn nguồn**, và khi bệnh nhân nhờ bác sĩ thì có một **báo cáo tóm tắt** cho phiên đó. Báo cáo tiền tư vấn do Worker sinh khi bệnh nhân yêu cầu tư vấn (`agent/handler/consultation_report.py`); v2 còn trích dữ kiện mỗi lượt vào state graph (chưa lưu bền vào `clinical_facts`).
 
 ### `clinical_fact_templates` — mẫu dữ kiện lâm sàng
 

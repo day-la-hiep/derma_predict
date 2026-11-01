@@ -10,19 +10,23 @@ Backend của hệ thống: **FastAPI + SQLAlchemy (async) + Alembic**, agent ch
 core/
 ├── main.py                 FastAPI app, lifespan (kết nối / đóng hạ tầng, consumer kết quả của agent)
 ├── app/                    Core API
-│   ├── api/                endpoint (conversation, document, upload, health) + deps.py (DI, singleton client / service)
-│   ├── services/           nghiệp vụ: conversation, message, document, pipeline ingest, knowledge_base (đọc chunk sách), knowledge_graph
+│   ├── api/                endpoint (auth, conversation, doctor, patient_profile, video_call, document, graph_schema, upload, health) + deps.py (DI, JWT)
+│   ├── services/           nghiệp vụ: conversation, message, consultation, video_call, finalize_report, document*, retrieval, knowledge_base / knowledge_graph, qdrant_reindex
+│   ├── workers/            agent_response_consumer (chạy trong Core), document_ingest_worker (tiến trình riêng)
 │   ├── repositories/       truy cập Postgres
 │   ├── infra/              client hạ tầng: Postgres, Redis, RabbitMQ, Qdrant, Neo4j, MinIO, Docling, embedding, LLM
 │   ├── models/             ORM (SQLAlchemy) — schema lưu trữ
 │   ├── dto/                base/ = entity nghiệp vụ (nguồn chuẩn), common/ = dẫn xuất dùng chung, request/ response/ = hợp đồng API
 │   ├── config/ common/ exception/
 │   ├── kien-truc-agent.md  kiến trúc agent        kien-truc-memory.md  long-term memory
-├── agent/                  Agent Worker (tiến trình riêng): worker, turn, graph/, middleware/, tools/, prompt/, handler/
-├── pipeline/document_ingest/  pipeline số hoá sách: PDF → chữ → mục lục → chunk → Qdrant (README riêng)
+├── agent/                  Agent Worker (tiến trình riêng): worker, turn, persistence, graph/{v1,v2}, middleware/, tools/, prompt/, state/, handler/, test/ (debug app)
+├── pipeline/document_ingest/  pipeline số hoá sách: PDF → chữ → mục lục → chunk → Qdrant; chunk → quan hệ → Neo4j (README riêng)
+├── graph_base/             dựng đồ thị nền PrimeKG + DermO (download → build → load → verify)
+├── benchmark/              benchmark retrieval / graph / RAG / e2e
 ├── migrations/             Alembic
-├── data_ingest/            dữ liệu tĩnh + script nạp Neo4j (PrimeKG, DermO)
-└── scripts/                init_db.py (bucket MinIO + dữ liệu mẫu), ...
+├── data_ingest/            dữ liệu tĩnh cũ (chưa dọn, không dùng cho đồ thị nền)
+├── tests/                  test Core + agent (memory, retrieval, reindex, video call, state tiền chẩn đoán)
+└── scripts/                init_db.py (bucket MinIO + dữ liệu mẫu), reindex_qdrant.py, export/seed tài liệu
 ```
 
 ## Chạy dev
@@ -36,15 +40,16 @@ make migrate     # alembic upgrade head
 make init-db     # bucket MinIO + dữ liệu mẫu
 make backend     # Core http://localhost:3050 (Swagger: /docs)
 make worker      # Agent Worker — bắt buộc để agent trả lời
+make ingest-worker  # Ingest Worker — bắt buộc để chạy các bước pipeline sách
 ```
 
 Agent cần `AGENT_MODEL` trỏ tới provider đã cấu hình (OpenRouter / DeepSeek / Gemini, xem `app/config/settings.py`) và API key trong `.env`.
 Đồ thị tri thức nạp bằng `graph_base/` (`make kg-download kg-build kg-load kg-verify`, xem `graph_base/README.md`); chunk sách do pipeline nạp vào Qdrant
-qua giao diện `/admin/documents`.
+qua giao diện `/doctor/documents`. Chọn graph tiền chẩn đoán bằng `AGENT_GRAPH_VERSION` (`v1` | `v2`), xem `../docs/notice/agent-graph-versions.md`.
 
 ## Ghi chú
 
-- DB dùng SQLAlchemy **async** (`asyncpg`); pipeline sách chạy trong thread nền nên dùng thêm driver đồng bộ `psycopg`.
+- DB dùng SQLAlchemy **async** (`asyncpg`); pipeline sách (chạy ở Ingest Worker, trong thread) dùng thêm driver đồng bộ `psycopg`.
 - Schema do **Alembic** quản lý: đổi model → `make migrate-new m="mô tả"`, **đọc lại file sinh ra** rồi mới `make migrate`.
 - Kiểm tra kiểu: `cd core && .venv/bin/python -m pyright app pipeline agent`.
 - Giá trị mặc định trong `.env.example` khớp `docker-compose.yml` ở gốc repo.
@@ -55,6 +60,7 @@ qua giao diện `/admin/documents`.
 - [`app/kien-truc-memory.md`](app/kien-truc-memory.md) — long-term memory.
 - [`pipeline/document_ingest/README.md`](pipeline/document_ingest/README.md) — pipeline số hoá sách.
 - [`data_ingest/README.md`](data_ingest/README.md) — dữ liệu tĩnh và nạp Neo4j.
+- [`graph_base/README.md`](graph_base/README.md) — dựng đồ thị nền PrimeKG + DermO.
 - [`../docs/module/chat.md`](../docs/module/chat.md), [`../docs/module/book-ingest-pipeline.md`](../docs/module/book-ingest-pipeline.md) — luồng chat và pipeline.
 - [`../docs/overview/db-tables.md`](../docs/overview/db-tables.md) — giải thích từng bảng DB.
 - [`../fe/docs/backend-contract.md`](../fe/docs/backend-contract.md) — hợp đồng API (REST + SSE) với Frontend.

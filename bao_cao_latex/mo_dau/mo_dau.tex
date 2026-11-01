@@ -1,0 +1,79 @@
+% Mở đầu (không đánh số chương)
+\frontchapter{Mở đầu}
+\addcontentsline{toc}{chapter}{\MakeUppercase{Mở đầu}}
+
+\section*{1. Bối cảnh hiện nay}
+
+Làn da là cơ quan có diện tích lớn nhất trên cơ thể con người, đóng vai trò như một tấm lá chắn bảo vệ cơ thể trước các tác nhân gây hại từ môi trường. Do thường xuyên tiếp xúc trực tiếp với các yếu tố vi sinh vật, hóa chất, thời tiết và bức xạ, các bệnh lý về da diễn ra hết sức phổ biến ở mọi lứa tuổi và tầng lớp xã hội. Các bệnh lý da liễu thường gặp như viêm da tiếp xúc, viêm da cơ địa, mụn trứng cá, vảy nến, nấm da hay các dạng tổn thương tiền ung thư không chỉ gây tổn hại về mặt thể chất mà còn tác động nặng nề đến tâm lý, sự tự tin và chất lượng cuộc sống của người bệnh.
+
+Mặc dù nhu cầu chăm sóc sức khỏe da liễu trong cộng đồng là rất lớn, việc tiếp cận dịch vụ chẩn đoán chuyên khoa hiện nay vẫn gặp nhiều rào cản đáng kể. Nguồn nhân lực y tế chuyên khoa da liễu chất lượng cao chủ yếu tập trung tại các bệnh viện tuyến trung ương và đô thị lớn, dẫn đến tình trạng quá tải kéo dài tại các cơ sở y tế đầu ngành. Người bệnh thường mất nhiều thời gian di chuyển, chờ đợi làm thủ tục, trong khi thời gian bác sĩ thăm khám lâm sàng trực tiếp cho mỗi ca bệnh thường bị giới hạn. Trước những trở ngại đó, nhiều người bệnh có xu hướng trì hoãn thăm khám hoặc tự tìm kiếm các thông tin thiếu căn cứ y khoa trên mạng Internet. Đáng lo ngại hơn, thói quen tự ý mua và sử dụng các loại thuốc bôi ngoài da không rõ nguồn gốc, đặc biệt là các chế phẩm chứa corticoid liều cao kéo dài, đang gây ra nhiều biến chứng nghiêm trọng như teo da, nhiễm trùng cơ hội, giãn mao mạch và làm biến đổi hình thái tổn thương ban đầu, gây khó khăn cho quá trình chẩn đoán sau này.
+
+Về phương diện chẩn đoán, chuyên khoa da liễu mang đặc tính thị giác rất rõ rệt: hầu hết các triệu chứng lâm sàng đều biểu hiện trực tiếp trên bề mặt biểu bì thông qua màu sắc, hình thái, ranh giới và cấu trúc tổn thương. Dù vậy, ranh giới hình ảnh giữa nhiều bệnh lý da liễu khác nhau thường có sự chồng lấn lớn, đòi hỏi bác sĩ phải kết hợp chặt chẽ giữa quan sát thị giác và khai thác kỹ lưỡng bệnh sử cũng như các triệu chứng cơ năng. Trong khi đó, người bệnh thường thiếu thuật ngữ chuyên ngành để diễn đạt chính xác tình trạng của mình, dẫn đến việc thu thập dữ liệu tiền khám tốn nhiều công sức nhưng chưa đạt độ chuẩn hóa.
+
+Sự bứt phá gần đây của Trí tuệ nhân tạo (AI), đặc biệt là lĩnh vực thị giác máy tính và các mô hình ngôn ngữ lớn (LLM), mở ra cơ hội to lớn trong việc xây dựng các công cụ hỗ trợ y tế thông minh. Tuy nhiên, việc áp dụng đơn lẻ các mô hình ngôn ngữ lớn vào lĩnh vực chăm sóc sức khỏe còn tiềm ẩn rủi ro nghiêm trọng do hiện tượng ``ảo giác'' (hallucination) -- sinh ra các thông tin sai lệch nhưng có vẻ thuyết phục, thiếu khả năng kiểm chứng nguồn tài liệu y khoa chính thống và không nắm vững mối quan hệ thực thể y sinh logic. Nhằm giải quyết triệt để vấn đề này, một giải pháp kết hợp đa phương thức giữa mạng nơ-ron tích chập đa tỷ lệ (Multi-scale CNN) để phân tích ảnh sang thương, kỹ thuật RAG (Retrieval-Augmented Generation) tra cứu từ giáo trình y khoa đã được số hóa và Đồ thị tri thức (Knowledge Graph) để chuẩn hóa lập luận là hướng tiếp cận mang tính tất yếu và có giá trị thực tiễn cao.
+
+Xuất phát từ thực tiễn trên, đề tài \textbf{``Hệ thống hỗ trợ tiền chẩn đoán bệnh về da dựa trên Multi-scale CNN, Knowledge Graph và RAG''} được thực hiện nhằm xây dựng một giải pháp công nghệ toàn diện, đồng hành cùng người bệnh trong giai đoạn tiền khám và hỗ trợ tối ưu hóa quy trình làm việc của bác sĩ chuyên khoa.
+
+\section*{2. Lý do chọn đề tài}
+
+Mục tiêu tổng quát của đề tài là nghiên cứu, thiết kế và hiện thực hóa một hệ thống trợ lý thông minh đa phương thức hỗ trợ tiền chẩn đoán các bệnh lý về da. Hệ thống kết hợp phân tích tự động ảnh chụp tổn thương bề mặt và tương tác hội thoại tự nhiên để khai thác triệu chứng người dùng, cung cấp các gợi ý bệnh lý sơ bộ kèm căn cứ y khoa đáng tin cậy, đồng thời hỗ trợ kết nối và tổng hợp bệnh sử chuyển tiếp đến bác sĩ chuyên khoa.
+
+Để hiện thực hóa mục tiêu tổng quát, đề tài tập trung giải quyết các mục tiêu cụ thể sau:
+\begin{itemize}
+  \item \textbf{Nghiên cứu mô hình thị giác máy tính phân loại tổn thương da thích nghi đa tỷ lệ:} Tổn thương da trong thực tế rất đa dạng về kích thước, hình thái và góc độ chụp ảnh lâm sàng. Đề tài hướng tới việc xây dựng kiến trúc mạng CNN đa tỷ lệ (AdaptiveCNN) với cơ chế tích chập đa kích thước nhân (AMKC) và cơ chế tổng hợp đặc trưng thích nghi (Adaptive GeM), giúp nhận diện chính xác các tổn thương da phổ biến và cung cấp giả thuyết chẩn đoán kèm độ tin cậy định lượng.
+  \item \textbf{Xây dựng trợ lý hội thoại y khoa minh bạch, không ảo giác thông qua RAG và Knowledge Graph:} Tích hợp kỹ thuật RAG cho phép hệ thống tra cứu chính xác các đoạn trích từ giáo trình và hướng dẫn điều trị da liễu chuẩn hóa được số hóa. Song song đó, khai thác Đồ thị tri thức y sinh (PrimeKG, DermO) để nhận diện thực thể, kiểm tra tính logic giữa các triệu chứng, yếu tố nguy cơ và loại trừ các giả thuyết mâu thuẫn, đảm bảo mọi câu trả lời của trợ lý ảo đều có dẫn chứng cụ thể từ nguồn uy tín.
+  \item \textbf{Tối ưu hóa quy trình thu thập bệnh sử và hỗ trợ bác sĩ chuyên khoa:} Tự động hóa quá trình hỏi đáp, sàng lọc triệu chứng ban đầu thông qua tác nhân AI hoạt động liên tục 24/7. Toàn bộ nội dung trao đổi được hệ thống cấu trúc hóa thành bản tóm tắt tiền khám hoàn chỉnh, giúp bác sĩ nắm bắt nhanh chóng diễn biến bệnh lý của bệnh nhân trước các buổi hội chẩn trực tuyến hoặc thăm khám trực tiếp.
+  \item \textbf{Xác lập ranh giới đạo đức và tính an toàn trong ứng dụng y tế:} Hệ thống được định vị rõ ràng là công cụ hỗ trợ sàng lọc và định hướng thông tin ban đầu, không thay thế chẩn đoán y khoa chính thức và không tự động ra chỉ định điều trị chuyên sâu. Hệ thống luôn tích hợp các cơ chế cảnh báo an toàn, chủ động hướng dẫn người bệnh đến các cơ sở y tế kịp thời khi phát hiện các dấu hiệu bệnh cảnh phức tạp hoặc nguy hiểm.
+\end{itemize}
+
+Tóm lại, đề tài hướng đến việc thu hẹp khoảng cách tiếp cận dịch vụ da liễu cho người dân, nâng cao tính khách quan và chất lượng của thông tin sức khỏe ban đầu, đồng thời san sẻ áp lực hành chính và hỗ trợ đắc lực cho đội ngũ y bác sĩ trong quá trình làm việc chuyên môn.
+
+\section*{3. Nội dung thực hiện của đề tài}
+
+Để đạt được các mục tiêu đã đề ra, nội dung nghiên cứu và triển khai của đề tài được cấu trúc theo 4 giai đoạn kỹ thuật chính:
+
+\subsection*{a. Phân tích yêu cầu của hệ thống}
+\begin{itemize}
+  \item Khảo sát nghiệp vụ tiếp nhận và sàng lọc bệnh nhân trong chuyên khoa da liễu; xác định các yêu cầu chức năng cốt lõi (phân tích ảnh, hội thoại tư vấn y khoa, tra cứu tài liệu, quản lý phiên tư vấn cho bác sĩ) và các tiêu chuẩn phi chức năng nghiêm ngặt về tính bảo mật dữ liệu y tế, độ sẵn sàng và độ trễ phản hồi.
+  \item Xác định các tác nhân hệ thống (Bệnh nhân, Bác sĩ, Quản trị viên) và mô hình hóa toàn diện kiến trúc nghiệp vụ thông qua hệ thống biểu đồ UML chuẩn: Biểu đồ ca sử dụng (Use Case Diagram), Biểu đồ lớp (Class Diagram) và Biểu đồ tuần tự (Sequence Diagram).
+  \item Xây dựng các kịch bản tương tác chuẩn cho từng quy trình nghiệp vụ: tiếp nhận ảnh và trích xuất dữ kiện lâm sàng, luồng suy luận đa bước của tác nhân AI (Agentic Reasoning Turn/Step), cơ chế tạm dừng xin bổ sung thông tin (Human-in-the-loop) và luồng đồng bộ hồ sơ sang bác sĩ.
+\end{itemize}
+
+\subsection*{b. Thiết kế hệ thống}
+\begin{itemize}
+  \item Thiết kế kiến trúc tổng thể theo hướng dịch vụ kết hợp hướng sự kiện (Event-driven Architecture), tách biệt giữa máy chủ API điều phối nghiệp vụ và tiến trình Worker tính toán AI độc lập, đảm bảo hệ thống vận hành ổn định và có khả năng mở rộng linh hoạt.
+  \item Thiết kế hạ tầng backend sử dụng FastAPI (Python), tích hợp RabbitMQ làm hàng đợi thông điệp để điều phối các tác vụ AI phân tán và Redis Pub/Sub phục vụ truyền phát sự kiện trạng thái thời gian thực (SSE) đến người dùng.
+  \item Thiết kế cấu trúc lưu trữ dữ liệu đa tầng: Cơ sở dữ liệu quan hệ PostgreSQL quản lý thông tin phiên hội thoại và người dùng; Cơ sở dữ liệu vector Qdrant lưu trữ vector đặc trưng của các phân đoạn tài liệu y khoa; Cơ sở dữ liệu đồ thị Neo4j quản lý mạng lưới tri thức bệnh lý; Hệ thống lưu trữ đối tượng MinIO quản lý an toàn ảnh chụp tổn thương và tệp tài liệu số hóa.
+  \item Thiết kế giao diện người dùng trên nền tảng Next.js (ReactJS), tối ưu hóa trải nghiệm trực quan cho người bệnh trên các nền tảng thiết bị, đồng thời cung cấp bảng điều khiển quản trị tài liệu và không gian hội chẩn trực tuyến cho bác sĩ.
+\end{itemize}
+
+\subsection*{c. Phát triển hệ thống}
+\begin{itemize}
+  \item Xây dựng và huấn luyện mô hình phân loại ảnh sang thương da AdaptiveCNN trên tập dữ liệu ảnh bệnh da liễu, tối ưu hóa các khối tích chập đa kích thước nhân (AMKC) và tổng hợp đặc trưng thích nghi (Adaptive GeM).
+  \item Xây dựng quy trình tự động số hóa và bóc tách cấu trúc giáo trình y khoa (Document Ingest Pipeline), bao gồm đọc văn bản, phân tích cấu trúc cây mục lục, phân chia khối ngữ cảnh (chunking) và lập chỉ mục vector đa phương thức.
+  \item Phát triển phân hệ tác nhân trí tuệ nhân tạo (LangGraph Agent Service) kết hợp kiến trúc GraphRAG: điều phối linh hoạt các công cụ phân tích ảnh CNN, công cụ tìm kiếm tài liệu kết hợp (Hybrid Search: ngữ nghĩa và từ khóa BM25) cùng công cụ tra cứu quan hệ đồ thị tri thức để tổng hợp lời giải đáp chuẩn xác.
+\end{itemize}
+
+\subsection*{d. Đánh giá mô hình Chatbot AI và hệ thống}
+
+Nhóm tiến hành các thử nghiệm nghiêm ngặt trong môi trường kiểm nghiệm để đánh giá chất lượng toàn diện của từng phân hệ:
+\begin{itemize}
+  \item Đánh giá định lượng mô hình phân loại ảnh tổn thương da Multi-scale CNN trên tập dữ liệu kiểm thử độc lập thông qua các chỉ số đo lường học máy: Độ chính xác tổng thể (Accuracy), Precision, Recall và F1-score đa lớp.
+  \item Đánh giá hiệu năng của đường ống truy xuất tài liệu (RAG) qua các độ đo Hit Rate và MRR (Mean Reciprocal Rank), đối sánh hiệu quả giữa các phương thức tìm kiếm ngữ nghĩa, tìm kiếm từ khóa và tìm kiếm kết hợp (Hybrid Search).
+  \item Đánh giá khả năng suy luận, tính an toàn thông tin và mức độ chính xác của nguồn trích dẫn y khoa từ Chatbot AI thông qua bộ kịch bản thử nghiệm tình huống lâm sàng mô phỏng, từ đó tinh chỉnh hệ thống lời nhắc (prompt system) và tối ưu hóa cấu trúc cơ sở tri thức.
+  \item Đánh giá độ ổn định, thông lượng xử lý và thời gian phản hồi thực tế của toàn bộ hệ thống trong điều kiện tải đồng thời.
+\end{itemize}
+
+\section*{4. Cấu trúc của báo cáo}
+
+Nội dung chi tiết của báo cáo tiến độ đồ án được trình bày trong bảy chương với cấu trúc như sau:
+
+\begin{itemize}
+  \item \textbf{Chương~\ref{ch:chuong1}: Giới thiệu chung} -- Phân tích bối cảnh, phạm vi bài toán, mục tiêu nghiên cứu và tổng quan về giải pháp công nghệ đa phương thức của đề tài.
+  \item \textbf{Chương~\ref{ch:chuong2}: Kỹ thuật xử lý CNN} -- Trình bày cơ sở lý thuyết mạng nơ-ron tích chập, chi tiết kiến trúc AdaptiveCNN (ResNet-18, AMKC, Adaptive GeM Pooling) cùng quy trình huấn luyện và kết quả thực nghiệm phân loại ảnh bệnh da.
+  \item \textbf{Chương~\ref{ch:chuong3}: Thiết kế luồng truy xuất tri thức} -- Trình bày giải pháp truy xuất tài liệu y khoa số hóa (tìm kiếm ngữ nghĩa, từ khóa, hỗn hợp) và giải pháp khai thác đồ thị tri thức y sinh (PrimeKG, DermO) phục vụ lập luận.
+  \item \textbf{Chương~\ref{ch:chuong4}: Thiết kế luồng lập luận chatbot} -- Trình bày chi tiết luồng suy luận của tác nhân AI trong từng lượt hội thoại: nhận diện ý định, trích xuất dữ kiện bệnh sử, điều phối công cụ tra cứu, đánh giá bằng chứng và sinh phản hồi có nguồn trích dẫn.
+  \item \textbf{Chương~\ref{ch:chuong5}: Phân tích và thiết kế hệ thống} -- Trình bày chi tiết phân tích tác nhân, hệ thống biểu đồ ca sử dụng, biểu đồ tuần tự và thiết kế cơ sở dữ liệu phân tầng của hệ thống.
+  \item \textbf{Chương~\ref{ch:chuong6}: Cài đặt và triển khai hệ thống} -- Mô tả chi tiết các công nghệ triển khai backend/frontend, kiến trúc môi trường thực tế và giao diện ứng dụng.
+  \item \textbf{Chương~\ref{ch:chuong7}: Kết luận} -- Tổng kết các kết quả kỹ thuật đã đạt được, chỉ ra những hạn chế còn tồn tại và đề xuất định hướng phát triển hoàn thiện đề tài trong tương lai.
+\end{itemize}

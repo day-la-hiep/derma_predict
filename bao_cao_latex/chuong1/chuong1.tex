@@ -1,0 +1,161 @@
+% Chương 1
+\chapter[\MakeUppercase{Giới thiệu chung}]{Giới thiệu chung}
+\label{ch:chuong1}
+
+\section{Đặt vấn đề và phạm vi bài toán}
+
+\subsection{Đặt vấn đề}
+
+\textbf{Bối cảnh.} Da liễu gồm nhiều nhóm bệnh với biểu hiện đa dạng. Phần lớn tổn thương quan sát được bằng mắt hoặc ghi lại bằng ảnh. Người bệnh khó tiếp cận bác sĩ chuyên khoa nên thường tìm thông tin trên internet trước khi khám.
+
+\textbf{Khó khăn thực tế.}
+\begin{itemize}
+  \item \textbf{Người bệnh:} mô tả đời thường không khớp thuật ngữ y khoa (lệch từ vựng); nhầm giữa các bệnh có hình thái tương tự; đọc nguồn thông tin chưa kiểm chứng; có nguy cơ tự điều trị sai.
+  \item \textbf{Bác sĩ:} phải hỏi lại bệnh sử từ đầu ở mỗi buổi khám vì bệnh sử chưa được chuẩn hóa.
+\end{itemize}
+
+\textbf{Nhu cầu.} Cần một công cụ hỗ trợ tiền chẩn đoán với bốn yêu cầu:
+\begin{itemize}
+  \item Nhận mô tả bằng văn bản và ảnh chụp vùng da.
+  \item Trả thông tin tham khảo kèm nguồn trích dẫn.
+  \item Hỏi lại để bổ sung bệnh sử khi thông tin thiếu.
+  \item Không chẩn đoán xác định, không kê đơn, và khuyến nghị gặp bác sĩ khi có dấu hiệu cần thăm khám.
+\end{itemize}
+
+\subsection{Đối tượng và chức năng}
+
+Đề tài giải quyết bước \textbf{tiền chẩn đoán} bệnh da liễu cho ba nhóm người dùng:
+\begin{itemize}
+  \item \textbf{Bệnh nhân:} chat với chatbot bằng văn bản và ảnh; gửi yêu cầu tư vấn tới bác sĩ qua nhắn tin hoặc cuộc gọi video; quản lý nhiều hồ sơ bệnh nhân trong một tài khoản.
+  \item \textbf{Bác sĩ:} nhận ca tư vấn; xem báo cáo tiền tư vấn tổng hợp từ hội thoại với chatbot; trao đổi với bệnh nhân; chốt báo cáo kết luận. Ca đã chốt được lưu làm dữ liệu tham khảo cho chatbot.
+  \item \textbf{Quản trị viên:} số hóa giáo trình PDF thành kho tri thức, duyệt từng bước; cấu hình lược đồ đồ thị tri thức.
+\end{itemize}
+
+Về kỹ thuật, hệ thống gồm bốn thành phần:
+\begin{itemize}
+  \item Mạng CNN đa tỷ lệ phân loại ảnh tổn thương theo 22 lớp bệnh.
+  \item Truy xuất tài liệu theo ba cách: ngữ nghĩa, từ khóa, hỗn hợp.
+  \item Truy vấn đồ thị tri thức gồm PrimeKG, ontology DermO và quan hệ trích từ giáo trình.
+  \item Tác nhân (agent) gọi các công cụ trên để lập luận và hỏi lại khi thiếu thông tin.
+\end{itemize}
+
+\subsection{Giới hạn}
+
+\begin{itemize}
+  \item Kết quả của hệ thống \textbf{không phải chẩn đoán y khoa}. Hệ thống không kê đơn thuốc.
+  \item CNN chỉ phân loại trong 22 lớp của tập huấn luyện. Đầu ra là giả thuyết kèm độ tin cậy.
+  \item Kho tri thức nạp từ giáo trình và hướng dẫn chẩn đoán điều trị. Bác sĩ chuyên khoa chưa thẩm định các guideline. Đồ thị quan hệ trích từ sách còn thưa.
+  \item Chức năng đặt lịch khám nằm ngoài phạm vi.
+  \item Đồ án ở mức nguyên mẫu: chưa tối ưu hiệu năng, chưa đánh giá lâm sàng trên bệnh nhân thực, chưa triển khai ở môi trường vận hành.
+\end{itemize}
+
+\section{Đề xuất giải pháp}
+
+\subsection{Ý tưởng tổng thể}
+
+Hệ thống không để mô hình ngôn ngữ lớn (LLM) trả lời trực tiếp. Một \textbf{tác nhân hội thoại} gọi các nguồn tri thức có thể kiểm chứng, sau đó tổng hợp câu trả lời từ kết quả trả về. Bảng~\ref{tab:giai-phap} ghép từng khó khăn với thành phần xử lý.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{4.2cm}|p{4.3cm}|p{5.2cm}|}
+\hline
+\textbf{Khó khăn} & \textbf{Thành phần} & \textbf{Vai trò} \\ \hline
+Khó mô tả bằng ngôn ngữ y khoa; nhầm các bệnh tương tự & CNN đa tỷ lệ (AdaptiveCNN) & Phân loại ảnh tổn thương, trả giả thuyết bệnh kèm độ tin cậy \\ \hline
+Thông tin chưa kiểm chứng & Truy xuất tăng cường sinh văn bản (RAG) trên giáo trình đã số hóa & Trả đoạn trích kèm sách, mục, số trang \\ \hline
+Lệch từ vựng giữa mô tả đời thường và thuật ngữ y khoa & Đồ thị tri thức (PrimeKG, DermO) & Chuẩn hóa thuật ngữ; gợi ý bệnh ứng viên và câu hỏi phân biệt \\ \hline
+Bệnh sử thiếu, chưa chuẩn hóa & Tác nhân hội thoại (LangGraph) & Hỏi bổ sung; trích dữ kiện lâm sàng \\ \hline
+Bác sĩ hỏi lại bệnh sử từ đầu & Báo cáo tiền tư vấn; kênh tư vấn trực tiếp & Chuyển nội dung hội thoại cho bác sĩ; chat và video \\ \hline
+\end{tabular}
+\caption{Khó khăn và thành phần xử lý tương ứng}
+\label{tab:giai-phap}
+\end{table}
+
+\subsection{Kiến trúc tổng quan}
+
+\begin{itemize}
+  \item \textbf{Giao diện web (Next.js):} khu chat của bệnh nhân, khu làm việc của bác sĩ, khu quản trị.
+  \item \textbf{Core API (FastAPI):} xác thực, nghiệp vụ, ghi cơ sở dữ liệu, chuyển sự kiện thời gian thực (SSE) về giao diện. Core không gọi LLM nên yêu cầu HTTP trả về ngay.
+  \item \textbf{Agent Worker:} tiến trình riêng, nhận yêu cầu qua RabbitMQ, chạy tác nhân LangGraph, phát từng bước lập luận lên Redis.
+  \item \textbf{Ingest Worker:} chạy pipeline số hóa giáo trình gồm đọc chữ, đọc mục lục, cắt đoạn, nạp vector. Người duyệt xác nhận từng bước.
+  \item \textbf{Lưu trữ:} PostgreSQL (dữ liệu nghiệp vụ), Qdrant (vector), Neo4j (đồ thị), MinIO (ảnh, tệp tài liệu), Redis và RabbitMQ (sự kiện, hàng đợi).
+\end{itemize}
+
+\subsection{Luồng xử lý một lượt tư vấn}
+
+\begin{enumerate}
+  \item Bệnh nhân gửi mô tả hoặc ảnh. Core lưu tin nhắn và đẩy yêu cầu sang Agent Worker.
+  \item Tác nhân lọc ý định. Câu chào hỏi và câu ngoài phạm vi được trả lời ngay.
+  \item Với câu hỏi y khoa, tác nhân lập kế hoạch và gọi công cụ: CNN phân loại ảnh, truy xuất giáo trình, truy vấn đồ thị tri thức, tra cứu ca bệnh đã được bác sĩ xác nhận.
+  \item Khi thiếu bệnh sử, tác nhân đặt câu hỏi bổ sung và chờ bệnh nhân trả lời.
+  \item Câu trả lời kèm nguồn và cảnh báo giới hạn y khoa được stream về giao diện cùng các bước lập luận.
+  \item Khi cần khám chuyên sâu, bệnh nhân gửi yêu cầu tư vấn. Hệ thống tổng hợp báo cáo tiền tư vấn cho bác sĩ. Sau buổi tư vấn, bác sĩ chốt báo cáo kết luận và ca được nạp vào kho tri thức.
+\end{enumerate}
+
+\subsection{Đặc điểm của giải pháp}
+
+\begin{itemize}
+  \item \textbf{Đa phương thức:} văn bản và ảnh trong cùng một hội thoại.
+  \item \textbf{Có nguồn:} câu trả lời dựa trên đoạn giáo trình, quan hệ trong đồ thị hoặc ca bệnh đã xác nhận, không chỉ dựa vào kiến thức nội tại của LLM.
+  \item \textbf{Lập luận hiển thị:} công cụ đã gọi và bước suy luận được hiển thị, lưu cùng tin nhắn.
+  \item \textbf{Có người duyệt:} người duyệt xác nhận nội dung kho tri thức. Bác sĩ đưa ra kết luận cuối.
+  \item \textbf{Tách tiến trình:} LLM và số hóa tài liệu chạy ở worker riêng, giao diện nhận kết quả qua SSE.
+\end{itemize}
+
+\section{Các công nghệ phát triển ứng dụng}
+
+Hệ thống gồm các khối công nghệ sau. Mỗi khối đảm nhận một vai trò riêng.
+
+\begin{itemize}
+  \item \textbf{Giao diện web (Next.js, React):} hiển thị khu chat của bệnh nhân, khu làm việc của bác sĩ và khu quản trị. Giao diện nhận câu trả lời của chatbot theo thời gian thực qua Server-Sent Events (SSE).
+  \item \textbf{Máy chủ nghiệp vụ (FastAPI):} xác thực người dùng bằng JWT, phân quyền theo vai trò, xử lý nghiệp vụ và ghi cơ sở dữ liệu. Máy chủ không gọi LLM mà chuyển yêu cầu sang hàng đợi.
+  \item \textbf{Hàng đợi và kênh sự kiện (RabbitMQ, Redis):} RabbitMQ chuyển yêu cầu từ máy chủ sang các tiến trình xử lý nặng. Redis phát sự kiện thời gian thực về giao diện.
+  \item \textbf{Tiến trình xử lý nặng (Worker):} Agent Worker chạy tác nhân hội thoại. Ingest Worker chạy pipeline số hóa giáo trình. Cả hai chạy tách khỏi máy chủ nghiệp vụ.
+  \item \textbf{Cơ sở dữ liệu quan hệ (PostgreSQL):} lưu người dùng, hồ sơ, hội thoại, ca tư vấn, báo cáo, tài liệu, cùng trạng thái hội thoại và bộ nhớ dài hạn của agent.
+  \item \textbf{Cơ sở dữ liệu vector (Qdrant):} lưu vector của các đoạn giáo trình và ca bệnh để tìm kiếm theo ngữ nghĩa và từ khóa.
+  \item \textbf{Cơ sở dữ liệu đồ thị (Neo4j):} lưu đồ thị tri thức bệnh -- triệu chứng -- thuốc và đồ thị hành trình bệnh nhân.
+  \item \textbf{Lưu trữ đối tượng (MinIO):} lưu ảnh đính kèm và các tệp của tài liệu (PDF gốc, văn bản từng trang, mục lục, các đoạn).
+  \item \textbf{Tư vấn video (WebRTC):} truyền hình và tiếng trực tiếp giữa bệnh nhân và bác sĩ; máy chủ chỉ chuyển tiếp thông tin báo hiệu.
+  \item \textbf{Triển khai (Docker Compose):} dựng toàn bộ hạ tầng trên bằng một lệnh.
+\end{itemize}
+
+\section{Các kỹ thuật và mô hình trí tuệ nhân tạo}
+
+\subsection{Phân loại ảnh da liễu bằng CNN}
+
+\textbf{AdaptiveCNN} xây dựng trên ResNet-18, thêm hai cơ chế: tích chập đa kernel (AMKC) lấy đặc trưng ở nhiều phạm vi không gian, và tổng hợp đặc trưng thích nghi (Adaptive GeM). Mô hình huấn luyện bằng PyTorch, đầu ra gồm 22 lớp bệnh và độ tin cậy. Agent gọi mô hình như một công cụ; kết quả là giả thuyết hỗ trợ. Chi tiết ở Chương~\ref{ch:chuong2}.
+
+\subsection{Truy xuất tăng cường sinh văn bản (RAG)}
+\begin{itemize}
+  \item \textbf{Số hóa giáo trình:} Docling đọc PDF thành chữ theo trang; LLM đọc trang mục lục để dựng cây mục; văn bản được cắt thành đoạn theo mục lục. Người duyệt xác nhận từng bước.
+  \item \textbf{Tìm kiếm ngữ nghĩa:} mô hình embedding đổi mỗi đoạn thành vector, lưu vào Qdrant; câu hỏi được so khớp theo độ tương đồng vector.
+  \item \textbf{Tìm kiếm từ khóa:} BM25 trên vector sparse. Tiền xử lý tiếng Việt gồm tách từ ghép (underthesea), loại stopword, thêm token bỏ dấu. Cách này khớp đúng tên thuốc và thuật ngữ.
+  \item \textbf{Tìm kiếm hỗn hợp và xếp hạng lại:} kết hợp kết quả ngữ nghĩa, từ khóa và đồ thị tri thức; mô hình reranker (Qwen3-Reranker) xếp hạng lại; kết quả trả về kèm tên sách, mục, số trang.
+\end{itemize}
+
+Chi tiết ở Chương~\ref{ch:chuong3}.
+
+\subsection{Đồ thị tri thức}
+\begin{itemize}
+  \item \textbf{PrimeKG:} đồ thị tri thức y sinh có sẵn, chứa quan hệ bệnh -- triệu chứng, bệnh -- thuốc, yếu tố nguy cơ.
+  \item \textbf{DermO:} ontology da liễu. Liên kết thực thể với DermO chuẩn hóa thuật ngữ và giảm lệch từ vựng.
+  \item \textbf{Trích quan hệ từ giáo trình:} LLM trích bộ ba (thực thể, quan hệ, thực thể) theo lược đồ do quản trị viên định nghĩa. Người duyệt kiểm tra trước khi nạp Neo4j. Mỗi cạnh lưu nguồn (tài liệu, trang).
+  \item \textbf{Truy vấn:} agent dùng mẫu Cypher theo ý định: bệnh ứng viên theo triệu chứng, phân biệt hai bệnh, điều trị, chống chỉ định.
+\end{itemize}
+
+\subsection{Tác nhân hội thoại dựa trên LLM}
+\begin{itemize}
+  \item \textbf{LLM và gọi công cụ (tool calling):} truy cập qua OpenRouter, mặc định Gemma; đổi được mô hình theo từng hội thoại. Mô hình chọn công cụ cần gọi và tổng hợp kết quả thành câu trả lời.
+  \item \textbf{LangGraph:} biểu diễn luồng xử lý thành máy trạng thái (lọc ý định, lập luận, gọi công cụ). \texttt{interrupt()} dừng luồng để chờ bệnh nhân trả lời; checkpoint cho phép tiếp tục hội thoại.
+  \item \textbf{Bộ nhớ dài hạn:} lưu thông tin theo hồ sơ bệnh nhân, dùng lại giữa các hội thoại.
+  \item \textbf{Mô hình đa phương thức (tùy chọn):} MedGemma mô tả ảnh, bổ sung cho CNN.
+  \item \textbf{Tổng hợp lâm sàng:} LLM trích dữ kiện bệnh nhân từ hội thoại và sinh báo cáo tiền tư vấn.
+\end{itemize}
+
+Chi tiết ở Chương~\ref{ch:chuong4}.
+
+\section{Kết luận}
+
+Chương này trình bày bài toán tiền chẩn đoán bệnh da liễu. Người bệnh lệch từ vựng và nhầm các bệnh tương tự; bác sĩ phải hỏi lại bệnh sử. Hệ thống cần nhận văn bản và ảnh, trả thông tin có nguồn, hỏi bổ sung bệnh sử và giữ giới hạn y khoa.
+
+Phạm vi gồm ba nhóm người dùng: bệnh nhân, bác sĩ, quản trị viên. Giải pháp là một tác nhân hội thoại gọi CNN, RAG và đồ thị tri thức, có người duyệt ở các bước số hóa và bác sĩ kết luận cuối. Hệ thống dùng Next.js, FastAPI, PostgreSQL, Qdrant, Neo4j, RabbitMQ, Redis, MinIO và WebRTC. Các chương sau trình bày chi tiết từng thành phần AI.
