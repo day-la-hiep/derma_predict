@@ -1,13 +1,7 @@
 import type { Metadata } from "next";
-import { Calistoga, Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
-
-const calistoga = Calistoga({
-  variable: "--font-calistoga",
-  weight: "400",
-  subsets: ["latin"],
-});
 
 const inter = Inter({
   variable: "--font-inter",
@@ -31,12 +25,12 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="vi"
       suppressHydrationWarning
-      className={`${inter.variable} ${calistoga.variable} ${mono.variable} h-full antialiased font-sans`}
+      className={`${inter.variable} ${mono.variable} h-full antialiased font-sans`}
     >
       <head>
         {/* chống FOUC: gắn data-theme (brand) trước khi paint */}

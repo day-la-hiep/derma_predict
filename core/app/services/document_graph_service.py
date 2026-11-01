@@ -3,6 +3,7 @@ import csv
 import json
 import threading
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any, LiteralString, cast
 
 from app.dto.base.document import DocumentTriple, GraphNodeRef
@@ -12,28 +13,25 @@ from app.exception.errors import ConflictError, InvalidError, NotFoundError
 from app.infra.neo4j_client import Neo4jClient
 from app.repositories.document_repository import DocumentRepository
 from pipeline.document_ingest.graph_link import EntityLexicon, LexEntry
-from pipeline.document_ingest.graph_schema import ENTITY_TYPES, relation_types
+from pipeline.document_ingest.graph_schema import CORE_SCHEMA, GraphSchema
 
 
 def load_lexicon(kg_dir: Path) -> EntityLexicon:
-    """PrimeKG đầy đủ (bệnh, triệu chứng, thuốc, gen, tác nhân) + DermO; synonym DermO làm alias cho bệnh MONDO cùng tên."""
+    """Đúng các nút đang có trong đồ thị nền (`graph_base/data/build`: PrimeKG + DermO); synonym DermO làm alias cho bệnh MONDO cùng tên."""
     lex = EntityLexicon()
-    primekg = kg_dir / "primekg" / "entity_lexicon.csv"
-    subgraph: set[tuple[str, str]] = set()
-    if (kg_dir / "primekg" / "derma_nodes.csv").exists():
-        with (kg_dir / "primekg" / "derma_nodes.csv").open(encoding="utf-8", newline="") as f:
-            subgraph = {(r["type"], r["id"]) for r in csv.DictReader(f)}
+    primekg = kg_dir / "primekg" / "nodes.csv"
     if primekg.exists():
         with primekg.open(encoding="utf-8", newline="") as f:
             for r in csv.DictReader(f):
+                # nút gộp nhóm bệnh (MONDO_grouped) xếp sau nút bệnh thường khi trùng tên
                 lex.add(LexEntry(id=r["id"], name=r["name"], type=r["type"], source=r["source"], kg="primekg",
-                                 rank=int((r["type"], r["id"]) in subgraph)))
-    dermo = kg_dir / "dermo" / "dermo_kg.json"
+                                 rank=int(r["source"] != "MONDO_grouped")))
+    dermo = kg_dir / "dermo" / "terms.json"
     if dermo.exists():
         for t in json.loads(dermo.read_text(encoding="utf-8")).get("terms", []):
             if t.get("is_obsolete"):
                 continue
-            syns = [s for s in t.get("synonyms") or [] if not s.startswith("<")]
+            syns = [s["text"] for s in t.get("synonyms") or []]
             lex.add(LexEntry(id=t["id"], name=t["name"], type="dermo", source="DermO", kg="dermo", aliases=syns))
             # MONDO chỉ có một tên; DermO có đồng nghĩa -> dùng chung để khớp tên sách viết khác
             for mondo in {e.id for n in [t["name"], *syns] for e in lex.exact("disease", n)}:
@@ -43,20 +41,18 @@ def load_lexicon(kg_dir: Path) -> EntityLexicon:
 
 
 def _cypher(q: str) -> LiteralString:
-    # label / relationship type ghép vào câu lệnh chỉ lấy từ registry cố định `graph_schema.py`, không từ người dùng
+    # label / relationship type ghép vào câu lệnh lấy từ schema (registry `graph_schema.py` + định nghĩa của bác sĩ đã validate regex)
     return cast(LiteralString, q)
 
 
-def _label(type_: str) -> str:
-    return "DermoTerm" if type_ == "dermo" else "Entity"
-
-
 class DocumentGraphService:
-    def __init__(self, repository: DocumentRepository, neo4j: Neo4jClient | None, lexicon_dir: Path) -> None:
+    def __init__(self, repository: DocumentRepository, neo4j: Neo4jClient | None, lexicon_dir: Path,
+                 schema: Callable[[], GraphSchema] = lambda: CORE_SCHEMA) -> None:
         self._repo, self._neo4j, self._lexicon_dir = repository, neo4j, lexicon_dir
+        self._schema = schema  # luôn gồm cả quan hệ đang tắt: cạnh đã lưu của chúng vẫn phải xoá/đếm được
         self._lexicon: EntityLexicon | None = None
         self._lock = threading.Lock()
-        self._indexed = False
+        self._indexed: set[str] = set()
 
     def lexicon(self) -> EntityLexicon:
         with self._lock:
@@ -84,22 +80,27 @@ class DocumentGraphService:
             "RETURN n.id AS id, n.name AS name, coalesce(n.type, 'dermo') AS type"
         )
 
-    def existing_types(self, ids: list[str]) -> dict[str, str]:
-        rows = self.neo4j.run_sync("MATCH (n:Entity) WHERE n.id IN $ids RETURN n.id AS id, n.type AS type", ids=ids)
-        return {r["id"]: r["type"] for r in rows}
+    def existing_nodes(self, pairs: list[tuple[str, str]]) -> set[tuple[str, str]]:
+        by_type: dict[str, list[str]] = {}
+        for type_, id_ in pairs:
+            by_type.setdefault(type_, []).append(id_)
+        entity_types = self._schema().entity_types
+        found: set[tuple[str, str]] = set()
+        for type_, ids in by_type.items():
+            rows = self.neo4j.run_sync(_cypher(f"MATCH (n:{entity_types[type_].label}) WHERE n.id IN $ids RETURN n.id AS id"), ids=ids)
+            found |= {(type_, r["id"]) for r in rows}
+        return found
 
     def _ensure_indexes(self) -> None:
-        if self._indexed:
-            return
         # xoá theo tài liệu không được quét toàn bộ cạnh (có ~2,6 triệu DRUG_DRUG) -> index document_id theo từng loại cạnh
-        for t in relation_types():
-            self.neo4j.run_sync(_cypher(f"CREATE INDEX doc_rel_{t.lower()} IF NOT EXISTS FOR ()-[r:{t}]-() ON (r.document_id)"))
-        self._indexed = True
+        for t in self._schema().relation_types():
+            if t not in self._indexed:
+                self.neo4j.run_sync(_cypher(f"CREATE INDEX doc_rel_{t.lower()} IF NOT EXISTS FOR ()-[r:{t}]-() ON (r.document_id)"))
+                self._indexed.add(t)
 
-    @staticmethod
-    def _delete_statements(document_id: str) -> list[tuple[LiteralString, dict[str, Any]]]:
+    def _delete_statements(self, document_id: str) -> list[tuple[LiteralString, dict[str, Any]]]:
         out: list[tuple[LiteralString, dict[str, Any]]] = [
-            (_cypher(f"MATCH ()-[r:{t} {{document_id: $d}}]->() DELETE r"), {"d": document_id}) for t in relation_types()
+            (_cypher(f"MATCH ()-[r:{t} {{document_id: $d}}]->() DELETE r"), {"d": document_id}) for t in self._schema().relation_types()
         ]
         # nút do tài liệu thêm (thực thể mới, hoặc nút PrimeKG chưa có trong subgraph): gỡ tài liệu, hết tài liệu + hết cạnh thì xoá
         for label in ("Entity", "DermoTerm"):
@@ -112,21 +113,23 @@ class DocumentGraphService:
     def replace_document(self, document_id: str, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> None:
         self._ensure_indexes()
         stmts = self._delete_statements(document_id)
+        entity_types = self._schema().entity_types
         for type_ in {n["type"] for n in nodes}:
             rows = [n for n in nodes if n["type"] == type_]
             if type_ == "dermo":
                 q = ("UNWIND $rows AS row MERGE (n:DermoTerm {id: row.id}) "
-                     "ON CREATE SET n.name = row.name, n.source = row.source, n.synonyms = [], n.added_by = [$d] "
+                     "ON CREATE SET n.name = row.name, n.source = row.source, n.synonyms = [], n.xrefs = [], n.alt_ids = [], "
+                     "n.is_obsolete = false, n.added_by = [$d] "
                      "ON MATCH SET n.added_by = CASE WHEN n.added_by IS NULL THEN NULL ELSE n.added_by + $d END")
             else:
-                q = (f"UNWIND $rows AS row MERGE (n:Entity {{id: row.id}}) "
-                     f"ON CREATE SET n:{ENTITY_TYPES[type_].label}, n.name = row.name, n.type = row.type, n.source = row.source, "
-                     "n.added_by = [$d] "
+                # nút nhận diện theo (label loại, id): id PrimeKG chỉ duy nhất trong từng loại
+                q = (f"UNWIND $rows AS row MERGE (n:{entity_types[type_].label} {{id: row.id}}) "
+                     "ON CREATE SET n:Entity, n.name = row.name, n.type = row.type, n.source = row.source, n.added_by = [$d] "
                      "ON MATCH SET n.added_by = CASE WHEN n.added_by IS NULL THEN NULL ELSE n.added_by + $d END")
             stmts.append((_cypher(q), {"rows": rows, "d": document_id}))
         groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
         for e in edges:
-            groups.setdefault((e["relation"], _label(e["x_type"]), _label(e["y_type"])), []).append(e)
+            groups.setdefault((e["relation"], entity_types[e["x_type"]].label, entity_types[e["y_type"]].label), []).append(e)
         for (rel, xl, yl), rows in groups.items():
             stmts.append((_cypher(
                 f"UNWIND $rows AS row MATCH (x:{xl} {{id: row.x}}), (y:{yl} {{id: row.y}}) "
@@ -137,7 +140,11 @@ class DocumentGraphService:
 
     def count_edges(self, document_id: str) -> int:
         return sum(self.neo4j.run_sync(_cypher(f"MATCH ()-[r:{t} {{document_id: $d}}]->() RETURN count(r) AS c"), d=document_id)[0]["c"]
-                   for t in relation_types())
+                   for t in self._schema().relation_types())
+
+    def delete_relation_edges(self, relation_type: str) -> None:
+        # chỉ cạnh từ tài liệu; cạnh gốc PrimeKG/DermO cùng loại (nếu có) không bị đụng
+        self.neo4j.run_sync(_cypher(f"MATCH ()-[r:{relation_type} {{source: 'DOC'}}]->() DELETE r"))
 
     def delete_document(self, document_id: str) -> None:
         """Gỡ mọi cạnh/nút tài liệu đã nạp; tài liệu chưa từng nạp graph thì không đụng tới Neo4j."""
@@ -215,10 +222,65 @@ class DocumentGraphService:
         ov["relink"] = relink
         self._repo.overrides.write(document_id, "graph", ov)
 
-    def search_nodes(self, type_: str, q: str, limit: int) -> list[GraphNodeOutput]:
-        if type_ not in ENTITY_TYPES:
-            raise InvalidError(f"Loại thực thể không hợp lệ: {type_}")
-        if not q.strip():
+    async def query_document_graph(
+        self, entity: str, relation: str | None = None, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """Truy vấn đồ thị trích từ sách (cạnh `source='DOC'`) theo tên thực thể.
+
+        Trả về quan hệ 1-hop (cả hai chiều) kèm evidence, chunk_ids, pages, document_id.
+        Nếu Neo4j chưa cấu hình → trả [] (không crash).
+        """
+        if not self.configured:
             return []
-        return [GraphNodeOutput(kg=e.kg, type=e.type, id=e.id, name=e.name, source=e.source)
-                for e in self.lexicon().search(type_, q, limit)]
+        if not entity or not entity.strip():
+            return []
+        lim = max(1, min(limit, 50))
+        rel_filter = relation.strip().upper() if relation else None
+
+        # Chiều xuôi: matched node là chủ thể
+        out_rows = await self.neo4j.run(
+            _cypher("""
+                MATCH (n) WHERE (n:Entity OR n:DermoTerm)
+                  AND (toLower(coalesce(n.name,'')) CONTAINS toLower($entity)
+                       OR any(s IN coalesce(n.synonyms, []) WHERE toLower(s) CONTAINS toLower($entity)))
+                WITH n LIMIT 5
+                MATCH (n)-[r]->(m)
+                WHERE r.source = 'DOC'
+                  AND ($rel IS NULL OR type(r) = $rel)
+                RETURN n.name AS subject, type(r) AS relation, m.name AS object,
+                       r.evidence AS evidence, r.chunk_ids AS chunk_ids,
+                       r.pages AS pages, r.document_id AS document_id,
+                       r.display_relation AS display, 'out' AS direction
+                LIMIT $lim
+            """),
+            entity=entity.strip(), rel=rel_filter, lim=lim,
+        )
+        # Chiều ngược: matched node là đối tượng
+        in_rows = await self.neo4j.run(
+            _cypher("""
+                MATCH (n) WHERE (n:Entity OR n:DermoTerm)
+                  AND (toLower(coalesce(n.name,'')) CONTAINS toLower($entity)
+                       OR any(s IN coalesce(n.synonyms, []) WHERE toLower(s) CONTAINS toLower($entity)))
+                WITH n LIMIT 5
+                MATCH (m)-[r]->(n)
+                WHERE r.source = 'DOC'
+                  AND ($rel IS NULL OR type(r) = $rel)
+                RETURN m.name AS subject, type(r) AS relation, n.name AS object,
+                       r.evidence AS evidence, r.chunk_ids AS chunk_ids,
+                       r.pages AS pages, r.document_id AS document_id,
+                       r.display_relation AS display, 'in' AS direction
+                LIMIT $lim
+            """),
+            entity=entity.strip(), rel=rel_filter, lim=lim,
+        )
+        rows = list(out_rows) + list(in_rows)
+        # dedup theo (subject, relation, object)
+        seen: set[tuple[str, str, str]] = set()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            key = (str(r.get("subject")), str(r.get("relation")), str(r.get("object")))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(r)
+        return out[:lim]

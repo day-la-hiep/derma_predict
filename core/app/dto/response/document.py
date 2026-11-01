@@ -28,6 +28,8 @@ class DocumentSummary(BaseModel):
     id: str
     title: str
     created_at: str | None = None
+    pdf_pages: int | None = None
+    file_size: int | None = None
     states: dict[str, str]
 
 

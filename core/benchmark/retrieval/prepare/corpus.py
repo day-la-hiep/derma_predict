@@ -35,7 +35,7 @@ async def snapshot(name: str | None = None) -> str:
         for r in await get_knowledge_base_service().all_document_chunks()
         if r.payload and r.payload.get("chunk_id")
     ]
-    # cùng một chunk có thể nằm ở cả collection mới lẫn legacy: giữ một bản theo chunk_id
+    # giữ một bản theo chunk_id
     unique = {c.chunk_id: c for c in (_to_record(p) for p in records)}
     chunks = sorted(unique.values(), key=lambda c: c.chunk_id)
     name = name or f"{date.today():%Y%m%d}-{len(chunks)}"
@@ -48,7 +48,6 @@ async def snapshot(name: str | None = None) -> str:
         "duplicates_dropped": len(records) - len(chunks),
         "per_document": dict(Counter(c.document_title for c in chunks)),
         "collection": settings.QDRANT_DOCUMENT_COLLECTION,
-        "legacy_collection": settings.QDRANT_LEGACY_BOOK_COLLECTION,
         "embedding_model": settings.EMBEDDING_MODEL,
         "reranker_model": settings.RERANKER_MODEL,
     }

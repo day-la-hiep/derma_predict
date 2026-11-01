@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Any
 
-from app.config.constants import CONVERSATION_ROOM_CHANNEL, DOCTOR_INBOX_CHANNEL
+from app.config.constants import CONVERSATION_ROOM_CHANNEL, DOCTOR_INBOX_CHANNEL, USER_CALL_CHANNEL
 from app.infra.redis_client import RedisClient
 
 logger = logging.getLogger(__name__)
@@ -27,3 +27,7 @@ async def publish_room(redis: RedisClient, conversation_id: str, payload: dict[s
 
 async def publish_inbox(redis: RedisClient, payload: dict[str, Any]) -> None:
     await _publish(redis, DOCTOR_INBOX_CHANNEL, payload)
+
+
+async def publish_user_call(redis: RedisClient, user_id: str, payload: dict[str, Any]) -> None:
+    await _publish(redis, USER_CALL_CHANNEL.format(user_id=user_id), payload)

@@ -1,14 +1,14 @@
 ---
 name: derma-pipeline-conventions
-description: Conventions for the Derma document-ingest pipeline (`core/pipeline/document_ingest/` — PDF document → table-of-contents-anchored chunks → Qdrant, admin UI at /doctor/documents) — the 6-stage model (ingest/toc/chunks/index + graph/graph_index → Neo4j), the StageContext contract, the `app/dto/base/document.py` business entities (`Document`/`DocumentChunk`/`DocumentTriple`/`DocumentStage`/`DocumentStageOverride`), where transformation logic vs infra clients vs persistence go, and how to add or modify a stage. Use whenever the user asks to add/modify a pipeline stage, touches `pipeline/document_ingest/`, `app/services/document_*.py`, `app/repositories/document_repository.py`, asks about document/book/TOC/chunk ingestion, or asks where document-ingest code should live — even if they don't say "pipeline" or "convention".
+description: Conventions for the Derma document-ingest pipeline (`core/pipeline/document_ingest/` — PDF document → table-of-contents-anchored chunks → Qdrant, admin UI at /admin/documents) — the 6-stage model (ingest/toc/chunks/index + graph/graph_index → Neo4j), the StageContext contract, the `app/dto/base/document.py` business entities (`Document`/`DocumentChunk`/`DocumentTriple`/`DocumentStage`/`DocumentStageOverride`), where transformation logic vs infra clients vs persistence go, and how to add or modify a stage. Use whenever the user asks to add/modify a pipeline stage, touches `pipeline/document_ingest/`, `app/services/document_*.py`, `app/repositories/document_repository.py`, asks about document/book/TOC/chunk ingestion, or asks where document-ingest code should live — even if they don't say "pipeline" or "convention".
 ---
 
 # Derma document-ingest pipeline (`pipeline/document_ingest/`) — conventions
 
 Paths are relative to `core/`. Turns an uploaded PDF (currently: textbooks, `Document.type ==
 "book"`) into table-of-contents-anchored chunks in Qdrant, reviewed stage-by-stage by a human via
-`/doctor/documents` (FE: `derma-fe-conventions`'s `features/document-pipeline/`). No CLI — Core runs each stage
-in a background thread; everything lives in Postgres (`documents`, `document_stages`,
+`/admin/documents` (FE: `derma-fe-conventions`'s `features/document-pipeline/`). No CLI — Core records `running` and publishes to RabbitMQ, the Ingest Worker (`make ingest-worker`) runs each stage;
+everything lives in Postgres (`documents`, `document_stages`,
 `document_overrides`) + MinIO (`derma-documents` bucket) + Qdrant (`derma_document_chunks_v4`), never
 on local disk except a PDF scratch copy.
 
@@ -32,14 +32,16 @@ PDF → ingest (text/page)  → toc (LLM reads TOC, human reviews) → mapping (
 | `graph` | `stages/graph.py` + `graph_schema.py` + `graph_link.py` | `graph/topics.json`, `graph/unmapped.json`, `triples.auto.jsonl` (machine), `triples.jsonl` (+ overrides) | classify TOC topics, slot-filling, pick among match candidates |
 | `graph_index` | `stages/graph_index.py` (+ `DocumentGraphService`) | `graph_index.json` + edges `source='DOC'` in Neo4j | no |
 
-`graph`/`graph_index` run parallel to `index` (both depend on `chunks`). Only PrimeKG/DermO relation types are
-extracted; the registry `pipeline/document_ingest/graph_schema.py` (`ENTITY_TYPES`, `SLOTS`) drives the prompt,
+`graph`/`graph_index` run parallel to `index` (both depend on `chunks`). Core relation types are PrimeKG/DermO; admins add their own via `/admin/graph-schema` (`GraphSchemaService`, tables
+`graph_relations`/`graph_entity_types`, `kg="doc"`) — the stage reads the merged `ctx.schema` (`GraphSchema`, CORE_SCHEMA by default;
+`graph` gets enabled relations only, `graph_index` all). The registry `pipeline/document_ingest/graph_schema.py` (`ENTITY_TYPES`, `SLOTS`) drives the prompt,
 entity matching, Neo4j loading and the FE labels — **to add an entity type or relation, add it there** (plus
-`RELATION_LABELS`/`ENTITY_LABELS` in FE `constants.ts`). Names are matched against `EntityLexicon` (full PrimeKG
-`entity_lexicon.csv` + DermO, loaded by `DocumentGraphService.lexicon()` from `settings.GRAPH_LEXICON_DIR`).
+`RELATION_LABELS`/`ENTITY_LABELS` in FE `constants.ts`). Names are matched against `EntityLexicon` (the nodes of the base
+graph — `nodes.csv` + DermO `terms.json` built by `core/graph_base`, loaded by `DocumentGraphService.lexicon()` from `settings.GRAPH_LEXICON_DIR`).
+PrimeKG ids are unique only per node type, so nodes are always addressed by `(type, id)` / Neo4j label + id, never by `Entity.id` alone.
 Reviewer overrides (stage `graph`): `rejected`, `relink` (per triple side, expanded to every triple with the same
 term), `accepted_nodes` (new `doc_*` entities, only when `profile.graph.allow_new_entities`). Gotchas (PrimeKG id
-collisions across node types, topic misclassification, `KG_EDGE_SOURCES`): `docs/notice/document-graph-extract.md`.
+collisions across node types, topic misclassification, `KG_EDGE_SOURCES`): `docs/module/knowledge-graph.md` / `knowledge-graph-flow.md`.
 
 Stage order/deps live in `app/models/document_stage.py` (`STAGES`, `downstream()`) — the single
 source of truth, shared by repository, runner, and API. `toc` does **not** depend on `ingest`:

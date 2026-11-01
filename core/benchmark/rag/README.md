@@ -23,7 +23,7 @@ gồm cả độ đúng lẫn an toàn (bỏ sót red flag, sai mức khẩn c�
 - **Độ tin cậy của judge:** model khác model sinh, giấu nhãn cấu hình, xáo thứ tự, có ví dụ neo cho từng mức điểm;
   chấm tay 30 ca để tính kappa; bác sĩ/giảng viên duyệt 15-20 ca.
 
-Kế hoạch gốc: [`docs/benchmark/ke-hoach-benchmark-tong-hop.md`](../../../docs/benchmark/ke-hoach-benchmark-tong-hop.md) mục 6.
+Kế hoạch: [`benchmark_implementation.md`](../../../benchmark_implementation.md) (file kế hoạch tổng hợp cũ đã bị xoá).
 
 ## Việc cần làm
 

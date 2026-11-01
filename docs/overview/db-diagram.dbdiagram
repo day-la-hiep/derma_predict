@@ -86,7 +86,7 @@
         "y": 1168
       },
       {
-        "name": "medical_records",
+        "name": "finalize_reports",
         "schemaName": "public",
         "x": 2384,
         "y": 448
@@ -366,7 +366,7 @@
         "secondFieldNames": [
           "patient_profile_id"
         ],
-        "secondTableName": "medical_records",
+        "secondTableName": "finalize_reports",
         "secondSchemaName": "public",
         "secondRelation": "*",
         "checkPoints": []
@@ -381,7 +381,7 @@
         "secondFieldNames": [
           "doctor_id"
         ],
-        "secondTableName": "medical_records",
+        "secondTableName": "finalize_reports",
         "secondSchemaName": "public",
         "secondRelation": "*",
         "checkPoints": []
@@ -396,7 +396,7 @@
         "secondFieldNames": [
           "consultation_session_id"
         ],
-        "secondTableName": "medical_records",
+        "secondTableName": "finalize_reports",
         "secondSchemaName": "public",
         "secondRelation": "*",
         "checkPoints": []
@@ -405,11 +405,11 @@
         "firstFieldNames": [
           "id"
         ],
-        "firstTableName": "medical_records",
+        "firstTableName": "finalize_reports",
         "firstSchemaName": "public",
         "firstRelation": "1",
         "secondFieldNames": [
-          "medical_record_id"
+          "finalize_report_id"
         ],
         "secondTableName": "patient_images",
         "secondSchemaName": "public",

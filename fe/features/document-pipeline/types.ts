@@ -57,6 +57,8 @@ export interface DocumentSummary {
   id: string;
   title: string;
   created_at?: string | null;
+  pdf_pages?: number | null;
+  file_size?: number | null;
   states: Record<StepId, StageState>;
 }
 

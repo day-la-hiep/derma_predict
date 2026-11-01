@@ -1,3 +1,4 @@
+import logging
 from typing import Any, cast
 
 from langchain.agents import AgentState
@@ -12,7 +13,7 @@ from langgraph.graph.state import CompiledStateGraph  # pyright: ignore[reportMi
 from langgraph.runtime import Runtime
 from langgraph.store.base import BaseStore
 
-from agent.graph.pre_diagnosis_graph import (
+from agent.graph.v1.pre_diagnosis_graph import (
     ALL_TOOLS,
     build_pre_diagnosis_graph,
     default_middleware,
@@ -24,6 +25,8 @@ from agent.tools.memory import build_memory_store
 from agent.common.tracing import trace_callback
 from app.config.settings import settings
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "ALL_TOOLS",
     "chat_graph",
@@ -34,6 +37,24 @@ __all__ = [
 ]
 
 
+# Chỉ node `answer` của graph v2 được stream token. Graph v1 không stream: các lượt `model` trung gian có thể kèm chữ cùng tool_calls,
+# nên chỉ câu trả lời cuối được gửi một lần ở cuối lượt (`turn.py` phát `message.delta` từ AIMessage cuối khi chưa có token nào).
+_STREAM_NODES = ("answer",)
+
+# Phần state của graph v2 giữ lại giữa các lượt; graph v1 không có các khoá này nên `diag` rỗng.
+_DIAG_KEYS = ("facts", "facts_upto", "plan", "unsupported", "evidence", "evidence_status", "done_calls", "call_results")
+
+
+def _default_pre_diagnosis() -> CompiledStateGraph[Any, AgentContext, Any, Any]:
+    if settings.AGENT_GRAPH_VERSION == "v2":
+        from agent.graph.v2.pre_diagnosis_graph import (
+            build_pre_diagnosis_graph as build_v2,
+        )
+
+        return build_v2()
+    return build_pre_diagnosis_graph()
+
+
 def _pre_diagnosis_node(graph: CompiledStateGraph[Any, AgentContext, Any, Any]):
     async def run(
         state: ChatState, runtime: Runtime[AgentContext]
@@ -41,33 +62,43 @@ def _pre_diagnosis_node(graph: CompiledStateGraph[Any, AgentContext, Any, Any]):
         before = state["messages"]
         write = get_stream_writer()
         final: dict[str, Any] = {}
+        final_depth = -1
         # Đọc stream của graph con thay vì `ainvoke`: gọi `ainvoke` bên trong node thì token LLM không đi tiếp ra stream của chat graph
         # (chỉ còn tin hoàn chỉnh, gắn tên node của cha). Token của model chính (node "model", không phải các lần gọi LLM phụ như
         # tóm tắt) được chuyển tiếp qua kênh `custom` cho `turn.py` phát `message.delta`.
         # `get_config()`: truyền tiếp config của lượt chạy (checkpoint namespace, thread_id) để `interrupt()` của `ask_user` hoạt động.
-        async for mode, chunk in graph.astream(
-            {"messages": before},
+        # `subgraphs=True`: graph v2 đặt `answer` trong subgraph `text_flow`, không bật thì token của nó không ra stream; `values` lấy bản cuối của tầng nông nhất (graph con chạy dưới namespace của chat graph nên không phải ns rỗng).
+        async for ns, mode, chunk in graph.astream(
+            {"messages": before, **state.get("diag", {})},
             config=get_config(),
             context=runtime.context,
-            stream_mode=["messages", "values"],
+            stream_mode=["messages", "values", "updates"],
+            subgraphs=True,
         ):
             if mode == "messages":
                 message, meta = cast("tuple[Any, dict[str, Any]]", chunk)
                 if (
-                    meta.get("langgraph_node") == "model"
+                    meta.get("langgraph_node") in _STREAM_NODES
                     and isinstance(message, AIMessageChunk)
                     and message.text
                 ):
                     write({"type": "token", "text": message.text})
-            else:
-                final = cast("dict[str, Any]", chunk)
+            elif mode == "updates":
+                # Node của subgraph tầng sâu (vd `text_flow/plan`) chỉ về tới stream này, không tự lên stream của chat graph: chuyển tiếp qua `custom`
+                # cho UI debug dựng cây node; `turn.py` bỏ qua loại này. `ns[0]` là chính node này; node ngay dưới graph con đã tự lên stream cha nên không gửi lại.
+                if len(ns) > 1:
+                    for node, update in cast("dict[str, Any]", chunk).items():
+                        write({"type": "node", "ns": "/".join(p.split(":")[0] for p in ns[1:]), "node": node, "update": update})
+            elif final_depth < 0 or len(ns) <= final_depth:
+                final, final_depth = cast("dict[str, Any]", chunk), len(ns)
         known = {m.id for m in before}
         kept = {m.id for m in final["messages"]}
         return {
             "messages": [
                 *(RemoveMessage(id=i) for i in known - kept if i),
                 *(m for m in final["messages"] if m.id not in known),
-            ]
+            ],
+            "diag": {k: final[k] for k in _DIAG_KEYS if k in final},
         }
 
     return run
@@ -87,7 +118,7 @@ def build_chat_graph(
     graph = StateGraph(ChatState, context_schema=AgentContext)
     graph.add_node(
         "pre_diagnosis",
-        _pre_diagnosis_node(pre_diagnosis or build_pre_diagnosis_graph()),
+        _pre_diagnosis_node(pre_diagnosis or _default_pre_diagnosis()),
     )
     if settings.AGENT_TRIAGE_ENABLED:
         graph.add_node("triage", triage)
@@ -99,8 +130,7 @@ def build_chat_graph(
         graph.add_edge(START, "pre_diagnosis")
     graph.add_edge("pre_diagnosis", END)
     return graph.compile(
-        # InMemorySaver/InMemoryStore: đủ cho dev (worker 1 tiến trình duy nhất).
-        # Production cần backend bền vững hơn — xem `agent/tools/memory.py`.
+        # Bản RAM dùng cho test/debug và lúc import; worker thay bằng Postgres khi khởi động (`agent/persistence.py`).
         checkpointer=checkpointer or InMemorySaver(),
         store=store or build_memory_store(),
     )
@@ -115,7 +145,11 @@ def build_agent_graph(
     middleware: list[AgentMiddleware[AgentState[Any], AgentContext, Any]]
     | None = None,
 ) -> CompiledStateGraph[Any, AgentContext, Any, Any]:
-    """Chat graph đầy đủ"""
+    """Chat graph đầy đủ; `tools`/`system_prompt`/`middleware` chỉ áp dụng cho graph v1"""
+    if settings.AGENT_GRAPH_VERSION == "v2":
+        if tools or system_prompt or middleware:
+            logger.warning("graph v2 bỏ qua tools/system_prompt/middleware truyền vào")
+        return build_chat_graph(checkpointer, store)
     return build_chat_graph(
         checkpointer,
         store,

@@ -29,7 +29,7 @@ from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMes
 from langgraph.errors import GraphRecursionError  # noqa: E402
 from langgraph.types import Command  # noqa: E402
 
-from agent.middleware.evidence import evidence_status  # noqa: E402
+from agent.common.evidence import evidence_status  # noqa: E402
 from agent.context.agent_context import AgentContext  # noqa: E402
 from agent.tools.reasoning import INVALID_PREFIX, TOOL_NAME as REASONING, render_reasoning, validate_reasoning  # noqa: E402
 from app.config.settings import settings  # noqa: E402
@@ -150,7 +150,7 @@ def _check(steps: list[dict[str, Any]], messages: list[AnyMessage]) -> dict[str,
         # sau tra cứu phải có lập luận cập nhật (after_evidence / final) trước câu trả lời cuối
         later = [a.get("stage") for a in _reasoning_calls(steps)[1:]]
         checks["reasoned_after_evidence"] = any(st in ("after_evidence", "final") for st in later)
-        # không có bằng chứng (sách / web) thì giả thuyết cuối phải rỗng (mục 1)
+        # không có bằng chứng (sách / ca bệnh) thì giả thuyết cuối phải rỗng (mục 1)
         if evidence_status(messages) == "none":
             last = _reasoning_calls(steps)[-1] if _reasoning_calls(steps) else {}
             checks["no_hypothesis_without_evidence"] = not last.get("hypotheses")

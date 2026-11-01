@@ -8,7 +8,7 @@ import { AccessGate } from "./access-gate";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  // trang chat (hồ sơ bệnh nhân) cần TanStack Query; khu bác sĩ vẫn có client riêng trong `app-shell`
+  // trang chat (hồ sơ bệnh nhân) cần TanStack Query; khu bác sĩ/quản trị vẫn có client riêng trong `app-shell`
   const [queryClient] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } })
   );

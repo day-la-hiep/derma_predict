@@ -1,6 +1,6 @@
 import axios from "axios";
 import { api } from "@/services/client";
-import type { MedicalRecord, PatientProfile, PatientProfileInput } from "./types";
+import type { FinalizeReport, PatientProfile, PatientProfileInput } from "./types";
 
 /** Thông báo lỗi hiển thị cho người dùng: ưu tiên `detail` của FastAPI. */
 export function errorMessage(e: unknown): string {
@@ -28,5 +28,5 @@ export const profileApi = {
   remove: async (id: string) => {
     await api.delete(one(id));
   },
-  medicalRecords: (id: string) => unwrap<MedicalRecord[]>(api.get(`${one(id)}/medical-records`)),
+  finalizeReports: (id: string) => unwrap<FinalizeReport[]>(api.get(`${one(id)}/finalize-reports`)),
 };

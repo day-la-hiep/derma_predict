@@ -18,15 +18,17 @@ from app.api.deps import get_redis_client
 TOOL_DISPLAY_NAMES: dict[str, str] = {
     "record_reasoning": "Lập luận",
     "ask_user": "Hỏi lại người dùng",
-    "save_memory": "Lưu thông tin ghi nhớ",
+    "extract_facts": "Trích dữ kiện lâm sàng",
     "hybrid_retrieval": "Tra cứu sách giáo khoa",
     "semantic_search": "Tra cứu sách giáo khoa (theo ngữ nghĩa)",
     "keyword_search": "Tra cứu sách giáo khoa (theo từ khoá)",
     "knowledge_graph_query": "Tra cứu đồ thị tri thức",
+    "search_finalize_report": "Tra cứu ca bệnh tương tự (báo cáo kết luận)",
+    "search_finalize_report_by_image": "Tra cứu ca bệnh tương tự theo ảnh",
+    "query_document_graph": "Tra cuu do thi tri thuc tu sach",
     "classify_skin_image": "Phân tích ảnh tổn thương da",
     "analyze_skin_image_multimodal": "Mô tả tổn thương bằng AI đa phương thức",
-    "search_trusted_web": "Tra cứu nguồn web uy tín",
-    "fetch_trusted_page": "Đọc trang web uy tín",
+    "cross_check": "Kiểm tra chéo ảnh và mô tả của người bệnh",
 }
 
 
@@ -58,10 +60,12 @@ MAX_REASONING_RETRIES = 2
 
 
 class CriticVerdict(BaseModel):
+    """Phán quyết NỘI BỘ của critic: chỉ điền các trường, không chào hỏi, không viết lại câu trả lời."""
+
     approved: bool = Field(
         description="True nếu bản nháp đạt yêu cầu, False nếu cần viết lại"
     )
     feedback: str = Field(
         default="",
-        description="Lý do từ chối + điều cần sửa — để trống nếu approved=true",
+        description="Lý do từ chối + điều cần sửa: tối đa 40 từ, ngôi thứ ba, không chào hỏi — để trống nếu approved=true",
     )

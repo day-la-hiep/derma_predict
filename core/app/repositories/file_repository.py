@@ -17,6 +17,9 @@ class FileRepository:
         await self._db.flush()
         return file
 
+    async def get(self, file_id: str) -> File | None:
+        return await self._db.get(File, file_id)
+
     async def by_storage_keys(self, keys: list[str]) -> dict[str, File]:
         rows = await self._db.scalars(select(File).where(File.storage_key.in_(keys)))
         return {f.storage_key: f for f in rows}

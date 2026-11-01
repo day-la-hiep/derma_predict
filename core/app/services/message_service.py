@@ -1,5 +1,6 @@
 """Business logic cho Message"""
 
+import json
 from datetime import datetime
 
 from fastapi import UploadFile
@@ -9,6 +10,7 @@ from app.common.constant import MessageSender, MessageType
 from app.config.settings import settings
 from app.config.constants import (
     AGENT_ACTIVE_TURN_KEY,
+    AGENT_CANCEL_CHANNEL,
     AGENT_PENDING_TURN_KEY,
     AGENT_REQUEST_QUEUE,
 )
@@ -250,6 +252,25 @@ class MessageService:
         )
         await self._kick_turn(conversation_id)
         return self._to_output(message)
+
+    async def cancel_turn(self, conversation_id: str) -> None:
+        active_key = AGENT_ACTIVE_TURN_KEY.format(conversation_id=conversation_id)
+        message_id = await self._redis.get(active_key)
+        if message_id is None:
+            return
+
+        # Turn chưa tới worker (đang chờ mở SSE): không có gì để dừng, tự đóng message tại đây
+        if await self._redis.get_del(AGENT_PENDING_TURN_KEY.format(conversation_id=conversation_id)):
+            await self._messages.upsert_assistant(
+                message_id=message_id, conversation_id=conversation_id, content="", status="done", extra=None
+            )
+            await self._redis.delete(active_key)
+            await publish_room(
+                self._redis, conversation_id, {"type": "message.done", "message_id": message_id, "content": ""}
+            )
+            return
+
+        await self._redis.publish(AGENT_CANCEL_CHANNEL, json.dumps({"conversation_id": conversation_id}))
 
     async def _defer_turn(self, conversation_id: str, req: TurnRequest) -> None:
         """Lưu `TurnRequest` chờ flush (handler SSE publish sau khi subscribe)."""

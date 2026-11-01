@@ -82,7 +82,7 @@ class FakeGraph(DocumentGraphService):
 
     def __init__(self, repo: Any) -> None:
         super().__init__(repo, None, Path("/nonexistent"))
-        self.existing: dict[str, str] = {"5984": "disease", "100": "effect/phenotype", "DB00410": "drug", "9000": "gene/protein"}
+        self.existing: set[tuple[str, str]] = {("disease", "5984"), ("effect/phenotype", "100"), ("drug", "DB00410"), ("gene/protein", "9000")}
         self.nodes: dict[str, list[dict[str, Any]]] = {}
         self.edges: dict[str, list[dict[str, Any]]] = {}
 
@@ -93,8 +93,8 @@ class FakeGraph(DocumentGraphService):
     def doc_entities(self) -> list[dict[str, Any]]:
         return [n for rows in self.nodes.values() for n in rows if n["source"] == "DOC"]
 
-    def existing_types(self, ids: list[str]) -> dict[str, str]:
-        return {i: self.existing[i] for i in ids if i in self.existing}
+    def existing_nodes(self, pairs: list[tuple[str, str]]) -> set[tuple[str, str]]:
+        return {p for p in pairs if p in self.existing}
 
     def replace_document(self, document_id: str, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> None:
         self.nodes[document_id], self.edges[document_id] = nodes, edges
@@ -215,17 +215,18 @@ class GraphIndexTest(GraphBase):
         self.assertEqual((ind["x"], ind["y"], ind["display"]), ("DB00410", "5984", "indication"))
         self.assertEqual(ind["source_ref"], "Test, tr. 7")
 
-    def test_primekg_node_missing_from_subgraph_is_added_but_type_collision_is_skipped(self) -> None:
+    def test_primekg_node_missing_from_graph_is_added_and_same_id_of_other_type_does_not_block_it(self) -> None:
         self.run_graph()
         out = self.runner.run_stage("tbook", "graph_index", {}, force=True)
         added = {n["id"] for n in self.graph.nodes["tbook"]}
-        self.assertIn("102", added)  # HPO chưa có trong subgraph -> nạp thêm từ PrimeKG đầy đủ
+        self.assertIn("102", added)  # HPO chưa có trong đồ thị -> nạp thêm từ từ điển
         self.assertNotIn("9000", added)
         self.assertNotIn("skipped", out)
 
-        self.graph.existing["102"] = "disease"  # id trùng với nút khác loại đã có
+        self.graph.existing.add(("disease", "102"))  # id trùng nhưng khác loại: hai nút cùng tồn tại, không chặn nhau
         out = self.runner.run_stage("tbook", "graph_index", {}, force=True)
-        self.assertEqual(out["skipped"], {"trùng id khác loại trong Neo4j": 1})
+        self.assertNotIn("skipped", out)
+        self.assertIn(("effect/phenotype", "102"), {(n["type"], n["id"]) for n in self.graph.nodes["tbook"]})
 
     def test_duplicate_pair_is_merged_keeping_provenance_and_self_loop_is_skipped(self) -> None:
         self.run_graph()

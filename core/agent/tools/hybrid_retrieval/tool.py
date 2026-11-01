@@ -1,5 +1,6 @@
 """Tool tra cứu cho agent"""
 import json
+import logging
 from typing import Any
 
 from langchain_core.tools import tool
@@ -9,6 +10,8 @@ from agent.tools.hybrid_retrieval.kg import extract_entities
 from agent.tools.hybrid_retrieval.kg_templates import INTENTS, Intent, run_intent
 from agent.tools.hybrid_retrieval.pipeline import LEG_LIMIT, expand_query, rank_candidates, run_hybrid, to_candidates
 from agent.tools.hybrid_retrieval.semantic import semantic_search as semantic_leg
+
+logger = logging.getLogger(__name__)
 
 _MAX_TOP_K = 10
 _MAX_KG_TOP_K = 30
@@ -54,7 +57,8 @@ async def _book_response(
 async def _bm25_query(query: str) -> str:
     try:
         entities = await extract_entities(query)
-    except Exception:  # noqa: BLE001  # LLM lỗi -> vẫn tìm từ khoá bằng query gốc
+    except Exception as exc:  # noqa: BLE001  # LLM lỗi -> vẫn tìm từ khoá bằng query gốc
+        logger.error("[keyword_search] không trích được thực thể để mở rộng query: %s", exc, exc_info=True)
         entities = []
     return expand_query(query, entities)
 
@@ -124,6 +128,7 @@ async def semantic_search(query: str, top_k: int = 5) -> str:
     try:
         payloads = await semantic_leg(query, LEG_LIMIT)
     except Exception as exc:  # noqa: BLE001  # Qdrant / embedding lỗi -> báo cho model thay vì làm hỏng cả lượt
+        logger.error("[semantic_search] lỗi: %s", exc, exc_info=True)
         return _dump({"query": query, "evidence_found": False, "results": [], "notes": [f"semantic_search không dùng được: {type(exc).__name__}: {exc}"]})
     return await _book_response(
         query, payloads, top_k, "semantic", "KHÔNG có đoạn sách nào khớp (chưa index sách, hoặc không có đoạn liên quan)."
@@ -149,6 +154,7 @@ async def keyword_search(query: str, top_k: int = 5) -> str:
         bm25_query = await _bm25_query(query)
         payloads = await bm25_search(bm25_query, LEG_LIMIT)
     except Exception as exc:  # noqa: BLE001
+        logger.error("[keyword_search] lỗi: %s", exc, exc_info=True)
         return _dump({"query": query, "evidence_found": False, "results": [], "notes": [f"keyword_search không dùng được: {type(exc).__name__}: {exc}"]})
     return await _book_response(
         query, payloads, top_k, "bm25", "KHÔNG có đoạn sách nào chứa các từ khoá này (chưa index sách, hoặc không khớp).", bm25_query
@@ -187,6 +193,7 @@ async def knowledge_graph_query(intent: Intent, entities: list[str], top_k: int 
     try:
         facts, notes, resolved = await run_intent(intent, entities, top_k)
     except Exception as exc:  # noqa: BLE001
+        logger.error("[knowledge_graph_query] lỗi intent=%s: %s", intent, exc, exc_info=True)
         return _dump({"query": query, "results": [], "notes": [f"knowledge_graph_query không dùng được: {type(exc).__name__}: {exc}"]})
     results = _clean([{"source": "kg", "title": "PrimeKG / DermO", **f} for f in facts])
     return _dump({"query": query, "intent": intent, **resolved, "results": results, "notes": notes})

@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from dotenv import find_dotenv, load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -59,9 +60,8 @@ class Settings(BaseSettings):
     # Chunk tài liệu (pipeline/document_ingest, bước "Lưu vào kho tri thức"): mỗi point = 1 chunk đã gắn phần/chương/mục/trang,
     # payload có `document_id` để xoá/lọc theo tài liệu. Embedding gọi OpenRouter (`agent/common/embeddings.py`, cosine).
     QDRANT_DOCUMENT_COLLECTION: str = "derma_document_chunks_v4"  # v4: Qwen3-Embedding-8B (4096 chiều); v2/v3 khác số chiều nên không dùng lại được
-    # Collection sách cũ (trước khi đổi Book -> Document, payload `book_id`/`book_title`) vẫn được agent ĐỌC cùng collection mới để
-    # không mất dữ liệu đã nạp; pipeline không ghi vào đây. Rỗng = bỏ qua.
-    QDRANT_LEGACY_BOOK_COLLECTION: str = "derma_book_chunks"
+    # Collection ca bệnh thực tế (finalize reports) do bác sĩ chốt, dùng làm nguồn ca tham khảo cho chatbot
+    QDRANT_FINALIZE_REPORT_COLLECTION: str = "derma_finalize_reports"
     # Embedding + reranker Qwen3 gọi qua OpenRouter (cùng OPENROUTER_API_KEY với LLM). Đổi EMBEDDING_MODEL / EMBEDDING_DIM thì phải đổi
     # QDRANT_DOCUMENT_COLLECTION và index lại sách. Reranker lỗi thì tool tự bỏ bước rerank và dùng thứ tự RRF.
     EMBEDDING_MODEL: str = "qwen/qwen3-embedding-8b"
@@ -73,28 +73,11 @@ class Settings(BaseSettings):
     NEO4J_URL: str = "bolt://localhost:7687"
     NEO4J_USER: str = "neo4j"
     NEO4J_PASSWORD: str = "derma12345"
-    # Cạnh của agent `knowledge_graph_query` lấy từ những nguồn nào: "KG" = PrimeKG/DermO/BYT gốc (cạnh không có
+    # Cạnh của agent `knowledge_graph_query` lấy từ những nguồn nào: "KG" = PrimeKG/DermO gốc (cạnh không có
     # `source`), "DOC" = cạnh trích từ sách (bước graph_index). Mặc định chưa dùng DOC cho tới khi benchmark xong.
     KG_EDGE_SOURCES: list[str] = ["KG"]
-    # Từ điển khớp thực thể cho bước trích quan hệ từ tài liệu (`data_ingest/primekg/scripts/02_build_entity_lexicon.py`)
-    GRAPH_LEXICON_DIR: str = str(_REPO_ROOT / "core" / "data_ingest" / "01_normalize" / "output" / "kg")
-
-    # ----- Web search nguồn uy tín (agent/tools/web_search.py) -----
-    # Rỗng = tool trả thông báo "chưa cấu hình", không crash. Tavily lọc domain ngay ở provider
-    # (`include_domains`); code vẫn lọc lại phía server.
-    TAVILY_API_KEY: str = ""
-    TRUSTED_WEB_DOMAINS: list[str] = [
-        "aad.org",
-        "dermnetnz.org",
-        "medlineplus.gov",
-        "who.int",
-        "nih.gov",
-        "cdc.gov",
-        "nhs.uk",
-        "mayoclinic.org",
-        "moh.gov.vn",
-        "kcb.vn",
-    ]
+    # Từ điển khớp thực thể cho bước trích quan hệ từ tài liệu: dữ liệu đã build của đồ thị nền (`make kg-build`)
+    GRAPH_LEXICON_DIR: str = str(_REPO_ROOT / "core" / "graph_base" / "data" / "build")
 
     # ----- CORS -----
     CORS_ORIGINS: list[str] = ["*"]
@@ -143,6 +126,20 @@ class Settings(BaseSettings):
     # model của hội thoại — đặt model nhỏ, rẻ hơn ở đây cũng được vì việc phân loại đơn giản.
     AGENT_TRIAGE_ENABLED: bool = True
     AGENT_TRIAGE_MODEL: str = ""
+    # Graph v2: cho `choose_tools` dùng tool `search_finalize_report` (tra ca bệnh thực tế tương tự). Tắt thì tool và dòng hướng dẫn trong prompt đều bị bỏ.
+    AGENT_FINALIZE_REPORT_SEARCH_ENABLED: bool = True
+
+    # Phiên bản graph tiền chẩn đoán: "v1" = create_agent + middleware (`agent/graph/v1`), "v2" = StateGraph plan → retrieve → reflect → answer
+    # (`agent/graph/v2`). Mặc định v1 để hành vi hiện tại không đổi; đổi cần khởi động lại worker.
+    AGENT_GRAPH_VERSION: Literal["v1", "v2"] = "v1"
+
+    # Memory dài hạn theo hồ sơ bệnh nhân (`agent/tools/memory.py`): tin người dùng vào bộ đệm sau mỗi lượt (không gọi LLM); khi đủ AGENT_MEMORY_BATCH_MAX_PENDING
+    # tin hoặc đã qua AGENT_MEMORY_BATCH_INTERVAL_MIN phút kể từ batch trước thì một lần gọi LLM cập nhật memory cho cả loạt (đặt interval = 0 để chỉ batch theo số tin).
+    # Gom (hợp nhất) khi số bản ghi >= AGENT_MEMORY_CONSOLIDATE_AT, hoặc đã qua AGENT_MEMORY_CONSOLIDATE_DAYS ngày và có từ 5 thay đổi.
+    AGENT_MEMORY_BATCH_INTERVAL_MIN: int = 60
+    AGENT_MEMORY_BATCH_MAX_PENDING: int = 20
+    AGENT_MEMORY_CONSOLIDATE_AT: int = 15
+    AGENT_MEMORY_CONSOLIDATE_DAYS: int = 7
 
     # Chỉ áp dụng khi AGENT_MODEL dùng provider "google_genai" (Gemini "thinking" —
     # xem `agent/llm.py`); OpenRouter/model khác không hỗ trợ tham số này.
@@ -211,6 +208,17 @@ class Settings(BaseSettings):
     # (prefix `document/<document_id>/`). Toàn bộ do backend đọc/ghi — FE không truy cập MinIO trực tiếp.
     MINIO_DOCUMENTS_BUCKET: str = "derma-documents"
     MINIO_SECURE: bool = False
+
+    # ----- Video call (WebRTC) -----
+    # STUN đủ cho NAT thường; mạng di động/firewall cần TURN (coturn trong docker-compose.yml). TURN_URL rỗng = chỉ STUN.
+    STUN_URLS: list[str] = ["stun:stun.l.google.com:19302"]
+    TURN_URL: str = ""  # ví dụ "turn:localhost:3478"; máy khác mạng phải là IP/domain public
+    TURN_SECRET: str = "derma-turn-secret"  # khớp `static-auth-secret` của coturn
+    TURN_CREDENTIAL_TTL_SECONDS: int = 3600
+    # TURN dịch vụ ngoài (Metered Open Relay): credential tĩnh, để trong .env, không commit
+    METERED_TURN_HOST: str = "standard.relay.metered.ca"
+    METERED_TURN_USERNAME: str = ""
+    METERED_TURN_CREDENTIAL: str = ""
 
     # ----- Skin CNN classifier (agent/tools/skin_image_classifier.py) -----
     # Checkpoint gốc nằm ở model/ (sibling repo root, xem model/test_cnn.py) — không copy

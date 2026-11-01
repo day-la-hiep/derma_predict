@@ -1,16 +1,21 @@
 """Các bước tra cứu sách dùng chung cho tool của agent và benchmark (`core/benchmark/`)"""
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
 from agent.tools.hybrid_retrieval.bm25 import bm25_search
-from agent.tools.hybrid_retrieval.fusion import book_result, merge_chunks
+from agent.tools.hybrid_retrieval.fusion import merge_by_id
 from agent.tools.hybrid_retrieval.kg import ExtractedEntity, extract_entities
 from agent.tools.hybrid_retrieval.reranker import rerank
 from agent.tools.hybrid_retrieval.semantic import semantic_search as semantic_leg
+from agent.tools.hybrid_retrieval.corpus import DOCUMENT_CORPUS
+from app.services.retrieval_service import RetrievalFilter, RetrievalCorpus
 
 T = TypeVar("T")
+
+logger = logging.getLogger(__name__)
 
 LEG_LIMIT = 20  # số chunk lấy về từ mỗi nhánh (semantic / BM25) trước khi trộn / rerank
 POOL = 20  # số chunk giữ lại sau RRF để đem rerank
@@ -41,10 +46,10 @@ def expand_query(query: str, entities: list[ExtractedEntity]) -> str:
     return " ".join([query, *extra])
 
 
-def to_candidates(payloads: Payloads) -> list[dict[str, Any]]:
+def to_candidates(payloads: Payloads, corpus: RetrievalCorpus = DOCUMENT_CORPUS) -> list[dict[str, Any]]:
     # khoá bắt đầu bằng "_" bị `_clean` của tool loại khỏi kết quả trả cho agent
     return [
-        {**book_result(p), "_chunk_id": str(p.get("chunk_id") or ""), "_passage": str(p.get("context_text") or p.get("text", ""))[:PASSAGE_CHARS]}
+        {**corpus.to_result(p), "_id": str(p.get(corpus.id_key) or ""), "_passage": str(p.get("context_text") or p.get("text", ""))[:PASSAGE_CHARS]}
         for p in payloads
     ]
 
@@ -64,6 +69,7 @@ async def rank_candidates(
 def _unwrap(name: str, result: list[T] | BaseException, notes: list[str]) -> list[T]:
     """Nhánh lỗi -> rỗng + ghi chú, để các nhánh còn lại vẫn cho kết quả."""
     if isinstance(result, BaseException):
+        logger.error("[hybrid] nhánh %s lỗi: %s: %s", name, type(result).__name__, result, exc_info=result)
         notes.append(f"Nhánh {name} không dùng được: {type(result).__name__}: {result}")
         return []
     return result
@@ -72,27 +78,32 @@ def _unwrap(name: str, result: list[T] | BaseException, notes: list[str]) -> lis
 async def run_hybrid(
     query: str,
     *,
+    corpus: RetrievalCorpus = DOCUMENT_CORPUS,
+    filter: RetrievalFilter | None = None,
     semantic_fn: Callable[[str, int], Awaitable[Payloads]] | None = None,
     bm25_fn: Callable[[str, int], Awaitable[Payloads]] | None = None,
     entities_fn: Callable[[str], Awaitable[list[ExtractedEntity]]] | None = None,
     rerank_fn: Callable[[str, list[str]], Awaitable[list[float] | None]] | None = None,
 ) -> HybridResult:
     notes: list[str] = []
+    semantic_fn = semantic_fn or (lambda q, n: semantic_leg(q, n, corpus, filter))
+    bm25_fn = bm25_fn or (lambda q, n: bm25_search(q, n, corpus, filter))
     # trích thực thể một lần để mở rộng query BM25 (Việt–Anh)
     try:
         entities = await (entities_fn or extract_entities)(query)
     except Exception as exc:  # noqa: BLE001
+        logger.error("[hybrid] không trích được thực thể để mở rộng query: %s", exc, exc_info=True)
         entities = []
         notes.append(f"Không mở rộng được query Việt–Anh ({type(exc).__name__}) — BM25 dùng query gốc.")
     bm25_query = expand_query(query, entities)
     semantic_r, bm25_r = await asyncio.gather(
-        (semantic_fn or semantic_leg)(query, LEG_LIMIT), (bm25_fn or bm25_search)(bm25_query, LEG_LIMIT), return_exceptions=True
+        semantic_fn(query, LEG_LIMIT), bm25_fn(bm25_query, LEG_LIMIT), return_exceptions=True
     )
     semantic = _unwrap("semantic", semantic_r, notes)
     bm25 = _unwrap("bm25", bm25_r, notes)
 
-    # trộn 2 nhánh chunk theo RRF, khử trùng theo chunk_id
-    candidates = to_candidates(merge_chunks(semantic, bm25, POOL))
+    # trộn 2 nhánh theo RRF, khử trùng theo id của nguồn
+    candidates = to_candidates(merge_by_id(semantic, bm25, POOL, corpus.id_key), corpus)
     reranked = await rank_candidates(query, candidates, rerank_fn) if candidates else None
     return HybridResult(
         bm25_query=bm25_query,

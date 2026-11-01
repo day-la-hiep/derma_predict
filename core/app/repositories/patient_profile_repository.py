@@ -5,7 +5,7 @@ from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation import Conversation
-from app.models.medical_record import MedicalRecord
+from app.models.finalize_report import FinalizeReport
 from app.models.patient_profile import PatientProfile
 
 
@@ -62,9 +62,9 @@ class PatientProfileRepository:
         await self._db.flush()
 
     async def has_linked_data(self, profile_id: str) -> bool:
-        """Có hội thoại hoặc bệnh án trỏ tới — xoá sẽ mất dữ liệu y khoa (và `conversations` không cascade)."""
+        """Có hội thoại hoặc báo cáo kết luận trỏ tới — xoá sẽ mất dữ liệu y khoa (và `conversations` không cascade)."""
         stmt = select(
             exists().where(Conversation.patient_profile_id == profile_id)
-            | exists().where(MedicalRecord.patient_profile_id == profile_id)
+            | exists().where(FinalizeReport.patient_profile_id == profile_id)
         )
         return bool((await self._db.execute(stmt)).scalar())

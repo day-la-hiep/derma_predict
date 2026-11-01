@@ -25,10 +25,32 @@ class RabbitMQClient:
         self._connection: AbstractRobustConnection | None = None
         self._channel: AbstractChannel | None = None
 
-    async def connect(self) -> None:
-        self._connection = await aio_pika.connect_robust(self._url)
-        self._channel = await self._connection.channel()
-        await self._channel.set_qos(prefetch_count=10)
+    async def connect(self, retries: int = 5, delay: float = 1.5) -> None:
+        import asyncio
+        import logging
+
+        logger = logging.getLogger(__name__)
+        last_err: Exception | None = None
+
+        for attempt in range(1, retries + 1):
+            try:
+                self._connection = await aio_pika.connect_robust(self._url)
+                self._channel = await self._connection.channel()
+                await self._channel.set_qos(prefetch_count=10)
+                return
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                if attempt < retries:
+                    logger.warning(
+                        "Kết nối RabbitMQ thất bại (lần %d/%d): %s. Đang thử lại sau %.1fs...",
+                        attempt,
+                        retries,
+                        e,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    raise last_err
 
     async def close(self) -> None:
         if self._channel is not None:

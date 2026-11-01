@@ -1,36 +1,30 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Derma Hospital — Frontend (`fe/`)
 
-## Getting Started
+Next.js (App Router) + TypeScript. Gọi Core ở `NEXT_PUBLIC_API_URL` (mặc định `http://localhost:3050/api/v1`).
 
-First, run the development server:
+## Chạy
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.local.example .env.local   # NEXT_PUBLIC_USE_MOCK=false để gọi Core thật
+pnpm install
+pnpm dev                           # http://localhost:3010 (hoặc `make frontend` ở gốc repo)
+pnpm exec tsc --noEmit && pnpm lint
 ```
 
-Open [http://localhost:3010](http://localhost:3010) with your browser to see the result.
+## Route
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Route | Việc | Dữ liệu |
+|---|---|---|
+| `/chats` | chat với trợ lý AI, hồ sơ bệnh nhân, xin tư vấn bác sĩ, gọi video | Zustand store + SSE (`features/chat/`, `features/video-call/`) |
+| `/doctor` | bác sĩ: hàng đợi ca tư vấn, chat, báo cáo AI, chốt báo cáo kết luận | `features/doctor/` |
+| `/doctor/records` | lịch sử khám (báo cáo kết luận) | `features/doctor/` |
+| `/doctor/documents`, `/doctor/documents/[documentId]` | admin: pipeline số hoá sách (cần Ingest Worker) | TanStack Query, poll (`features/document-pipeline/`) |
+| `/doctor/graph-schema` | admin: loại thực thể và quan hệ của đồ thị sách | `features/graph-schema/` |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Đăng nhập: `features/auth/`, token gắn `Authorization: Bearer` ở `services/client.ts`; `app/access-gate.tsx` chặn khi chưa đăng nhập.
 
-## Learn More
+## Tài liệu
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [docs/backend-contract.md](docs/backend-contract.md) — hợp đồng REST + SSE với Core.
+- [docs/FRONTEND_LOGIC_SPECIFICATION.md](docs/FRONTEND_LOGIC_SPECIFICATION.md) — logic FE.
+- Quy ước thư mục / state: skill `derma-fe-conventions` (`../.claude/skills/derma-fe-conventions/SKILL.md`).

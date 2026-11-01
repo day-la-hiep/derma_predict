@@ -21,8 +21,8 @@ export const EMPTY_PROFILE: PatientProfileInput = {
 };
 
 export const HINTS = {
-  delete: "Chỉ xoá được hồ sơ chưa có cuộc trò chuyện hay bệnh án, và không phải hồ sơ cuối cùng.",
+  delete: "Chỉ xoá được hồ sơ chưa có cuộc trò chuyện hay báo cáo kết luận, và không phải hồ sơ cuối cùng.",
   allergies: "Dị ứng thuốc, thức ăn… do bạn tự khai.",
   history: "Bệnh đã/đang mắc, phẫu thuật, bệnh mạn tính… do bạn tự khai.",
-  records: "Bệnh án do bác sĩ ghi sau mỗi lần khám. Bạn chỉ xem, không sửa được.",
+  reports: "Báo cáo kết luận do bác sĩ ghi sau mỗi lần khám. Bạn chỉ xem, không sửa được.",
 };

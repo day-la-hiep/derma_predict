@@ -14,12 +14,12 @@ def rrf(*rankings: list[str]) -> dict[str, float]:
     return scores
 
 
-def merge_chunks(semantic: list[dict[str, Any]], bm25: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
-    """Payload chunk của hai nhánh, khử trùng theo `chunk_id`, xếp theo điểm RRF giảm dần, lấy `limit` đầu."""
+def merge_by_id(semantic: list[dict[str, Any]], bm25: list[dict[str, Any]], limit: int, id_key: str = "chunk_id") -> list[dict[str, Any]]:
+    """Payload của hai nhánh, khử trùng theo `id_key`, xếp theo điểm RRF giảm dần, lấy `limit` đầu."""
     payloads: dict[str, dict[str, Any]] = {}
     for payload in [*semantic, *bm25]:
-        payloads.setdefault(str(payload.get("chunk_id")), payload)
-    scores = rrf([str(p.get("chunk_id")) for p in semantic], [str(p.get("chunk_id")) for p in bm25])
+        payloads.setdefault(str(payload.get(id_key)), payload)
+    scores = rrf([str(p.get(id_key)) for p in semantic], [str(p.get(id_key)) for p in bm25])
     return [payloads[k] for k in sorted(scores, key=lambda k: scores[k], reverse=True)[:limit]]
 
 

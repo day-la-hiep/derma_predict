@@ -15,7 +15,7 @@ class PatientProfileOutput(BaseModel):
     created_at: str
 
 
-class MedicalRecordOutput(BaseModel):
+class PatientFinalizeReportOutput(BaseModel):
     # không trả `is_reference_case`: cờ nội bộ của bác sĩ
     id: str
     diagnosis: str

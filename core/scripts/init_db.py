@@ -17,7 +17,7 @@ from app.models.admin import Admin  # noqa: E402
 from app.models.doctor import Doctor  # noqa: E402
 from app.models.document import Document, DocumentOverride, DocumentStage  # noqa: E402
 from app.models.file import File  # noqa: E402
-from app.models.medical_record import MedicalRecord  # noqa: E402
+from app.models.finalize_report import FinalizeReport  # noqa: E402
 from app.models.patient_profile import PatientProfile  # noqa: E402
 from app.models.user import User  # noqa: E402
 
@@ -46,7 +46,7 @@ FAMILY_PROFILES = [
 
 
 def _snapshot(profile_id: str, reasoning: str, urgency: str, instructions: list[str], facts: list[tuple[str, str, str, str]]) -> dict:
-    """`MedicalRecordSnapshot` mẫu; fact = (fact_type, label, detail, origin). Dữ liệu mẫu không có tin nhắn nguồn."""
+    """`FinalizeReportSnapshot` mẫu; fact = (fact_type, label, detail, origin). Dữ liệu mẫu không có tin nhắn nguồn."""
     if profile_id == "pp-user-1-self":
         u = next(x for x in USERS if x["id"] == "user-1")
         p = {"full_name": u["full_name"], "dob": u["dob"], "gender": u["gender"], "relationship": "self",
@@ -67,8 +67,8 @@ def _snapshot(profile_id: str, reasoning: str, urgency: str, instructions: list[
     }
 
 
-# bệnh án mẫu (đã chốt) cho màn "Bệnh án" của bệnh nhân và màn "Lịch sử khám" của bác sĩ
-MEDICAL_RECORDS = [
+# báo cáo kết luận mẫu (đã chốt) cho màn "Kết luận" của bệnh nhân và màn "Lịch sử khám" của bác sĩ
+FINALIZE_REPORTS = [
     {
         "id": "mr-user-1-1",
         "patient_profile_id": "pp-user-1-self",
@@ -265,15 +265,15 @@ def _seed(s: Session) -> list[str]:
             s.add(PatientProfile(**p))
             created.append(f"patient_profile {p['id']}")
     s.flush()
-    for r in MEDICAL_RECORDS:
-        existing = s.get(MedicalRecord, r["id"])
+    for r in FINALIZE_REPORTS:
+        existing = s.get(FinalizeReport, r["id"])
         if existing is None:
-            s.add(MedicalRecord(**r))
-            created.append(f"medical_record {r['id']}")
+            s.add(FinalizeReport(**r))
+            created.append(f"finalize_report {r['id']}")
         elif existing.snapshot is None:
-            # bệnh án mẫu tạo trước khi có cột snapshot: bổ sung, không đụng nội dung khác
+            # báo cáo kết luận mẫu tạo trước khi có cột snapshot: bổ sung, không đụng nội dung khác
             existing.snapshot = r["snapshot"]
-            created.append(f"medical_record {r['id']} (bổ sung snapshot)")
+            created.append(f"finalize_report {r['id']} (bổ sung snapshot)")
     s.commit()
     return created
 

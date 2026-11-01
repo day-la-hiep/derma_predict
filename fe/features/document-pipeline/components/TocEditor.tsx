@@ -1,15 +1,16 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { Check, Pencil, Plus, RefreshCw, Trash2, Undo2, X } from "lucide-react";
+import { Check, Hash, ListTree, Pencil, Plus, RefreshCw, Trash2, Undo2, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { Chips, Pager, SearchBox, SectionCard, selectCls } from "./bits";
+import { Chips, StepTitle, Pager, SearchBox, selectCls } from "./bits";
 import { errorMessage, documentApi } from "../api";
 import { LEVEL_TONE, LEVELS } from "../constants";
 import { usePage, useRefreshDocument } from "../hooks";
@@ -175,15 +176,15 @@ function OffsetCard({
   const votes = Object.entries(info.votes ?? {});
   const total = doc.entries.filter((e) => !e.out_of_range && e.page != null).length;
   return (
-    <SectionCard
-      title="Số trang"
-      description="Số trang in trong sách thường khác số trang của file PDF (do bìa, lời nói đầu…). Hệ thống tự tính độ chênh bằng cách đối chiếu tên mục với nội dung sách; nếu sai, bạn có thể nhập tay. Mục “đã định vị” là mục đã tìm thấy đúng dòng tiêu đề trong sách."
-      action={
+    <div className="space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          Số trang in trong sách thường khác số trang của file PDF (do bìa, lời nói đầu…). Hệ thống tự tính độ chênh bằng cách đối chiếu tên mục với nội dung sách; nếu sai, bạn có thể nhập tay. Mục “đã định vị” là mục đã tìm thấy đúng dòng tiêu đề trong sách.
+        </p>
         <Button variant="outline" size="sm" disabled={pending} onClick={onRefresh} title="Tính lại độ chênh số trang, vd sau khi đã đọc xong nội dung sách">
           <RefreshCw className={cn(pending && "animate-spin")} /> Tính lại
         </Button>
-      }
-    >
+      </div>
       <div className="flex flex-wrap items-center gap-3 text-xs">
         <Input
           value={v}
@@ -219,7 +220,7 @@ function OffsetCard({
           </span>
         )}
       </div>
-    </SectionCard>
+    </div>
   );
 }
 
@@ -277,23 +278,43 @@ export function TocEditor({
         </Alert>
       ))}
 
-      <div className="flex flex-wrap items-center gap-1.5 text-xs">
-        <span className="text-muted-foreground">Trang mục lục ({doc.pages_source === "user" ? "bạn nhập" : "AI tìm"}):</span>
-        {doc.toc_pages.slice(0, 24).map((p) => (
-          <PageChip key={p} page={p} onOpen={onPreview} />
-        ))}
-        {doc.toc_pages.length > 24 && <span className="text-muted-foreground">… {doc.toc_pages.length} trang</span>}
-      </div>
-
-      <OffsetCard
-        key={`${doc.offset}|${doc.offset_info?.source}`}
-        doc={doc}
-        pending={pending}
-        onSave={(o) => update.mutate(o == null ? { clear_offset: true } : { offset: o })}
-        onRefresh={() => recompute.mutate()}
-      />
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="sticky top-[4.5rem] flex h-[calc(100vh-6rem)] min-h-96 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
+      {/* khối cao bằng khung preview, ghim cùng mốc; chỉ phần bảng cuộn bên trong */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <StepTitle step="toc" />
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm">
+              <ListTree /> Trang mục lục ({doc.toc_pages.length})
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-96 space-y-2 p-3">
+            <p className="text-xs text-muted-foreground">Trang mục lục ({doc.pages_source === "user" ? "bạn nhập" : "AI tìm"}):</p>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              {doc.toc_pages.slice(0, 24).map((p) => (
+                <PageChip key={p} page={p} onOpen={onPreview} />
+              ))}
+              {doc.toc_pages.length > 24 && <span className="text-muted-foreground">… {doc.toc_pages.length} trang</span>}
+            </div>
+          </PopoverContent>
+        </Popover>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm">
+              <Hash /> {doc.offset == null ? "Số trang: chưa có" : `Chênh ${doc.offset > 0 ? "+" : ""}${doc.offset}`}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-[32rem] max-w-[90vw] p-4">
+            <OffsetCard
+              key={`${doc.offset}|${doc.offset_info?.source}`}
+              doc={doc}
+              pending={pending}
+              onSave={(o) => update.mutate(o == null ? { clear_offset: true } : { offset: o })}
+              onRefresh={() => recompute.mutate()}
+            />
+          </PopoverContent>
+        </Popover>
         <Chips
           value={filter}
           onChange={setFilter}
@@ -304,6 +325,7 @@ export function TocEditor({
             { value: "unanchored", label: "Chưa định vị", count: count(unanchored) },
           ]}
         />
+        </div>
         <div className="flex items-center gap-2">
           <SearchBox value={q} onChange={setQ} placeholder="Tìm tên mục..." className="w-48" />
           <Button variant="outline" size="sm" onClick={() => setAdd({ open: true, entry: null })}>
@@ -312,7 +334,7 @@ export function TocEditor({
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-border bg-card">
+      <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full min-w-[44rem] text-left">
           <thead className="border-b border-border bg-muted/40 text-[11px] font-medium text-muted-foreground">
             <tr>
@@ -415,7 +437,8 @@ export function TocEditor({
           </tbody>
         </table>
       </div>
-      <Pager page={page} pageSize={PAGE_SIZE} total={shown.length} onPage={setPage} />
+      <Pager attached page={page} pageSize={PAGE_SIZE} total={shown.length} onPage={setPage} />
+      </div>
 
       <AddDialog
         key={add.entry?.id ?? "end"}

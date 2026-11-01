@@ -165,7 +165,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
             <Activity className="size-3.5 text-brand" aria-hidden="true" />
             Chăm sóc bắt đầu từ thấu hiểu
           </p>
-          <h1 className="max-w-lg font-display text-[2.65rem] leading-[1.08] tracking-[-0.03em] sm:text-5xl xl:text-[3.5rem]">
+          <h1 className="max-w-lg font-display font-semibold text-[2.65rem] leading-[1.08] tracking-[-0.03em] sm:text-5xl xl:text-[3.5rem]">
             Lắng nghe làn da.
             <br />
             <span className="gradient-text">Chăm sóc từ hôm nay.</span>
@@ -243,7 +243,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
             </div>
 
             <div className="mb-6">
-              <h2 className="font-display text-3xl leading-tight tracking-[-0.02em] sm:text-4xl">
+              <h2 className="font-display text-3xl font-semibold leading-tight tracking-[-0.02em] sm:text-4xl">
                 {isRegister ? (
                   <>
                     Tạo tài khoản

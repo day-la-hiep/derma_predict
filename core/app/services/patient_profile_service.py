@@ -1,10 +1,10 @@
-"""Business logic cho hồ sơ bệnh nhân của một tài khoản và bệnh án (chỉ đọc) của từng hồ sơ."""
+"""Business logic cho hồ sơ bệnh nhân của một tài khoản và báo cáo kết luận (chỉ đọc) của từng hồ sơ."""
 
 from app.dto.request.patient_profile import CreatePatientProfileInput, UpdatePatientProfileInput
-from app.dto.response.patient_profile import MedicalRecordOutput, PatientProfileOutput
+from app.dto.response.patient_profile import PatientFinalizeReportOutput, PatientProfileOutput
 from app.exception.errors import ConflictError, NotFoundError
 from app.models.patient_profile import PatientProfile
-from app.repositories.medical_record_repository import MedicalRecordRepository
+from app.repositories.finalize_report_repository import FinalizeReportRepository
 from app.repositories.patient_profile_repository import PatientProfileRepository
 
 
@@ -23,9 +23,9 @@ def to_output(p: PatientProfile) -> PatientProfileOutput:
 
 
 class PatientProfileService:
-    def __init__(self, profiles: PatientProfileRepository, records: MedicalRecordRepository) -> None:
+    def __init__(self, profiles: PatientProfileRepository, reports: FinalizeReportRepository) -> None:
         self._profiles = profiles
-        self._records = records
+        self._reports = reports
 
     async def _owned(self, user_id: str, profile_id: str) -> PatientProfile:
         profile = await self._profiles.get_for_user(user_id, profile_id)
@@ -54,18 +54,18 @@ class PatientProfileService:
         if len(await self._profiles.list_for_user(user_id)) <= 1:
             raise ConflictError("Không thể xoá hồ sơ cuối cùng của tài khoản.")
         if await self._profiles.has_linked_data(profile_id):
-            raise ConflictError("Hồ sơ đã có hội thoại hoặc bệnh án nên không thể xoá.")
+            raise ConflictError("Hồ sơ đã có hội thoại hoặc báo cáo kết luận nên không thể xoá.")
         await self._profiles.delete(profile)
 
-    async def list_medical_records(self, user_id: str, profile_id: str) -> list[MedicalRecordOutput]:
+    async def list_finalize_reports(self, user_id: str, profile_id: str) -> list[PatientFinalizeReportOutput]:
         await self._owned(user_id, profile_id)
         return [
-            MedicalRecordOutput(
+            PatientFinalizeReportOutput(
                 id=r.id,
                 diagnosis=r.diagnosis,
                 notes=r.notes,
                 doctor_name=doctor_name,
                 created_at=r.created_at.isoformat(),
             )
-            for r, doctor_name in await self._records.list_for_profile(profile_id)
+            for r, doctor_name in await self._reports.list_for_profile(profile_id)
         ]

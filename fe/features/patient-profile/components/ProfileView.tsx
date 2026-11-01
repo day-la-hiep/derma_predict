@@ -10,10 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { EMPTY_PROFILE, GENDER_LABELS, HINTS, RELATIONSHIP_LABELS } from "../constants";
-import { useMedicalRecords, useProfileActions, useProfiles } from "../hooks";
+import { useFinalizeReports, useProfileActions, useProfiles } from "../hooks";
 import type { Gender, PatientProfile, PatientProfileInput, ProfileRelationship } from "../types";
 
-type Tab = "info" | "records";
+type Tab = "info" | "reports";
 
 function age(dob: string): number | null {
   const d = new Date(dob);
@@ -112,11 +112,11 @@ function ProfileForm({ profile, onDone }: { profile: PatientProfile | null; onDo
   );
 }
 
-function MedicalRecords({ profileId }: { profileId: string }) {
-  const { data, isLoading, error } = useMedicalRecords(profileId);
+function FinalizeReports({ profileId }: { profileId: string }) {
+  const { data, isLoading, error } = useFinalizeReports(profileId);
   if (isLoading) return <p className="text-xs text-muted-foreground">Đang tải…</p>;
-  if (error) return <p className="text-xs text-destructive">Không tải được bệnh án.</p>;
-  if (!data?.length) return <p className="text-xs text-muted-foreground">Chưa có bệnh án.</p>;
+  if (error) return <p className="text-xs text-destructive">Không tải được báo cáo kết luận.</p>;
+  if (!data?.length) return <p className="text-xs text-muted-foreground">Chưa có báo cáo kết luận.</p>;
   return (
     <ul className="flex flex-col gap-3">
       {data.map((r) => (
@@ -206,7 +206,7 @@ export function ProfileView({ onBack }: { onBack: () => void }) {
             <div className="flex flex-col gap-5">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex gap-1 rounded-lg bg-muted p-1">
-                  {(["info", "records"] as const).map((t) => (
+                  {(["info", "reports"] as const).map((t) => (
                     <button
                       key={t}
                       type="button"
@@ -216,7 +216,7 @@ export function ProfileView({ onBack }: { onBack: () => void }) {
                         tab === t ? "bg-background text-foreground shadow-xs" : "text-muted-foreground"
                       )}
                     >
-                      {t === "info" ? "Thông tin" : "Bệnh án"}
+                      {t === "info" ? "Thông tin" : "Kết luận"}
                     </button>
                   ))}
                 </div>
@@ -236,13 +236,13 @@ export function ProfileView({ onBack }: { onBack: () => void }) {
                     </Button>
                   </Hint>
                 ) : (
-                  <HintIcon content={HINTS.records} />
+                  <HintIcon content={HINTS.reports} />
                 )}
               </div>
               {tab === "info" ? (
                 <ProfileForm key={selected.id} profile={selected} onDone={() => undefined} />
               ) : (
-                <MedicalRecords profileId={selected.id} />
+                <FinalizeReports profileId={selected.id} />
               )}
             </div>
           ) : null}

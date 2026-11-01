@@ -29,7 +29,9 @@ from app.infra.redis_client import RedisClient
 from app.models.document_stage import STAGE_BY_ID
 from app.repositories.document_repository import DocumentRepository, now_iso
 from app.services.document_graph_service import DocumentGraphService
+from app.services.graph_schema_service import GraphSchemaService
 from app.services.document_service import DocumentService
+from pipeline.document_ingest.graph_schema import CORE_SCHEMA
 from pipeline.document_ingest.stages import (
     StageCancelled,
     StageContext,
@@ -61,12 +63,13 @@ class DocumentIngestPipelineService:
         rabbitmq: RabbitMQClient | None = None,
         redis: RedisClient | None = None,
         graph: DocumentGraphService | None = None,
+        graph_schema: GraphSchemaService | None = None,
     ) -> None:
         """`rabbitmq`/`redis` chỉ Core cần (đẩy yêu cầu chạy + Dừng); ingest worker chỉ gọi `execute` nên để trống."""
         self.documentService, self._repo = documentService, repository
         self._rabbitmq, self._redis = rabbitmq, redis
         self._docling, self._embedding = docling, embedding
-        self._graph = graph
+        self._graph, self._graph_schema = graph, graph_schema
 
     def make_ctx(
         self,
@@ -100,6 +103,8 @@ class DocumentIngestPipelineService:
             # từ điển ~70k thực thể: chỉ nạp khi bước cần (lần đầu mất vài giây)
             lexicon=self._graph.lexicon() if self._graph is not None and stage_id in _GRAPH_STAGES else None,
             graph=self._graph if self._graph is not None and self._graph.configured else None,
+            # bước graph chỉ trích quan hệ đang bật; graph_index vẫn lưu triple đã duyệt của quan hệ vừa bị tắt
+            schema=self._graph_schema.schema(include_disabled=stage_id != "graph") if self._graph_schema is not None else CORE_SCHEMA,
             pdf=lambda: DocumentService.local_pdf(self._repo, document_id),
             cancel=cancel or threading.Event(),
         )

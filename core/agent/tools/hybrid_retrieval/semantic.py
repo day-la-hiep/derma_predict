@@ -1,15 +1,21 @@
-"""Nhánh semantic: embedding local (`agent/embeddings.py`) -> Qdrant, chunk sách của pipeline `document_ingest`."""
+"""Nhánh semantic: embedding local (`agent/embeddings.py`) -> Qdrant, mặc định là chunk sách của pipeline `document_ingest`."""
 
 from typing import Any
 
-from agent.common.embeddings import get_embeddings
-from app.api.deps import get_knowledge_base_service
+from agent.tools.hybrid_retrieval.corpus import DOCUMENT_CORPUS
+from app.api.deps import get_retrieval_service
+from app.services.retrieval_service import RetrievalFilter, RetrievalCorpus
 
 
-async def semantic_search(query: str, limit: int) -> list[dict[str, Any]]:
-    """Payload các chunk gần câu hỏi nhất, theo thứ tự giảm dần; rỗng khi chưa index sách nào."""
-    vector = await get_embeddings().aembed_query(query)
-    points = await get_knowledge_base_service().search_document_chunks(
-        vector=vector, limit=limit
+async def semantic_search(
+    query: str,
+    limit: int,
+    corpus: RetrievalCorpus = DOCUMENT_CORPUS,
+    filter: RetrievalFilter | None = None,
+) -> list[dict[str, Any]]:
+    """Payload gần câu hỏi nhất, theo thứ tự giảm dần; rỗng khi nguồn chưa index gì."""
+    vector = await corpus.embed_query(query)
+    points = await get_retrieval_service().dense(
+        corpus, vector=vector, limit=limit, filter=filter
     )
     return [p.payload for p in points if p.payload]

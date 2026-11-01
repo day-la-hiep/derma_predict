@@ -1,4 +1,4 @@
-"""Router hồ sơ bệnh nhân của tài khoản đăng nhập + bệnh án (chỉ đọc) của từng hồ sơ."""
+"""Router hồ sơ bệnh nhân của tài khoản đăng nhập + báo cáo kết luận (chỉ đọc) của từng hồ sơ."""
 
 from typing import Annotated
 
@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, status
 from app.api.deps import get_current_user, get_patient_profile_service
 from app.dto.common import ApiResponse
 from app.dto.request.patient_profile import CreatePatientProfileInput, UpdatePatientProfileInput
-from app.dto.response.patient_profile import MedicalRecordOutput, PatientProfileOutput
+from app.dto.response.patient_profile import PatientFinalizeReportOutput, PatientProfileOutput
 from app.models.user import User
 from app.services.patient_profile_service import PatientProfileService
 
@@ -49,11 +49,11 @@ async def delete_profile(profile_id: str, service: ServiceDep, current_user: Cur
 
 
 @router.get(
-    "/{profile_id}/medical-records",
-    response_model=ApiResponse[list[MedicalRecordOutput]],
-    operation_id="listMedicalRecords",
+    "/{profile_id}/finalize-reports",
+    response_model=ApiResponse[list[PatientFinalizeReportOutput]],
+    operation_id="listFinalizeReports",
 )
-async def list_medical_records(
+async def list_finalize_reports(
     profile_id: str, service: ServiceDep, current_user: CurrentUserDep
-) -> ApiResponse[list[MedicalRecordOutput]]:
-    return ApiResponse(data=await service.list_medical_records(current_user.id, profile_id))
+) -> ApiResponse[list[PatientFinalizeReportOutput]]:
+    return ApiResponse(data=await service.list_finalize_reports(current_user.id, profile_id))

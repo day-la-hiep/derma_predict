@@ -15,7 +15,7 @@ from app.exception.exception_handler import register_exception_handlers
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 from app.api.document_api import router
-from app.api.deps import get_document_service, get_document_ingest_pipeline_service
+from app.api.deps import get_document_service, get_document_ingest_pipeline_service, require_admin
 
 from pipeline.document_ingest.tests.test_document_pipeline import Base
 
@@ -75,6 +75,7 @@ class ApiTest(Base):
         self.svc = self.runner
         app.dependency_overrides[get_document_ingest_pipeline_service] = lambda: self.svc
         app.dependency_overrides[get_document_service] = lambda: self.vectors  # service dựng bằng runner của test (MinIO/Qdrant giả)
+        app.dependency_overrides[require_admin] = lambda: None  # test không đăng nhập
         self.base = "/api/v1/admin/documents"
 
     def seed_chunks(self) -> None:

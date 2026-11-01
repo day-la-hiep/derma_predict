@@ -8,7 +8,7 @@ from app.dto.base.document import DocumentTriple, GraphNodeRef
 from app.infra.llm_client import LLMError
 
 from ..graph_link import EntityLexicon, LexEntry, norm, new_node_id
-from ..graph_schema import ENTITY_TYPES, SLOT_BY_ID, SLOTS, TOPIC_ENTITY_TYPES, TOPIC_TYPES, UNMAPPED_KINDS, Relation, Slot
+from ..graph_schema import CORE_SCHEMA, TOPIC_ENTITY_TYPES, TOPIC_TYPES, UNMAPPED_KINDS, GraphSchema, Relation
 from ..textutil import sha
 from . import StageContext, StageError
 
@@ -90,14 +90,13 @@ def classify_topics(ctx: StageContext, topics: list[dict[str, Any]], by_id: dict
 class Linker:
     """Khớp chính xác ngay; chưa khớp thì gom lại cho LLM chọn trong ứng viên (một lượt cuối, theo lô)."""
 
-    def __init__(self, lexicon: EntityLexicon, allow_new: bool) -> None:
-        self.lex, self.allow_new = lexicon, allow_new
+    def __init__(self, lexicon: EntityLexicon, allow_new: bool, schema: GraphSchema) -> None:
+        self.lex, self.allow_new, self.schema = lexicon, allow_new, schema
         self.refs: dict[tuple[str, str, str], GraphNodeRef] = {}
         self.pending: dict[tuple[str, str, str], list[LexEntry]] = {}
 
-    @staticmethod
-    def key(type_: str, text: str, en: str) -> tuple[str, str, str]:
-        cs = ENTITY_TYPES[type_].case_sensitive
+    def key(self, type_: str, text: str, en: str) -> tuple[str, str, str]:
+        cs = self.schema.entity_types[type_].case_sensitive
         return type_, norm(en, cs), norm(text, cs)
 
     def ref(self, type_: str, text: str, en: str, alt: list[str] | None = None) -> GraphNodeRef:
@@ -108,7 +107,7 @@ class Linker:
         if hit is not None:
             r = self._linked(type_, text, en, hit, "exact")
         else:
-            r = GraphNodeRef(kg=ENTITY_TYPES[type_].kg, type=type_, text=text, en=en)
+            r = GraphNodeRef(kg=self.schema.entity_types[type_].kg, type=type_, text=text, en=en)
             cands = self.lex.candidates(type_, en or text, CANDIDATES)
             if cands:
                 self.pending[k] = cands
@@ -125,7 +124,7 @@ class Linker:
             for i in range(0, len(items), PICK_BATCH):
                 part = items[i : i + PICK_BATCH]
                 ctx.progress(i, len(items), "AI chọn nút khớp cho thuật ngữ chưa khớp chính xác")
-                payload = [{"key": str(n), "type": ENTITY_TYPES[k[0]].title, "text": self.refs[k].text, "en": self.refs[k].en,
+                payload = [{"key": str(n), "type": self.schema.entity_types[k[0]].title, "text": self.refs[k].text, "en": self.refs[k].en,
                             "candidates": [{"id": e.id, "name": e.name} for e in cands]} for n, (k, cands) in enumerate(part)]
                 try:
                     data = ctx.llm.complete_json(PICK_PROMPT, "Các mục (JSON):\n" + json.dumps(payload, ensure_ascii=False), name="graph_pick")
@@ -138,9 +137,9 @@ class Linker:
                     if picked is not None:
                         old = self.refs[k]
                         self.refs[k] = self._linked(k[0], old.text, old.en, picked, "llm")
-        if self.allow_new:
-            for k, r in self.refs.items():
-                if r.node_id is None:
+        for k, r in self.refs.items():
+            # loại do bác sĩ định nghĩa không có từ điển chuẩn: thực thể chưa có nút luôn là nút mới
+            if r.node_id is None and (self.allow_new or self.schema.entity_types[k[0]].kg == "doc"):
                     name = r.en or r.text
                     self.refs[k] = r.model_copy(update={"kg": "doc", "node_id": new_node_id(k[0], name), "name": name, "link_method": "new"})
 
@@ -153,15 +152,11 @@ def _norm_text(s: str) -> str:
     return " ".join(s.lower().replace("“", '"').replace("”", '"').replace("’", "'").split())
 
 
-def _slots_for(kind: str) -> list[Slot]:
-    return [s for s in SLOTS if s.topic == kind]
-
-
-def _slot_payload(kind: str) -> list[dict[str, str]]:
+def _slot_payload(schema: GraphSchema, kind: str) -> list[dict[str, str]]:
     out = []
-    for s in _slots_for(kind):
+    for s in schema.slots_for(kind):
         obj = s.relations[0].object_type
-        out.append({"id": s.id, "description": s.hint, "entity": s.entity_hint or ENTITY_TYPES[obj].hint})
+        out.append({"id": s.id, "description": s.hint, "entity": s.entity_hint or schema.entity_types[obj].hint})
     return out
 
 
@@ -174,7 +169,7 @@ def extract(ctx: StageContext, topic: dict[str, Any], chunk_ids: list[str], by_i
     llm = ctx.require_llm()
     payload = {
         "topic": {"kind": topic["kind"], "title": topic["title"], "en": topic["en"], "path": " > ".join(topic["path"])},
-        "slots": _slot_payload(topic["kind"]),
+        "slots": _slot_payload(ctx.schema, topic["kind"]),
         "chunks": [{"chunk_id": i, "text": by_id[i]["text"]} for i in chunk_ids],
     }
     try:
@@ -182,7 +177,7 @@ def extract(ctx: StageContext, topic: dict[str, Any], chunk_ids: list[str], by_i
     except LLMError as e:
         return {"error": str(e)[:200], "items": [], "unmapped": []}
     slots = data.get("slots") if isinstance(data, dict) else None
-    allowed = {s.id for s in _slots_for(topic["kind"])}
+    allowed = {s.id for s in ctx.schema.slots_for(topic["kind"])}
     items: list[dict[str, Any]] = []
     for sid, rows in (slots or {}).items() if isinstance(slots, dict) else []:
         if sid not in allowed or not isinstance(rows, list):
@@ -210,10 +205,12 @@ def _grounded(item: dict[str, Any], chunk_ids: list[str], by_id: dict[str, dict[
 
 def _triples(document_id: str, topic: dict[str, Any], item: dict[str, Any], cid: str, page: int,
              linker: Linker) -> list[DocumentTriple]:
-    slot = SLOT_BY_ID[item["slot"]]
+    slot = linker.schema.slot(item["slot"])
+    assert slot is not None
     out = []
     for rel in slot.relations:
-        topic_type = topic["kind"] if rel.kg == "primekg" else "dermo"
+        # đầu kia thuộc DermO thì chủ đề cũng phải là nút DermO (cạnh DermO chỉ nối DermoTerm với DermoTerm)
+        topic_type = "dermo" if linker.schema.entity_types[rel.object_type].kg == "dermo" else topic["kind"]
         t_ref = linker.final(topic_type, topic["title"], topic["en"])
         o_ref = linker.final(rel.object_type, item["text"], item["en"])
         subj, obj = (t_ref, o_ref) if rel.topic_is_head else (o_ref, t_ref)
@@ -242,7 +239,7 @@ def run(ctx: StageContext) -> dict:
         raise StageError("Chưa có đoạn nội dung nào — hãy làm bước Chia đoạn trước.")
     if ctx.graph is not None:  # thực thể mới đã nạp từ tài liệu trước cũng là từ điển để khớp
         for n in ctx.graph.doc_entities():
-            if n.get("type") in ENTITY_TYPES:
+            if n.get("type") in ctx.schema.entity_types:
                 lexicon.add(LexEntry(id=n["id"], name=n["name"], type=n["type"], source="DOC", kg="doc"))
     by_id = {c["chunk_id"]: c for c in chunks}
     topics = collect_topics(chunks)
@@ -251,7 +248,7 @@ def run(ctx: StageContext) -> dict:
     used = [t for t in topics if t["kind"] in TOPIC_TYPES][: limit or None]
     ctx.log(f"{len(topics)} mục, {len(used)} mục bệnh/thuốc được trích")
 
-    linker = Linker(lexicon, ctx.profile.graph.allow_new_entities)
+    linker = Linker(lexicon, ctx.profile.graph.allow_new_entities, ctx.schema)
     for t in used:
         for et in TOPIC_ENTITY_TYPES[t["kind"]]:
             linker.ref(et, t["title"], t["en"], t.get("alt"))
@@ -279,7 +276,9 @@ def run(ctx: StageContext) -> dict:
                 stats["evidence_dropped"] += 1
                 continue
             grounded.append((t, it, cid))
-            for rel in SLOT_BY_ID[it["slot"]].relations:
+            slot = ctx.schema.slot(it["slot"])
+            assert slot is not None  # `extract` chỉ giữ ô có trong schema
+            for rel in slot.relations:
                 linker.ref(rel.object_type, it["text"], it["en"])
     linker.resolve_pending(ctx)
 
@@ -296,7 +295,7 @@ def run(ctx: StageContext) -> dict:
 
 
 # ---------------------------------------------------------------- override của người duyệt
-def apply_overrides(triples: list[DocumentTriple], ov: dict[str, Any]) -> list[DocumentTriple]:
+def apply_overrides(triples: list[DocumentTriple], ov: dict[str, Any], schema: GraphSchema = CORE_SCHEMA) -> list[DocumentTriple]:
     """`rejected`: loại triple; `relink`: {triple_id: {"subject"|"object": GraphNodeRef}}; `accepted_nodes`: nút mới được chấp nhận."""
     rejected, accepted = set(ov.get("rejected") or []), set(ov.get("accepted_nodes") or [])
     relink: dict[str, dict[str, Any]] = ov.get("relink") or {}
@@ -307,17 +306,23 @@ def apply_overrides(triples: list[DocumentTriple], ov: dict[str, Any]) -> list[D
             if side in ("subject", "object"):
                 setattr(t, side, GraphNodeRef.model_validate(ref))
         sides = (t.subject, t.object)
-        linked = all(s.node_id and (s.link_method != "new" or s.node_id in accepted) for s in sides)
+        # nút mới của loại do bác sĩ định nghĩa tự được chấp nhận (không có từ điển chuẩn để đối chiếu)
+        linked = all(s.node_id and (s.link_method != "new" or s.node_id in accepted or _is_doc_type(schema, s.type)) for s in sides)
         t.status = "rejected" if t.triple_id in rejected else "ok" if linked else "unlinked"
         out.append(t)
     return out
+
+
+def _is_doc_type(schema: GraphSchema, type_: str) -> bool:
+    e = schema.entity_types.get(type_)
+    return e is not None and e.kg == "doc"
 
 
 def reapply(ctx: StageContext) -> dict:
     auto = [DocumentTriple.model_validate(x) for x in ctx.files.read_jsonl("triples.auto.jsonl")]
     if not auto and not ctx.files.exists("triples.auto.jsonl"):
         raise StageError("Chưa trích quan hệ — hãy chạy bước Trích quan hệ trước.")
-    triples = apply_overrides(auto, ctx.overrides("graph"))
+    triples = apply_overrides(auto, ctx.overrides("graph"), ctx.schema)
     ctx.files.write_jsonl("triples.jsonl", [t.model_dump() for t in triples])
     return summarize(ctx, triples)
 
@@ -338,7 +343,7 @@ def summarize(ctx: StageContext, triples: list[DocumentTriple]) -> dict[str, Any
         "topics_used": dict(Counter(t.get("kind", "other") for t in topics)),
         "triples": len(triples), "ok": status["ok"], "unlinked": status["unlinked"], "rejected": status["rejected"],
         "by_relation": dict(Counter(t.relation for t in triples if t.status == "ok")),
-        "linked": {ENTITY_TYPES[k].title: f"{a}/{b}" for k, (a, b) in link.items()},
+        "linked": {ctx.schema.entity_types[k].title if k in ctx.schema.entity_types else k: f"{a}/{b}" for k, (a, b) in link.items()},
         "new_entities": len({s.node_id for t in triples for s in (t.subject, t.object) if s.link_method == "new"}),
         "unmapped": dict(Counter(u["kind"] for u in unmapped)),
         "evidence_dropped": stats.get("evidence_dropped", 0),
@@ -350,5 +355,5 @@ def summarize(ctx: StageContext, triples: list[DocumentTriple]) -> dict[str, Any
     return summary
 
 
-def relation_of(t: DocumentTriple) -> Relation | None:
-    return next((r for r in SLOT_BY_ID[t.slot].relations if r.type == t.relation), None) if t.slot in SLOT_BY_ID else None
+def relation_of(t: DocumentTriple, schema: GraphSchema = CORE_SCHEMA) -> Relation | None:
+    return schema.relation_of(t.slot, t.relation)

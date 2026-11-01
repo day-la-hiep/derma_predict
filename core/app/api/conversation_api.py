@@ -185,6 +185,17 @@ async def answer_question(
     return ApiResponse(data=message)
 
 
+@router.post(
+    "/conversations/{conversation_id}/cancel",
+    status_code=202,
+    operation_id="cancelTurn",
+)
+async def cancel_turn(conversation_id: str, service: MessageServiceDep) -> ApiResponse[None]:
+    """Người dùng bấm Dừng: agent ngừng turn đang chạy, phần đã trả lời được giữ lại."""
+    await service.cancel_turn(conversation_id)
+    return ApiResponse(data=None)
+
+
 def _session_resolved(event: dict[str, object]) -> bool:
     return event.get("type") == "consultation.updated" and event.get("status") == "resolved"
 

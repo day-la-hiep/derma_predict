@@ -15,8 +15,8 @@ Xử lý dữ liệu thô -> dữ liệu sạch cho `core/`, **tổ chức theo 
 | `who` | WHO fact sheets | — (biên soạn tay) | `who_skin_diseases.json` — 12 bệnh |
 | `medlineplus` | MedlinePlus | — (biên soạn tay) | `medlineplus_skin_conditions.json` — 10 bệnh |
 | `dermnet` | `skin_info.html` + `byt/output` | 01–05: lập chỉ mục topic, ánh xạ BYT↔topic, cào bài, dựng `post/{bệnh}/` | `dermnet_topics.*`, `dermnet_disease_related_topics.*`, `scraped_topics/`, `post/` |
-| `dermo` | `dermatology.obo` | 01: parse ontology | `dermo_kg.json`, `dermo_terms.csv`, `dermo_term_map.json` |
-| `primekg` | `kg.csv` (PrimeKG gốc) + `byt/output` | 01: lọc subgraph da liễu | `derma_nodes.csv` (5,2k), `derma_edges.csv` (19,7k) |
+| `dermo` (cũ) | `dermatology.obo` | 01: parse ontology | `dermo_kg.json`, `dermo_terms.csv`, `dermo_term_map.json` |
+| `primekg` (cũ) | `kg.csv` (PrimeKG gốc) + `byt/output` | 01: lọc subgraph da liễu | `derma_nodes.csv` (5,2k), `derma_edges.csv` (19,7k) |
 | **`01_normalize`** | `output/` của mọi nguồn trên | 01 bệnh · 02 KG · 03 manifest · `load_*.py` nạp Qdrant/Neo4j | `diseases/`, `kg/`, `manifest.json` |
 
 ## `01_normalize/` — điểm ra duy nhất cho `core/`
@@ -44,6 +44,9 @@ python run.py all                      # tất cả (dermnet bước 03 cào web
 ```
 
 Chỉ dùng thư viện chuẩn Python. `run.py` dừng ở script đầu tiên lỗi.
+
+> **Đồ thị nền (PrimeKG, DermO) đã chuyển sang `core/graph_base/`** (tải gốc → build → nạp Neo4j, không lọc BYT); các dòng `dermo` / `primekg` và `load_primekg.py` / `load_dermo.py`
+> dưới đây là quy trình cũ, chưa dọn, không còn là nguồn của Neo4j. Bước `graph` của pipeline sách vẫn đọc `01_normalize/output/kg` cho lexicon.
 
 ## Sau khi chạy
 

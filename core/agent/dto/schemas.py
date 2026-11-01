@@ -23,20 +23,24 @@ class TurnAttachment(BaseModel):
 
 
 class TurnRequest(BaseModel):
-    type: Literal["turn", "resume"]
+    type: Literal["turn", "resume", "consultation_report"]
     conversation_id: str
-    message_id: str  # id assistant message của turn (ổn định qua mọi resume)
+    message_id: str  # id assistant message của turn hoặc marker message
     corr_id: str | None = None
     content: str | None = None  # bắt buộc khi type="turn"
     answer: str | None = None  # bắt buộc khi type="resume" — câu trả lời cho `ask_user`
     attached_files: list[TurnAttachment] | None = None
+    # Trường dành cho consultation_report:
+    session_id: str | None = None
+    patient_profile_id: str | None = None
+    reason: str | None = None
 
 
 class AgentResponseMessage(BaseModel):
     conversation_id: str
     message_id: str
-    content: str
-    status: Literal["done", "question"]
+    content: str = ""
+    status: Literal["done", "question", "report_ready", "report_failed"]
     # `MessageChoice.model_dump(mode="json")` — chỉ set khi
     # status="question" (`app/dto/response/message.py`).
     choice: dict[str, Any] | None = None
@@ -47,3 +51,9 @@ class AgentResponseMessage(BaseModel):
     # .../messages` trả lại được các bước suy luận sau khi reload, không chỉ thấy lúc
     # đang stream qua SSE (Redis Pub/Sub không replay).
     reasoning: list[dict[str, Any]] | None = None
+    # Trường dành cho consultation_report (status in ("report_ready", "report_failed")):
+    session_id: str | None = None
+    report_summary: str | None = None
+    facts: list[dict[str, Any]] | None = None
+    provenance_pairs: list[list[str]] | None = None
+

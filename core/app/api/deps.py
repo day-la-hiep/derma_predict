@@ -26,19 +26,24 @@ from app.repositories.consultation_repository import ConsultationRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.file_repository import FileRepository
 from app.repositories.message_repository import MessageRepository
-from app.repositories.medical_record_repository import MedicalRecordRepository
+from app.repositories.finalize_report_repository import FinalizeReportRepository
 from app.repositories.patient_profile_repository import PatientProfileRepository
 from app.services.file_store_service import FileStoreService
 from app.repositories.document_repository import DocumentRepository
+from app.repositories.graph_schema_repository import GraphSchemaRepository
 from app.services.document_graph_service import DocumentGraphService
+from app.services.graph_schema_service import GraphSchemaService
 from app.services.document_service import DocumentService
 from app.services.conversation_service import ConversationService
 from app.services.knowledge_base_service import KnowledgeBaseService
 from app.services.knowledge_graph_service import KnowledgeGraphService
+from app.services.retrieval_service import RetrievalService
 from app.services.message_service import MessageService
 from app.services.patient_profile_service import PatientProfileService
-from app.services.doctor_medical_record_service import DoctorMedicalRecordService
+from app.services.finalize_report_service import FinalizeReportService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
+from app.services.finalize_report_index_service import FinalizeReportIndexService
+from app.services.patient_graph_service import PatientGraphService
 
 T = TypeVar("T")
 
@@ -121,10 +126,28 @@ def get_knowledge_base_service() -> KnowledgeBaseService:
     )
 
 
+def get_retrieval_service() -> RetrievalService:
+    return _singleton("retrieval_service", lambda: RetrievalService(get_qdrant_client()))
+
+
 def get_knowledge_graph_service() -> KnowledgeGraphService:
     return _singleton(
         "knowledge_graph_service",
         lambda: KnowledgeGraphService(get_neo4j_client()),
+    )
+
+
+def get_patient_graph_service() -> PatientGraphService:
+    return _singleton(
+        "patient_graph_service",
+        lambda: PatientGraphService(get_neo4j_client()),
+    )
+
+
+def get_finalize_report_index_service() -> FinalizeReportIndexService:
+    return _singleton(
+        "finalize_report_index_service",
+        lambda: FinalizeReportIndexService(get_qdrant_client(), get_embedding_client()),
     )
 
 
@@ -142,10 +165,20 @@ def get_document_repository() -> DocumentRepository:
     return _singleton("document_repository", lambda: DocumentRepository(get_document_file_store(), get_postgres_client().sync_session_factory))
 
 
+def get_graph_schema_service() -> GraphSchemaService:
+    return _singleton(
+        "graph_schema_service",
+        lambda: GraphSchemaService(GraphSchemaRepository(get_postgres_client().sync_session_factory)),
+    )
+
+
 def get_document_graph_service() -> DocumentGraphService:
     return _singleton(
         "document_graph_service",
-        lambda: DocumentGraphService(get_document_repository(), get_neo4j_client(), Path(settings.GRAPH_LEXICON_DIR)),
+        lambda: DocumentGraphService(
+            get_document_repository(), get_neo4j_client(), Path(settings.GRAPH_LEXICON_DIR),
+            schema=lambda: get_graph_schema_service().schema(include_disabled=True),
+        ),
     )
 
 
@@ -172,6 +205,7 @@ def get_document_ingest_pipeline_service() -> DocumentIngestPipelineService:
             rabbitmq=get_rabbitmq_client(),
             redis=get_redis_client(),
             graph=get_document_graph_service(),
+            graph_schema=get_graph_schema_service(),
         ),
     )
 
@@ -199,27 +233,29 @@ def get_patient_profile_repository(
     return PatientProfileRepository(db)
 
 
-def get_medical_record_repository(
+def get_finalize_report_repository(
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> MedicalRecordRepository:
-    return MedicalRecordRepository(db)
+) -> FinalizeReportRepository:
+    return FinalizeReportRepository(db)
 
 
 def get_patient_profile_service(
     patient_profile_repository: Annotated[
         PatientProfileRepository, Depends(get_patient_profile_repository)
     ],
-    medical_record_repository: Annotated[
-        MedicalRecordRepository, Depends(get_medical_record_repository)
+    finalize_report_repository: Annotated[
+        FinalizeReportRepository, Depends(get_finalize_report_repository)
     ],
 ) -> PatientProfileService:
-    return PatientProfileService(patient_profile_repository, medical_record_repository)
+    return PatientProfileService(patient_profile_repository, finalize_report_repository)
 
 
-def get_doctor_medical_record_service(
+def get_finalize_report_service(
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> DoctorMedicalRecordService:
-    return DoctorMedicalRecordService(db, get_file_store_service())
+) -> FinalizeReportService:
+    return FinalizeReportService(
+        db, get_file_store_service(), get_finalize_report_index_service(), get_patient_graph_service()
+    )
 
 
 def get_message_repository(
@@ -275,8 +311,19 @@ from app.services.consultation_service import ConsultationService
 def get_consultation_service(
     db: Annotated[AsyncSession, Depends(get_db)],
     redis: Annotated[RedisClient, Depends(get_redis_client)],
+    rabbitmq: Annotated[RabbitMQClient, Depends(get_rabbitmq_client)],
 ) -> ConsultationService:
-    return ConsultationService(db, redis)
+    return ConsultationService(db, redis, rabbitmq, get_patient_graph_service())
+
+
+from app.services.video_call_service import VideoCallService
+
+
+def get_video_call_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[RedisClient, Depends(get_redis_client)],
+) -> VideoCallService:
+    return VideoCallService(db, redis)
 
 
 def get_user_repository(
@@ -339,3 +386,6 @@ def require_role(*allowed_roles: str):
 
     return role_checker
 
+
+# dùng chung cho mọi router admin; test override đúng object này
+require_admin = require_role("admin")

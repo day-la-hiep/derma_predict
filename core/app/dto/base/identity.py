@@ -11,7 +11,7 @@ from app.common.constant import Gender, ProfileRelationship
 if TYPE_CHECKING:
     # import chéo context chỉ để type-check; vòng tham chiếu được rebuild một lần trong `app/dto/base/__init__.py`
     from app.dto.base.clinical import ClinicalFact
-    from app.dto.base.medical_record import MedicalRecord
+    from app.dto.base.finalize_report import FinalizeReport
 
 
 class User(BaseModel):
@@ -42,5 +42,5 @@ class PatientProfile(BaseModel):
     # tự khai, chữ tự do — khác `clinical_facts` (trích từ hội thoại theo template)
     allergies: str = ""
     medical_history: str = ""
-    medical_records: list[MedicalRecord] = []
+    finalize_reports: list[FinalizeReport] = []
     clinical_facts: list[ClinicalFact] = []  # dữ kiện lâm sàng của người bệnh, gom từ nhiều hội thoại hoặc bác sĩ nhập

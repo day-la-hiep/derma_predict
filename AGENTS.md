@@ -16,13 +16,13 @@ Hướng dẫn cho Agent / Gemini khi làm việc trong repo này.
 
 | Hệ thống | Mô tả | Đọc thêm |
 |---|---|---|
-| **Chat tư vấn da liễu** | FE chat + Core API + Agent Worker (LangGraph) tra guideline, knowledge graph, phân loại ảnh da | `README.md`, `docs/kien-truc-he-thong.md`, `core/app/kien-truc-agent.md` |
+| **Chat tư vấn da liễu** | FE chat + Core API + Agent Worker (LangGraph) tra guideline, knowledge graph, phân loại ảnh da | `README.md`, `docs/overview/system-overview.md`, `core/app/kien-truc-agent.md` |
 | **Pipeline số hoá sách giáo khoa** (`document_ingest`) | Admin upload PDF → OCR/đọc chữ → AI đọc mục lục (người duyệt) → cắt chunk theo mục lục → nạp Qdrant | `core/pipeline/document_ingest/README.md` |
 
 Cấu trúc thư mục:
 
 ```
-fe/        Next.js App Router: /chats (chat), /doctor (bác sĩ xem báo cáo AI), /admin/documents (pipeline admin)
+fe/        Next.js App Router: /chats (chat), /doctor (ca tư vấn, hồ sơ), /doctor/documents (pipeline admin), /doctor/graph-schema
 core/      FastAPI (app/), agent LangGraph (agent/), pipeline (pipeline/document_ingest/),
            migrations Alembic (migrations/), dữ liệu nạp (data_ingest/)
 docs/      tài liệu kiến trúc + hướng dẫn chung; docs/notice/ = các lưu ý dễ bỏ sót,
@@ -68,11 +68,11 @@ Các bước theo thứ tự, mỗi bước phải được người duyệt **a
 | `ingest` | PDF → chữ theo trang (`pages.jsonl`) | không |
 | `toc` | AI đọc trang mục lục → cây mục; người duyệt sửa qua override | có |
 | `chunks` | cắt đoạn theo khung mục lục (`chunks.jsonl`) | không |
-| `index` | embedding local + nạp Qdrant | không |
+| `index` | embedding (OpenRouter) + nạp Qdrant | không |
 
 - Trạng thái: `not_started → running → pending_review → approved`; `failed`/`cancelled`; `stale`
   khi bước phía trước chạy lại. Thứ tự và phụ thuộc: `app/models/document_stage.py::STAGES`.
-- Chạy nền bằng thread trong Core; FE poll `GET /admin/documents/{id}` để xem tiến độ.
+- Core chỉ ghi `running` rồi publish `document_ingest_queue`; **Ingest Worker** (`app/workers/document_ingest_worker.py`, `make ingest-worker`) chạy bước. Dừng qua Redis; FE poll `GET /admin/documents/{id}` để xem tiến độ.
 - Sửa tay của người duyệt lưu trong `document_overrides` (không ghi đè kết quả máy).
 
 ### 3.3 Lưu trữ tài liệu
@@ -86,7 +86,7 @@ Các bước theo thứ tự, mỗi bước phải được người duyệt **a
 
 ## 4. Kiến trúc & quy ước cần nhớ
 
-- **Entity nghiệp vụ** ở `core/app/dto/base/` (`Document`, `File`, `ProcessStage`, `DocumentChunk`, ...)
+- **Entity nghiệp vụ** ở `core/app/dto/base/` (`Document`, `File`, `DocumentStage`, `DocumentChunk`, ...)
   khác với ORM (`app/models/`) và DTO wire (`app/dto/request|response/`). **Đổi `dto/base` phải hỏi
   người dùng duyệt trước** rồi mới cascade sang models/repo/service.
 - **Repository là stateless**: `DocumentRepository` nhận `document_id` trực tiếp. Override nằm ở

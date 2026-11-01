@@ -1,0 +1,145 @@
+% Báo cáo tiến độ đồ án: Hệ thống hỗ trợ tiền chẩn đoán bệnh về da
+% Biên dịch bằng XeLaTeX:  xelatex main.tex  (chạy 2 lần để có mục lục)
+%
+% Cấu trúc thư mục:
+%   main.tex            file chính (khai báo gói, định dạng, nạp các chương)
+%   bia/                trang bìa (+ hinh/)
+%   mo_dau/             phần mở đầu (giới thiệu chung, mục tiêu, bố cục báo cáo)
+%   chuong1 ... chuong7 mỗi chương (chuong7 = kết luận chung) một thư mục: chuongN.tex (+ hinh/ nếu có)
+% Đánh số tự động: Chương 1, mục 1.1, mục con 1.1.1 (\chapter, \section, \subsection).
+\documentclass[12pt,a4paper]{report}
+
+\usepackage{fontspec}
+\setmainfont{Times New Roman}[Ligatures=TeX]
+\usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=3cm,right=2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
+\usepackage{float}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{setspace}
+\usepackage{etoolbox}
+\usepackage{indentfirst} % đoạn đầu tiên sau tiêu đề mục cũng lùi đầu dòng
+\usepackage{eso-pic}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{tocloft}
+\usepackage[unicode,hidelinks]{hyperref}
+
+% Quy chuẩn trình bày: A4 dọc; lề trên/dưới 2,5 cm, trái 3 cm, phải 2 cm; Times New Roman 13 pt;
+% giãn dòng 1,5 cho nội dung chính; lùi đầu dòng 1,27 cm; giãn đoạn trước 0 pt, sau 6 pt; căn đều hai bên.
+% Giãn dòng đơn (1,0): bảng (kể cả bảng nhiều trang), chú thích hình/bảng, trích dẫn khối, tài liệu tham khảo.
+% (class report không có tuỳ chọn 13pt nên khai báo cỡ chữ ở đây)
+\renewcommand{\normalsize}{\fontsize{13pt}{15pt}\selectfont}
+\renewcommand{\small}{\fontsize{12pt}{14pt}\selectfont}
+\renewcommand{\footnotesize}{\fontsize{11pt}{13pt}\selectfont}
+\setstretch{1.5}
+\setlength{\parindent}{1.27cm}
+\setlength{\parskip}{6pt plus 1pt}  % trước đoạn 0 pt, sau đoạn 6 pt
+% setspace đã tự dùng giãn dòng đơn cho bảng/hình nổi (table, figure) và chú thích; longtable và các khối còn lại cần khai báo thêm
+\AtBeginEnvironment{longtable}{\singlespacing}
+\AtBeginEnvironment{quote}{\singlespacing}
+\AtBeginEnvironment{quotation}{\singlespacing}
+\AtBeginEnvironment{thebibliography}{\singlespacing}
+\hyphenpenalty=10000 \exhyphenpenalty=10000 \emergencystretch=3em
+% Cho phép xuống dòng sau dấu gạch dưới: tên cột, tên hàm dài không tràn sang ô bên cạnh (đã tắt ngắt từ bằng gạch nối)
+\renewcommand{\_}{\textunderscore\allowbreak}
+\setlist{itemsep=2pt,topsep=3pt}
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{2}
+\numberwithin{equation}{chapter}
+\setlength{\LTpre}{6pt}\setlength{\LTpost}{6pt}
+
+% Mục lục: lấy đến mục 1.1.1 (3 cấp), thụt lề theo cấp; danh mục hình/bảng: các dòng căn lề trái
+\renewcommand{\cfttoctitlefont}{\normalfont\fontsize{16pt}{19pt}\selectfont\bfseries}
+\renewcommand{\cftlottitlefont}{\normalfont\fontsize{16pt}{19pt}\selectfont\bfseries}
+\renewcommand{\cftloftitlefont}{\normalfont\fontsize{16pt}{19pt}\selectfont\bfseries}
+\setlength{\cftbeforetoctitleskip}{0pt}
+\setlength{\cftchapindent}{0pt}\setlength{\cftsecindent}{1.5em}\setlength{\cftsubsecindent}{4.1em}
+\setlength{\cftsecnumwidth}{2.6em}\setlength{\cftsubsecnumwidth}{3.4em}
+\setlength{\cftfignumwidth}{3em}\setlength{\cfttabnumwidth}{3em}
+
+% Mục lục: chương hiển thị "CHƯƠNG 1: TÊN CHƯƠNG" (tên viết in hoa ngay trong tham số \chapter[...], xem các file chuongN)
+\renewcommand{\cftchappresnum}{CHƯƠNG~}
+\renewcommand{\cftchapaftersnum}{:}
+\setlength{\cftchapnumwidth}{7.2em}
+
+% Tên tiếng Việt
+\renewcommand{\contentsname}{Mục lục}
+\renewcommand{\listfigurename}{Danh mục hình vẽ}
+\renewcommand{\listtablename}{Danh mục bảng biểu}
+\renewcommand{\chaptername}{Chương}
+\renewcommand{\figurename}{Hình}
+\renewcommand{\tablename}{Bảng}
+
+% Tiêu đề: Chương N (dòng trên) + tên chương (dòng dưới); mục 1.1, 1.1.1
+\titleformat{\chapter}[block]{\normalfont\fontsize{16pt}{19pt}\selectfont\bfseries\centering}{\MakeUppercase{\chaptername\ \thechapter:}}{0.5em}{\uppercase}
+\titlespacing*{\chapter}{0pt}{-10pt}{20pt}
+\titleformat{\section}{\normalfont\fontsize{14pt}{17pt}\selectfont\bfseries}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\normalfont\fontsize{13pt}{16pt}\selectfont\bfseries}{\thesubsection}{0.6em}{}
+\titleformat{\subsubsection}{\normalfont\bfseries\itshape}{\thesubsubsection}{0.6em}{}
+\titleformat{\paragraph}[block]{\normalfont\bfseries}{}{0pt}{}
+\titlespacing*{\paragraph}{0pt}{10pt}{3pt}
+\titleformat{\subparagraph}[block]{\normalfont\bfseries\itshape}{}{0pt}{}
+\titlespacing*{\subparagraph}{0pt}{8pt}{3pt}
+
+% Đầu trang: tên chương hiện tại (trái); chân trang: số trang (phải).
+% Trang bìa (titlepage) tự không có đầu/chân trang; trang mở đầu chương dùng kiểu plain nên khai báo lại giống kiểu chính.
+\newcommand{\hfsetup}{%
+  \fancyhf{}%
+  \fancyhead[L]{\small\itshape\leftmark}%
+  \fancyfoot[R]{\small\thepage}%
+  \renewcommand{\headrulewidth}{0.4pt}%
+  \renewcommand{\footrulewidth}{0pt}}
+\setlength{\headheight}{15pt}
+\pagestyle{fancy}\hfsetup
+\fancypagestyle{plain}{\hfsetup}
+% Đầu trang: "CHƯƠNG 1: TÊN CHƯƠNG" (đặt sau \pagestyle{fancy} vì fancyhdr đặt lại \chaptermark)
+\renewcommand{\chaptermark}[1]{\markboth{\MakeUppercase{\chaptername\ \thechapter:\ #1}}{}}
+
+% Tiêu đề kiểu chương cho các phần không đánh số (mục lục, các danh mục): cùng kiểu chữ, vào mục lục, đầu trang hiện tên phần.
+\makeatletter
+\renewcommand{\@cftmaketoctitle}{}
+\renewcommand{\@cftmakeloftitle}{}
+\renewcommand{\@cftmakelottitle}{}
+\makeatother
+\newcommand{\frontchapter}[1]{\chapter*{#1}\markboth{\MakeUppercase{#1}}{\MakeUppercase{#1}}}
+\newcommand{\listedchapter}[1]{\frontchapter{#1}\addcontentsline{toc}{chapter}{\MakeUppercase{#1}}}
+
+\begin{document}
+\normalsize
+
+\input{bia/bia}
+
+\pagenumbering{roman}
+\frontchapter{Mục lục}
+\tableofcontents
+\clearpage
+\listedchapter{Danh mục hình vẽ}
+\listoffigures
+\clearpage
+\listedchapter{Danh mục bảng biểu}
+\listoftables
+\clearpage
+\input{thuat_ngu/thuat_ngu}
+\clearpage
+\pagenumbering{arabic}
+
+% ===== Mở đầu =====
+\input{mo_dau/mo_dau}
+
+% ===== Các chương của báo cáo đồ án =====
+\input{chuong1/chuong1}
+\input{chuong2/chuong2}
+\input{chuong3/chuong3}
+\input{chuong4/chuong4}
+\input{chuong5/chuong5}
+\input{chuong6/chuong6}
+
+\input{ket_luan/ket_luan}
+
+
+\end{document}

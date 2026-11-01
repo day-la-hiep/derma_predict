@@ -13,7 +13,7 @@
 - **Chỉ số:** entity-resolution rate, fact precision@k, tỉ lệ `notes` lỗi, latency p50/p95; CI 95% bằng bootstrap.
 - Dùng lại `../common/` và cấu trúc `prepare/` + `evaluate/` của `../retrieval/`.
 
-Kế hoạch gốc: [`docs/benchmark/ke-hoach-benchmark-tong-hop.md`](../../../docs/benchmark/ke-hoach-benchmark-tong-hop.md) mục 5.
+Kế hoạch: [`benchmark_implementation.md`](../../../benchmark_implementation.md) (file kế hoạch tổng hợp cũ đã bị xoá).
 
 ## Việc cần làm
 

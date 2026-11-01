@@ -15,20 +15,21 @@ import type {
   ClinicalFactType,
   ConsultationSession,
   ConsultationStatus,
-  DoctorMedicalRecordItem,
+  FinalizeReportItem,
   DoctorViewMessage,
   FactOrigin,
   FinalizeDraft,
   FinalizeInput,
-  MedicalRecord,
-  MedicalRecordSnapshot,
+  FinalizeReport,
+  FinalizeReportSnapshot,
   PatientProfile,
   PreConsultationReport,
   ProfileRelationship,
   SnapshotMessage,
   Urgency,
+  PatientJourneyGraph,
 } from "./types";
-import { MOCK_SESSIONS, MOCK_MESSAGES } from "./mockData";
+import { MOCK_SESSIONS, MOCK_MESSAGES, getMockPatientJourneyGraph } from "./mockData";
 
 /** Trích xuất thông báo lỗi chuẩn từ FastAPI detail */
 export function errorMessage(e: unknown): string {
@@ -80,6 +81,14 @@ export function adaptSession(raw: any): ConsultationSession {
     detail: f.detail ?? "",
     status: f.status === "superseded" ? "superseded" : "active",
     createdAt: f.createdAt ?? f.created_at ?? new Date().toISOString(),
+    sourceMessageIds: f.sourceMessageIds ?? f.source_message_ids ?? [],
+    sourceMessages: (f.sourceMessages ?? f.source_messages ?? []).map((m: any) => ({
+      id: m.id ?? "",
+      sender: m.sender ?? "patient",
+      content: m.content ?? "",
+      files: m.files ?? [],
+      createdAt: m.createdAt ?? m.created_at ?? null,
+    })),
   }));
 
   const report: PreConsultationReport | null = raw.report
@@ -124,7 +133,7 @@ function adaptSources(provenances: any[] | undefined): SnapshotMessage[] {
   return (provenances ?? []).map((p) => adaptSnapshotMessage(p.message));
 }
 
-function adaptSnapshot(raw: any): MedicalRecordSnapshot | null {
+function adaptSnapshot(raw: any): FinalizeReportSnapshot | null {
   if (!raw) return null;
   const p = adaptPatient(raw.patient_profile);
   return {
@@ -152,7 +161,7 @@ function adaptSnapshot(raw: any): MedicalRecordSnapshot | null {
   };
 }
 
-function adaptMedicalRecord(raw: any): MedicalRecord {
+function adaptFinalizeReport(raw: any): FinalizeReport {
   return {
     id: raw.id ?? "",
     diagnosis: raw.diagnosis ?? "",
@@ -163,16 +172,36 @@ function adaptMedicalRecord(raw: any): MedicalRecord {
     consultationSessionId: raw.consultation_session_id ?? null,
     conversationId: raw.conversation_id ?? null,
     snapshot: adaptSnapshot(raw.snapshot),
+  images: (raw.images ?? []).map((img: any) => ({
+    id: img.id ?? "",
+    file: {
+      fileName: img.file?.file_name ?? img.file?.fileName ?? "",
+      contentType: img.file?.content_type ?? img.file?.contentType ?? null,
+      storageKey: img.file?.storage_key ?? img.file?.storageKey ?? "",
+      url: img.file?.url ?? null,
+    },
+    bodySite: img.body_site ?? img.bodySite ?? "",
+    description: img.description ?? "",
+    confirmedLabel: img.confirmed_label ?? img.confirmedLabel ?? null,
+    capturedAt: img.captured_at ?? img.capturedAt ?? null,
+  })),
   };
 }
 
-function adaptMedicalRecordItem(raw: any): DoctorMedicalRecordItem {
-  return { ...adaptMedicalRecord(raw), patient: adaptPatient(raw.patient) };
+function adaptFinalizeReportItem(raw: any): FinalizeReportItem {
+  return { ...adaptFinalizeReport(raw), patient: adaptPatient(raw.patient) };
 }
 
 function adaptDraft(raw: any): FinalizeDraft {
   return {
     patient: adaptPatient(raw.patient),
+    suggestions: {
+      previousConditions: raw.suggestions?.previous_conditions ?? [],
+      previousAdvice: raw.suggestions?.previous_advice ?? [],
+      candidateDiseases: raw.suggestions?.candidate_diseases ?? [],
+      redFlags: raw.suggestions?.red_flags ?? [],
+      notes: raw.suggestions?.notes ?? [],
+    },
     facts: (raw.facts ?? []).map((f: any) => {
       const factType = (f.fact_type ?? "other") as ClinicalFactType;
       return {
@@ -204,6 +233,12 @@ function toFinalizeBody(body: FinalizeInput) {
         label: f.label.trim(),
         detail: f.detail.trim(),
       })),
+    images: (body.images ?? []).map((img) => ({
+      file_id: img.fileId,
+      body_site: img.bodySite,
+      description: img.description,
+      confirmed_label: img.confirmedLabel,
+    })),
   };
 }
 
@@ -326,13 +361,13 @@ export const doctorApi = {
     };
   },
 
-  /** Lịch sử bệnh án của bệnh nhân thuộc phiên này (mọi lần khám) */
-  async listMedicalRecords(sessionId: string): Promise<MedicalRecord[]> {
+  /** Lịch sử báo cáo kết luận của bệnh nhân thuộc phiên này (mọi lần khám) */
+  async listFinalizeReports(sessionId: string): Promise<FinalizeReport[]> {
     if (USE_MOCK) return [];
     const raw = await unwrap<any[]>(
-      api.get(`/doctor/consultations/${encodeURIComponent(sessionId)}/medical-records`)
+      api.get(`/doctor/consultations/${encodeURIComponent(sessionId)}/finalize-reports`)
     );
-    return Array.isArray(raw) ? raw.map(adaptMedicalRecord) : [];
+    return Array.isArray(raw) ? raw.map(adaptFinalizeReport) : [];
   },
 
   /** Dữ liệu điền sẵn form chốt: hồ sơ + dữ kiện đang hiệu lực kèm tin nguồn */
@@ -341,51 +376,34 @@ export const doctorApi = {
     return adaptDraft(raw);
   },
 
-  /** Chốt bệnh án cho ca đang tư vấn và đóng ca (một giao dịch) */
-  async finalizeSession(sessionId: string, body: FinalizeInput): Promise<MedicalRecord> {
+  /** Chốt báo cáo kết luận cho ca đang tư vấn và đóng ca (một giao dịch) */
+  async finalizeSession(sessionId: string, body: FinalizeInput): Promise<FinalizeReport> {
     const raw = await unwrap<any>(
       api.post(`/doctor/consultations/${encodeURIComponent(sessionId)}/finalize`, toFinalizeBody(body))
     );
-    return adaptMedicalRecord(raw);
+    return adaptFinalizeReport(raw);
   },
 
-  /** Lịch sử khám: bệnh án do chính bác sĩ đang đăng nhập chốt */
-  async listMyMedicalRecords(q: string): Promise<DoctorMedicalRecordItem[]> {
+  /** Lịch sử khám: báo cáo kết luận do chính bác sĩ đang đăng nhập chốt */
+  async listMyFinalizeReports(q: string): Promise<FinalizeReportItem[]> {
     if (USE_MOCK) return [];
-    const raw = await unwrap<any[]>(api.get("/doctor/medical-records", { params: q ? { q } : undefined }));
-    return Array.isArray(raw) ? raw.map(adaptMedicalRecordItem) : [];
-  },
-
-  /** Ghi bệnh án cho ca khám trực tiếp (chọn hồ sơ bệnh nhân, không qua ca tư vấn) */
-  async createMedicalRecordForProfile(
-    patientProfileId: string,
-    body: FinalizeInput
-  ): Promise<DoctorMedicalRecordItem> {
-    const raw = await unwrap<any>(
-      api.post("/doctor/medical-records", { patient_profile_id: patientProfileId, ...toFinalizeBody(body) })
-    );
-    return adaptMedicalRecordItem(raw);
-  },
-
-  async searchPatientProfiles(q: string): Promise<PatientProfile[]> {
-    if (USE_MOCK) return MOCK_SESSIONS.map((s) => s.patient);
-    const raw = await unwrap<any[]>(api.get("/doctor/patient-profiles", { params: q ? { q } : undefined }));
-    return Array.isArray(raw) ? raw.map(adaptPatient) : [];
+    const raw = await unwrap<any[]>(api.get("/doctor/finalize-reports", { params: q ? { q } : undefined }));
+    return Array.isArray(raw) ? raw.map(adaptFinalizeReportItem) : [];
   },
 
   /** Toàn bộ lịch sử khám của một bệnh nhân (mọi bác sĩ) */
-  async listProfileMedicalRecords(profileId: string): Promise<MedicalRecord[]> {
+  async listProfileFinalizeReports(profileId: string): Promise<FinalizeReport[]> {
     if (USE_MOCK) return [];
     const raw = await unwrap<any[]>(
-      api.get(`/doctor/patient-profiles/${encodeURIComponent(profileId)}/medical-records`)
+      api.get(`/doctor/patient-profiles/${encodeURIComponent(profileId)}/finalize-reports`)
     );
-    return Array.isArray(raw) ? raw.map(adaptMedicalRecord) : [];
+    return Array.isArray(raw) ? raw.map(adaptFinalizeReport) : [];
   },
 
   /** Bệnh nhân gửi yêu cầu bác sĩ tư vấn & AI tự động bóc tách dữ kiện sinh báo cáo */
   async requestConsultation(
     conversationId: string,
-    reason: string = "Bệnh nhân yêu cầu bác sĩ tư vấn"
+    reason: string
   ): Promise<ConsultationSession> {
     const raw = await unwrap<any>(
       api.post(`/conversations/${encodeURIComponent(conversationId)}/request-consultation`, {
@@ -393,5 +411,34 @@ export const doctorApi = {
       })
     );
     return adaptSession(raw);
+  },
+
+  /** Lấy đồ thị hành trình bệnh nhân (Personal Knowledge Graph qua các phiên) */
+  async getPatientJourneyGraph(patientId: string): Promise<PatientJourneyGraph> {
+    if (USE_MOCK) {
+      return getMockPatientJourneyGraph(patientId);
+    }
+    const raw = await unwrap<any>(
+      api.get(`/doctor/patient-profiles/${encodeURIComponent(patientId)}/journey-graph`)
+    );
+    return {
+      patientId: raw?.patient_id ?? patientId,
+      nodes: Array.isArray(raw?.nodes)
+        ? raw.nodes.map((n: any) => ({
+            id: String(n.id),
+            label: String(n.label),
+            name: String(n.name ?? ""),
+            properties: n.properties ?? {},
+          }))
+        : [],
+      edges: Array.isArray(raw?.edges)
+        ? raw.edges.map((e: any) => ({
+            source: String(e.source),
+            target: String(e.target),
+            type: String(e.type),
+            properties: e.properties ?? {},
+          }))
+        : [],
+    };
   },
 };

@@ -16,13 +16,13 @@ Hướng dẫn cho Claude khi làm việc trong repo này.
 
 | Hệ thống | Mô tả | Đọc thêm |
 |---|---|---|
-| **Chat tư vấn da liễu** | FE chat + Core API + Agent Worker (LangGraph) tra guideline, knowledge graph, phân loại ảnh da | `README.md`, `docs/kien-truc-he-thong.md`, `core/app/kien-truc-agent.md` |
+| **Chat tư vấn da liễu** | FE chat + Core API + Agent Worker (LangGraph) tra guideline, knowledge graph, phân loại ảnh da | `README.md`, `docs/overview/system-overview.md`, `core/app/kien-truc-agent.md` |
 | **Pipeline số hoá sách giáo khoa** (`document_ingest`) | Admin upload PDF → OCR/đọc chữ → AI đọc mục lục (người duyệt) → cắt chunk theo mục lục → nạp Qdrant | skill `derma-pipeline-conventions`, `core/pipeline/document_ingest/README.md` |
 
 Cấu trúc thư mục:
 
 ```
-fe/        Next.js App Router: /chats (chat), /doctor/documents (pipeline admin)
+fe/        Next.js App Router: /chats (chat), /doctor (bác sĩ), /admin (pipeline sách + đồ thị, chỉ admin)
 core/      FastAPI (app/), agent LangGraph (agent/), pipeline (pipeline/document_ingest/),
            migrations Alembic (migrations/), dữ liệu nạp (data_ingest/)
 docs/      tài liệu kiến trúc + hướng dẫn chung; docs/notice/ = các lưu ý dễ bỏ sót,
@@ -38,8 +38,9 @@ make migrate        # alembic upgrade head
 make init-db        # bucket MinIO + dữ liệu mẫu (user-1, bác sĩ, admin) — chạy sau migrate
 make backend        # Core FastAPI :3050
 make worker         # Agent Worker (tiến trình riêng, consume RabbitMQ)
-make ingest-worker  # Ingest Worker: chạy các bước pipeline tài liệu (bắt buộc chạy thì bấm "Chạy" ở /doctor/documents mới có tác dụng)
+make ingest-worker  # Ingest Worker: chạy các bước pipeline tài liệu (bắt buộc chạy thì bấm "Chạy" ở /admin/documents mới có tác dụng)
 make frontend       # Next.js :3010
+make reindex-qdrant # nạp lại Qdrant (sách + ca bệnh) từ MinIO/Postgres; thêm dry=1 để xem trước (xem docs/notice/qdrant-reindex.md)
 ```
 
 - Python dùng `uv` (`core/pyproject.toml`), venv tại `core/.venv`. Chạy script trong `core/`.
@@ -102,6 +103,7 @@ Chi tiết nằm trong các skill; ở đây chỉ các điểm hay nhầm:
 - Route admin: `/api/v1/admin/documents/*`, mục lục của một tài liệu ở `/documents/{id}/toc`.
   Stage `toc` và `toc.json` là dữ liệu mục lục, tên đó đúng — đừng đổi.
 - Lỗi người dùng sửa được → `StageError` / `InvalidError` (hiển thị nguyên văn trên UI).
+- **Không nuốt lỗi:** `except` hay bỏ qua có chủ ý (`continue`, fallback, nhánh lỗi) đều phải `logger.warning/error` kèm nguyên nhân, kể cả khi đã báo qua `notes`/message. Chi tiết: skill `derma-core-conventions` mục Code style.
 - Tên và comment: Python dùng snake_case; docstring và comment **tiếng Việt**, giải thích **vì sao**,
   không mô tả **cái gì** đã rõ trong code.
 - **Không** viết docstring/comment dài ở đầu file (module docstring) hay khi định nghĩa hàm/class để kể
@@ -143,7 +145,7 @@ Quy tắc dùng chung:
 
 ## 7. Hạn chế đã biết (đồ án)
 
-- Không có auth đa người dùng cho khu admin (API chưa kiểm tra JWT phía server).
+- Khu admin: `/admin/*` (API `/api/v1/admin/*` bắt buộc vai trò admin qua `require_admin`); `uploaded_by_id` của `documents` vẫn FK tới `doctors` nhưng chưa được ghi.
 - Upload PDF đi qua Core; chưa có presigned upload trực tiếp lên MinIO.
 - Không có job dọn object MinIO mồ côi khi rollback thất bại.
 - Chưa có tài liệu hướng dẫn triển khai cho pipeline; `DEPLOY.md` chỉ mô tả chat.
