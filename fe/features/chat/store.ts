@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { toast } from "sonner";
 import { chatService } from "@/services";
 import { toChatMessage, type ApiChatMessage } from "@/services/apiAdapters";
 import { getCurrentUserId } from "@/services/client";
@@ -86,6 +87,8 @@ interface ChatState {
     answer: { optionId: string; label: string; custom?: boolean }
   ) => void;
   hasActiveStream: (conversationId: string) => boolean;
+  /** Người dùng bấm Dừng: yêu cầu agent ngừng turn đang chạy */
+  stopTurn: (conversationId: string) => Promise<void>;
 }
 
 function normalizeStreamEvent(rawEvent: ChatStreamEvent): import("./types").FlatStreamEvent {
@@ -852,6 +855,15 @@ export const useChatStore = create<ChatState>((set, get) => {
         });
       } catch (error) {
         console.error("Lưu văn bản thất bại", error);
+      }
+    },
+
+    async stopTurn(conversationId) {
+      try {
+        await chatService.cancelTurn?.(conversationId);
+      } catch (error) {
+        console.error("Dừng trả lời thất bại", error);
+        toast.error("Không dừng được, vui lòng thử lại.");
       }
     },
 

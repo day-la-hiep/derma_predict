@@ -296,6 +296,8 @@ export interface ChatService {
   createConversation(input?: Partial<CreateConversationInput> | string): Promise<Conversation>;
   sendMessage(input: SendMessageInput): Promise<SendMessageResult | void> | void;
   answerQuestion(input: AnswerQuestionInput): Promise<void> | void;
+  /** Dừng turn đang chạy; kết quả về qua `message.done`. Bản mock không có. */
+  cancelTurn?(conversationId: string): Promise<void>;
   updateDocument(input: {
     messageId: string;
     content: string;

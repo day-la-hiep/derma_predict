@@ -149,6 +149,10 @@ const impl = {
     impl.openRoom(input.conversationId);
   },
 
+  async cancelTurn(conversationId: string) {
+    await api.post(endpoints.cancelTurn(conversationId));
+  },
+
   async improvePrompt(prompt: string) {
     const { data } = await api.post<{ data: string }>(
       endpoints.improvePrompt,
