@@ -4,29 +4,46 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
-from app.common.constant import ClinicalFactType, FactOrigin, Gender, MessageSender, ProfileRelationship, Urgency
+from app.common.constant import (
+    ClinicalFactType,
+    DiagnosisCode,
+    FactOrigin,
+    Gender,
+    MessageSender,
+    ProfileRelationship,
+    Urgency,
+)
 
 if TYPE_CHECKING:
     from app.dto.base.consultation import ConsultationSession
     from app.dto.base.identity import Doctor
     from app.dto.base.shared import File
+    from app.dto.base.visit import Encounter
 
 
 class FinalizeReport(BaseModel):
-    """báo cáo kết luận bác sĩ chốt sau một lần khám hoặc tư vấn (`PatientProfile.finalize_reports`). Không sửa sau khi chốt."""
+    """Kết luận bác sĩ chốt (`PatientProfile.finalize_reports`); không sửa sau khi chốt."""
 
     id: str
     diagnosis: str  # nhận định của bác sĩ
     notes: str = ""  # ghi chú chung (hướng điều trị, tái khám) — bệnh nhân cũng xem được
     doctor: Doctor | None = None
-    consultation_session: ConsultationSession | None = None  # ca tư vấn gốc; None = khám trực tiếp
+    encounter: Encounter | None = None  # lần khám trực tiếp; None = dữ liệu cũ từ phiên tư vấn
+    consultation_session: ConsultationSession | None = None  # chỉ dữ liệu cũ
+    diagnosis_code: DiagnosisCode | None = None  # so tự động với giả thuyết AI; dữ liệu cũ được None
     snapshot: FinalizeReportSnapshot | None = None  # None với báo cáo kết luận ghi trước khi có snapshot
     images: list[PatientImage] = []
     # ca bệnh tham khảo: bác sĩ xác nhận dùng làm dữ liệu cho KB / chatbot tra ca tương tự (ẩn định danh khi đưa vào KB)
     is_reference_case: bool = False
     created_at: datetime | None = None  # thời điểm chốt
+
+    @model_validator(mode="after")
+    def validate_code(self):
+        if self.encounter is not None and self.diagnosis_code is None:
+            raise ValueError("diagnosis_code is required for a report closing an encounter")
+        return self
 
 
 class FinalizeReportSnapshot(BaseModel):
@@ -35,7 +52,9 @@ class FinalizeReportSnapshot(BaseModel):
 
     patient_profile: SnapshotPatientProfile
     assessment: Assessment
-    clinical_facts: list[SnapshotClinicalFact] = []
+    clinical_facts: list[SnapshotClinicalFact] = []  # fact dài hạn + fact của đợt được khám, sau khi bác sĩ sửa
+    # fact bác sĩ xoá lúc chốt: bảng fact chỉ giữ hiện trạng nên đây là dấu vết duy nhất, dùng đo tỉ lệ AI trích sai
+    removed_facts: list[SnapshotClinicalFact] = []
 
 
 class SnapshotPatientProfile(BaseModel):

@@ -130,8 +130,11 @@ class Settings(BaseSettings):
     AGENT_FINALIZE_REPORT_SEARCH_ENABLED: bool = True
 
     # Phiên bản graph tiền chẩn đoán: "v1" = create_agent + middleware (`agent/graph/v1`), "v2" = StateGraph plan → retrieve → reflect → answer
-    # (`agent/graph/v2`). Mặc định v1 để hành vi hiện tại không đổi; đổi cần khởi động lại worker.
-    AGENT_GRAPH_VERSION: Literal["v1", "v2"] = "v1"
+    # (`agent/graph/v2`). Mặc định v2 vì chỉ v2 sinh giả thuyết dạng dữ liệu (lưu vào đợt bệnh, so với kết luận); đổi cần khởi động lại worker.
+    AGENT_GRAPH_VERSION: Literal["v1", "v2"] = "v2"
+
+    # Đợt bệnh đang mở mà không được cập nhật quá N ngày (và không gắn lịch hẹn đang hoạt động) thì hết hạn; cũng là mốc coi triệu chứng còn hiệu lực.
+    CLINICAL_EPISODE_EXPIRE_DAYS: int = 30
 
     # Memory dài hạn theo hồ sơ bệnh nhân (`agent/tools/memory.py`): tin người dùng vào bộ đệm sau mỗi lượt (không gọi LLM); khi đủ AGENT_MEMORY_BATCH_MAX_PENDING
     # tin hoặc đã qua AGENT_MEMORY_BATCH_INTERVAL_MIN phút kể từ batch trước thì một lần gọi LLM cập nhật memory cho cả loạt (đặt interval = 0 để chỉ batch theo số tin).
