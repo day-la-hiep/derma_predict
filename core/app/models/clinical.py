@@ -1,19 +1,9 @@
-"""ClinicalFact / PreConsultationReport"""
+"""ClinicalFact / ClinicalProvenance / PreConsultationReport"""
 from datetime import UTC, datetime
-from sqlalchemy import DateTime, ForeignKey, String, Text, text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
-
-
-class ClinicalFactTemplate(Base):
-    __tablename__ = "clinical_fact_templates"
-
-    id: Mapped[str] = mapped_column(String(64), primary_key=True, server_default=text("gen_random_uuid()"))  # DB sinh
-    fact_type: Mapped[str] = mapped_column(String(32))  # `ClinicalFactType`
-    label: Mapped[str] = mapped_column(String(255), unique=True)
-    description: Mapped[str] = mapped_column(Text, default="", server_default="")
-    ontology_id: Mapped[str | None] = mapped_column(String(128), default=None)
 
 
 class ClinicalFact(Base):
@@ -22,25 +12,44 @@ class ClinicalFact(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True, server_default=text("gen_random_uuid()"))  # DB sinh
     # fact thuộc về người bệnh, không thuộc một cuộc chat; hội thoại sinh ra fact truy ngược qua `ClinicalProvenance`
     patient_profile_id: Mapped[str] = mapped_column(ForeignKey("patient_profiles.id", ondelete="CASCADE"), index=True)
-    # RESTRICT: không xoá được mẫu đang có fact dùng, tránh mất ngữ nghĩa của fact đã ghi
-    template_id: Mapped[str] = mapped_column(ForeignKey("clinical_fact_templates.id", ondelete="RESTRICT"), index=True)
+    fact_type: Mapped[str] = mapped_column(String(32))  # `ClinicalFactType`
+    label: Mapped[str] = mapped_column(String(255))
+    ontology_id: Mapped[str | None] = mapped_column(String(128), default=None)
+    # giá trị hiện tại, sửa tại chỗ; lịch sử nằm ở `clinical_provenances`
     detail: Mapped[str] = mapped_column(Text, default="", server_default="")
-    status: Mapped[str] = mapped_column(String(16), default="active", server_default="active")  # "active" | "superseded"
-    superseded_by_id: Mapped[str | None] = mapped_column(
-        ForeignKey("clinical_facts.id", ondelete="SET NULL"), default=None
-    )
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    verified_by_id: Mapped[str | None] = mapped_column(ForeignKey("doctors.user_id", ondelete="SET NULL"), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+
+# Bảng fact là hiện trạng: mỗi (hồ sơ, loại, nhãn) một dòng, nhãn so không phân biệt hoa thường
+Index(
+    "uq_clinical_facts_profile_type_label",
+    ClinicalFact.patient_profile_id,
+    ClinicalFact.fact_type,
+    func.lower(ClinicalFact.label),
+    unique=True,
+)
 
 
 class ClinicalProvenance(Base):
-    """`ClinicalFact.provenances` — nguồn gốc của fact: `message_id` là tin nhắn gốc làm bằng chứng (`ClinicalProvenance.message`)."""
+    """`ClinicalFact.provenances` — nhật ký chỉ thêm: mỗi dòng là một lần một nguồn ghi nhận giá trị của fact."""
 
     __tablename__ = "clinical_provenances"
+    __table_args__ = (CheckConstraint("kind IN ('chat', 'doctor')", name="kind_valid"),)
 
-    fact_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("clinical_facts.id", ondelete="CASCADE"), primary_key=True
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, server_default=text("gen_random_uuid()"))  # DB sinh
+    fact_id: Mapped[str] = mapped_column(ForeignKey("clinical_facts.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="chat", server_default="chat")  # `ProvenanceKind`
+    # SET NULL: xoá hội thoại không làm fact mất bằng chứng vì nội dung đã chép vào `quote`
+    message_id: Mapped[str | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"), index=True, default=None
     )
-    message_id: Mapped[str] = mapped_column(String(64), ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True)
+    quote: Mapped[str] = mapped_column(Text, default="", server_default="")
+    doctor_id: Mapped[str | None] = mapped_column(ForeignKey("doctors.user_id", ondelete="SET NULL"), default=None)
+    detail: Mapped[str] = mapped_column(Text, default="", server_default="")  # giá trị fact nguồn này ghi nhận
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 
 class PreConsultationReport(Base):

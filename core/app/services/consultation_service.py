@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agent.dto.schemas import TurnRequest
 from app.api.deps import get_rabbitmq_client
-from app.common.constant import MessageSender, MessageType
+from app.common.constant import MessageSender, MessageType, ProvenanceKind
 from app.config.constants import AGENT_REQUEST_QUEUE
 from app.dto.consultation import (
     ClinicalFactOutput,
@@ -26,6 +26,7 @@ from app.infra.rabbitmq_client import RabbitMQClient
 from app.infra.redis_client import RedisClient
 from app.models.clinical import (
     ClinicalFact,
+    ClinicalProvenance,
     PreConsultationReport,
 )
 from app.models.consultation_session import ConsultationSession
@@ -42,6 +43,8 @@ from app.services.patient_graph_service import PatientGraphService
 from app.services.room_events import publish_inbox, publish_room
 
 logger = logging.getLogger(__name__)
+
+QUOTE_MAX_CHARS = 500  # trích tin gốc trong nhật ký nguồn
 
 
 @dataclass(frozen=True)
@@ -104,6 +107,31 @@ class ConsultationService:
     async def _patient_dto(self, patient_profile_id: str | None) -> PatientProfileDto | None:
         profile = await self._db.get(PatientProfile, patient_profile_id) if patient_profile_id else None
         return to_patient_profile_dto(profile) if profile else None
+
+    async def _facts_output(self, patient_profile_id: str) -> list[ClinicalFactOutput]:
+        rows = await self._repo.list_facts_with_sources(patient_profile_id, newest_first=True)
+        return [
+            ClinicalFactOutput(
+                id=f.id,
+                template_label=f.label,
+                fact_type=f.fact_type,
+                detail=f.detail,
+                verified_at=f.verified_at.isoformat() if f.verified_at else None,
+                created_at=f.created_at.isoformat(),
+                updated_at=f.updated_at.isoformat(),
+                source_message_ids=[m.id for m in msgs],
+                source_messages=[
+                    ClinicalFactSourceMessageOutput(
+                        id=m.id,
+                        sender=m.sender,
+                        content=m.content,
+                        created_at=m.created_at.isoformat() if m.created_at else None,
+                    )
+                    for m in msgs
+                ],
+            )
+            for f, msgs in rows
+        ]
 
     async def _owned_session(self, session_id: str, doctor_id: str) -> ConsultationSession:
         session = await self._repo.get_session(session_id)
@@ -198,30 +226,7 @@ class ConsultationService:
             conv = await self._conv_repo.get(s.conversation_id)
             title = conv.title if conv else "Hội thoại da liễu"
             report = await self._repo.get_report(s.id)
-            facts_dto: list[ClinicalFactOutput] = []
-            if conv and conv.patient_profile_id:
-                raw_facts = await self._repo.get_clinical_facts_by_patient(conv.patient_profile_id)
-                facts_dto = [
-                    ClinicalFactOutput(
-                        id=f.id,
-                        template_label=tpl.label,
-                        fact_type=tpl.fact_type,
-                        detail=f.detail,
-                        status=f.status,
-                        created_at=f.created_at.isoformat(),
-                        source_message_ids=[m.id for m in msgs],
-                        source_messages=[
-                            ClinicalFactSourceMessageOutput(
-                                id=m.id,
-                                sender=m.sender,
-                                content=m.content,
-                                created_at=m.created_at.isoformat() if m.created_at else None,
-                            )
-                            for m in msgs
-                        ],
-                    )
-                    for f, tpl, msgs in raw_facts
-                ]
+            facts_dto = await self._facts_output(conv.patient_profile_id) if conv and conv.patient_profile_id else []
             patient = await self._patient_dto(conv.patient_profile_id if conv else None)
             results.append(self._to_output(s, title, report, facts_dto, patient))
         return results
@@ -233,30 +238,7 @@ class ConsultationService:
         conv = await self._conv_repo.get(session.conversation_id)
         title = conv.title if conv else "Hội thoại da liễu"
         report = await self._repo.get_report(session.id)
-        facts_dto: list[ClinicalFactOutput] = []
-        if conv and conv.patient_profile_id:
-            raw_facts = await self._repo.get_clinical_facts_by_patient(conv.patient_profile_id)
-            facts_dto = [
-                ClinicalFactOutput(
-                    id=f.id,
-                    template_label=tpl.label,
-                    fact_type=tpl.fact_type,
-                    detail=f.detail,
-                    status=f.status,
-                    created_at=f.created_at.isoformat(),
-                    source_message_ids=[m.id for m in msgs],
-                    source_messages=[
-                        ClinicalFactSourceMessageOutput(
-                            id=m.id,
-                            sender=m.sender,
-                            content=m.content,
-                            created_at=m.created_at.isoformat() if m.created_at else None,
-                        )
-                        for m in msgs
-                    ],
-                )
-                for f, tpl, msgs in raw_facts
-            ]
+        facts_dto = await self._facts_output(conv.patient_profile_id) if conv and conv.patient_profile_id else []
         patient = await self._patient_dto(conv.patient_profile_id if conv else None)
         return self._to_output(session, title, report, facts_dto, patient)
 
@@ -358,62 +340,85 @@ class ConsultationService:
         )
         await self._repo.create_report(report)
 
-        # 2. Lưu Facts
-        facts_to_save: list[ClinicalFact] = []
+        # 2. Lưu fact: upsert theo khoá (hồ sơ, loại, nhãn) — bảng là hiện trạng, không sinh bản trùng mỗi lần tạo báo cáo
         facts_dto: list[ClinicalFactOutput] = []
         now = datetime.now(UTC)
-
+        saved: dict[str, ClinicalFact] = {}  # id tạm agent gán -> fact đã lưu
         for rf in facts:
-            f_type = rf.get("fact_type", "symptom")
-            f_label = rf.get("template_label", "Dữ kiện lâm sàng")
-            f_detail = rf.get("detail", "")
-            f_id = rf.get("id") or f"cf-{uuid.uuid4()}"
-
-            tpl = await self._repo.get_or_create_template(f_type, f_label)
-            facts_to_save.append(
-                ClinicalFact(
-                    id=f_id,
-                    patient_profile_id=patient_profile_id,
-                    template_id=tpl.id,
-                    detail=f_detail,
-                    status="active",
-                    created_at=now,
+            f_type = str(rf.get("fact_type") or "symptom")
+            f_label = " ".join(str(rf.get("template_label") or "Dữ kiện lâm sàng").split())
+            f_detail = str(rf.get("detail") or "").strip()
+            fact = await self._repo.find_fact(patient_profile_id, f_type, f_label)
+            if fact is None:
+                fact = await self._repo.add_fact(
+                    ClinicalFact(
+                        patient_profile_id=patient_profile_id,
+                        fact_type=f_type,
+                        label=f_label,
+                        detail=f_detail,
+                        created_at=now,
+                        updated_at=now,
+                    )
                 )
-            )
+            elif f_detail and f_detail != fact.detail:
+                fact.detail = f_detail
+                fact.updated_at = now
+                fact.verified_at = None  # giá trị mới chưa ai kiểm chứng
+                fact.verified_by_id = None
+            temp_id = str(rf.get("id") or "")
+            if temp_id:
+                saved[temp_id] = fact
+            rf["id"] = fact.id  # graph và SSE dùng id thật
+        await self._db.flush()
+        for fact in {f.id: f for f in saved.values()}.values():
             facts_dto.append(
                 ClinicalFactOutput(
-                    id=f_id,
-                    template_label=tpl.label,
-                    fact_type=tpl.fact_type,
-                    detail=f_detail,
-                    status="active",
-                    created_at=now.isoformat(),
+                    id=fact.id,
+                    template_label=fact.label,
+                    fact_type=fact.fact_type,
+                    detail=fact.detail,
+                    verified_at=fact.verified_at.isoformat() if fact.verified_at else None,
+                    created_at=fact.created_at.isoformat(),
+                    updated_at=fact.updated_at.isoformat(),
                 )
             )
 
-        if facts_to_save:
-            await self._repo.add_clinical_facts(facts_to_save)
+        # 3. Nhật ký nguồn: chỉ thêm cặp (fact, tin) chưa có, chép nội dung tin để tin bị xoá vẫn đọc được
+        pairs = {(saved[p[0]].id, p[1]) for p in provenance_pairs if len(p) >= 2 and p[0] in saved}
+        known = await self._repo.provenance_messages(list({f for f, _ in pairs}))
+        new_pairs = [pair for pair in pairs if pair not in known]
+        contents = await self._repo.message_contents(list({m for _, m in new_pairs}))
+        by_id = {f.id: f for f in saved.values()}
+        await self._repo.add_provenances(
+            [
+                ClinicalProvenance(
+                    fact_id=fact_id,
+                    kind=ProvenanceKind.CHAT.value,
+                    message_id=message_id,
+                    quote=contents.get(message_id, "")[:QUOTE_MAX_CHARS],
+                    detail=by_id[fact_id].detail,
+                    created_at=now,
+                )
+                for fact_id, message_id in new_pairs
+            ]
+        )
+        skipped = [p for p in provenance_pairs if len(p) < 2 or p[0] not in saved]
+        if skipped:
+            logger.warning("[consultation] bỏ %d cặp nguồn không khớp fact nào của báo cáo session=%s", len(skipped), session_id)
 
-        # 3. Lưu Provenances
-        saved_fact_ids = {f.id for f in facts_to_save}
-        valid_pairs = [
-            (p[0], p[1])
-            for p in provenance_pairs
-            if len(p) >= 2 and p[0] in saved_fact_ids
-        ]
-        if valid_pairs:
-            await self._repo.add_provenances(valid_pairs)
+        # 4. Cặp nguồn theo id thật, cho bước đồng bộ graph
+        provenance_pairs = [[f, m] for f, m in pairs]
 
         await self._db.commit()
 
-        # 4. Broadcast realtime kết quả qua SSE cho Bác sĩ và Bệnh nhân
+        # 5. Broadcast realtime kết quả qua SSE cho Bác sĩ và Bệnh nhân
         conv_title = conv.title if conv else "Hội thoại tư vấn"
         patient = await self._patient_dto(patient_profile_id)
         out = self._to_output(session, conv_title, report, facts_dto, patient)
         await self._announce(out)
         logger.info("Đã lưu báo cáo tiền tư vấn và phát event cập nhật cho session=%s", session_id)
 
-        # 5. Đồng bộ đồ thị hành trình bệnh nhân (Patient Journey Knowledge Graph) trên Neo4j
+        # 6. Đồng bộ đồ thị hành trình bệnh nhân (Patient Journey Knowledge Graph) trên Neo4j
         if self._patient_graph and patient_profile_id:
             try:
                 # Thu thập các ảnh bệnh nhân gửi trong cuộc trò chuyện gắn với phiên này

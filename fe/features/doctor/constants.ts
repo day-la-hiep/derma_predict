@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import type { ClinicalFactType, ConsultationStatus, FactOrigin, Urgency } from "./types";
 
-/** Cấu hình hiển thị theo loại Dữ kiện lâm sàng (bám sát bảng clinical_fact_templates trong DB) */
+/** Cấu hình hiển thị theo loại Dữ kiện lâm sàng (bám sát cột clinical_facts.fact_type trong DB) */
 export interface FactTypeConfig {
   label: string;
   hint: string;

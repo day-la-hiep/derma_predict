@@ -1,6 +1,8 @@
 // Derma Hospital — schema PostgreSQL hiện tại
 // Nguồn: core/app/models/*.py, khớp migration head 3e4b8f67b9ca (2026-10-05).
 // Xem trên https://dbdiagram.io (dán nội dung file này).
+// Đã gộp thiết kế mới (tmp/plan/2026-11-03-de-xuat-schema.html, hướng đợt bệnh) — CHƯA có migration.
+// Cột / bảng đề xuất đánh dấu "[Pn]" theo giai đoạn trong tmp/plan/todo; bảng mới có header cam.
 // id dạng chuỗi do DB sinh (gen_random_uuid()); dữ liệu cũ có thể còn id dạng `conv-<uuid>`, `msg-<uuid>`.
 
 Project derma_hospital {
@@ -36,8 +38,8 @@ Table patient_profiles {
   gender varchar(16) [not null, note: 'male | female']
   relationship varchar(16) [not null, default: 'self', note: 'self | child | parent | spouse | other']
   phone varchar(32) [null]
-  allergies text [not null, default: '', note: 'tự khai']
-  medical_history text [not null, default: '', note: 'tự khai']
+  allergies text [not null, default: '', note: 'tự khai. [Đợt 3] backfill thành fact allergy dài hạn rồi BỎ CỘT']
+  medical_history text [not null, default: '', note: 'tự khai. [Đợt 3] backfill thành fact history dài hạn rồi BỎ CỘT']
   created_at timestamptz [not null]
   Indexes {
     user_id
@@ -112,7 +114,8 @@ Table consultation_sessions {
     conversation_id [unique, name: 'uq_consultation_sessions_open_per_conversation', note: "partial: WHERE status <> 'resolved' — tối đa 1 phiên mở / hội thoại"]
   }
   Note: '''
-  Phiên tư vấn bác sĩ trong một hội thoại (mới có schema, chưa có API).
+  Phiên tư vấn bác sĩ trong một hội thoại.
+  [P3] Luồng mới không tạo phiên (thay bằng appointments → encounters); giữ cho dữ liệu cũ + video call.
   CHECK doctor_when_not_pending: status = 'pending' OR doctor_id IS NOT NULL
   CHECK resolved_at_when_resolved: status <> 'resolved' OR resolved_at IS NOT NULL
   conversation_id ON DELETE CASCADE, doctor_id ON DELETE SET NULL.
@@ -147,13 +150,19 @@ Table finalize_reports {
   diagnosis text [not null]
   notes text [not null, default: '']
   is_reference_case boolean [not null, default: false, note: 'ca bệnh tham khảo — dùng cho KB / tra ca tương tự']
-  consultation_session_id varchar(64) [null, unique, ref: > consultation_sessions.id, note: '1 báo cáo / phiên tư vấn']
-  snapshot jsonb [null, note: 'bản chụp bất biến lúc chốt']
+  consultation_session_id varchar(64) [null, unique, ref: > consultation_sessions.id, note: '1 báo cáo / phiên tư vấn — chỉ dữ liệu cũ']
+  encounter_id varchar(64) [null, unique, ref: - encounters.id, note: '[P5] 1 kết luận / lần khám; NULL = dữ liệu cũ']
+  diagnosis_code varchar(64) [null, note: '[P5] lớp CNN | OTHER (danh mục là hằng trong code)']
+  snapshot jsonb [null, note: 'bản chụp bất biến lúc chốt; [P5] chép fact dài hạn + fact của đợt, thêm removed_facts']
   created_at timestamptz [not null]
   Indexes {
     patient_profile_id
   }
-  Note: 'Kết luận cuối bác sĩ chốt từ một phiên tư vấn. patient_profile_id ON DELETE CASCADE; doctor_id ON DELETE SET NULL.'
+  Note: '''
+  Kết luận bác sĩ chốt. Cũ: từ phiên tư vấn; mới [P5]: từ lần khám trực tiếp. Là lịch sử bất biến; graph Neo4j chỉ nạp từ đây.
+  [P5] CHECK code_when_encounter: encounter_id IS NULL OR diagnosis_code IS NOT NULL
+  patient_profile_id ON DELETE CASCADE; doctor_id ON DELETE SET NULL.
+  '''
 }
 
 Table patient_images {
@@ -173,49 +182,156 @@ Table patient_images {
 // ===================== Clinical fact & báo cáo tiền tư vấn =====================
 
 TableGroup lam_sang {
-  clinical_fact_templates
   clinical_facts
   clinical_provenances
-  pre_consultation_reports
+  clinical_episodes
+  ai_hypotheses
 }
 
-Table clinical_fact_templates {
-  id varchar(64) [pk, default: `gen_random_uuid()`]
-  fact_type varchar(32) [not null, note: 'symptom | lesion | history | medication | allergy | image_finding | other']
-  label varchar(255) [unique, not null]
-  description text [not null, default: '']
-  ontology_id varchar(128) [null, note: 'id DermO / PrimeKG — dùng vẽ KG liên quan bệnh nhân']
-  Note: 'Danh mục mẫu dữ kiện lâm sàng chuẩn. Mọi clinical_facts phải tạo từ một mẫu (mới có schema).'
-}
+// [P1] clinical_fact_templates: BỎ — fact_type/label/ontology_id chép sang clinical_facts rồi drop (template sinh tự do, không phải danh mục).
+// Danh mục do bác sĩ cấu hình: docs/pending/fact-template-catalog.md
+// [P2] pre_consultation_reports: BỎ — mỗi báo cáo cũ → 1 clinical_episodes closed (vùng nhieu_vung, summary), rồi drop.
 
 Table clinical_facts {
   id varchar(64) [pk, default: `gen_random_uuid()`]
   patient_profile_id varchar(64) [not null, ref: > patient_profiles.id]
-  template_id varchar(64) [not null, ref: > clinical_fact_templates.id, note: 'ON DELETE RESTRICT; loại / nhãn / ontology lấy từ mẫu']
-  detail text [not null, default: '', note: 'giá trị cụ thể của bệnh nhân: vị trí, thời gian, mức độ...']
-  status varchar(16) [not null, default: 'active', note: 'active | superseded']
-  superseded_by_id varchar(64) [null, ref: > clinical_facts.id, note: 'fact mới thay thế; ON DELETE SET NULL']
+  episode_id varchar(64) [null, ref: > clinical_episodes.id, note: '[P1] NULL = fact dài hạn (allergy | history | medication); khác NULL = fact theo đợt. ON DELETE CASCADE']
+  fact_type varchar(32) [not null, note: '[P1] từ template. symptom | lesion | history | medication | allergy | other (bỏ image_finding)']
+  label varchar(255) [not null, note: '[P1] từ template']
+  ontology_id varchar(128) [null, note: '[P1] từ template; DermO / PrimeKG']
+  detail text [not null, default: '', note: 'giá trị hiện tại — thay thế, không nối; ≤ 300 ký tự']
+  verified_at timestamptz [null, note: '[P1] bác sĩ xác nhận lúc chốt; AI sửa lại → NULL']
+  verified_by_id varchar(64) [null, ref: > doctors.user_id, note: '[P1] ON DELETE SET NULL']
   created_at timestamptz [not null]
+  updated_at timestamptz [not null, note: '[P1]']
   Indexes {
     patient_profile_id
-    template_id
+    episode_id
   }
-  Note: 'Dữ kiện lâm sàng của hồ sơ bệnh nhân (mới có schema); hội thoại nguồn truy qua clinical_provenances → messages. Không sửa đè: đính chính thì tạo fact mới. ON DELETE CASCADE theo patient_profiles.'
+  Note: '''
+  [P1] TÌNH TRẠNG HIỆN TẠI, sửa tại chỗ. Bỏ template_id, status, superseded_by_id.
+  Lịch sử: nhật ký clinical_provenances + snapshot của finalize_reports.
+  AI ghi khi chat (chưa xác nhận), không được xoá; bác sĩ sửa / thêm / xoá lúc chốt.
+  CHECK long_term_no_episode: (fact_type IN ('allergy','history','medication')) = (episode_id IS NULL)
+  UNIQUE uq_clinical_facts_long_term: (patient_profile_id, fact_type, lower(label)) WHERE episode_id IS NULL
+  UNIQUE uq_clinical_facts_episode: (episode_id, fact_type, lower(label)) WHERE episode_id IS NOT NULL
+  Migration: gộp fact trùng khoá (giữ bản mới nhất, dồn nhật ký); symptom/lesion/other cũ gắn vào đợt closed "dữ liệu cũ"; image_finding cũ → other.
+  ON DELETE CASCADE theo patient_profiles.
+  '''
 }
 
 Table clinical_provenances {
-  fact_id varchar(64) [pk, ref: > clinical_facts.id]
-  message_id varchar(64) [pk, ref: > messages.id]
-  Note: 'Nguồn gốc (`ClinicalProvenance`) của fact: tin nhắn gốc làm bằng chứng (n-n). ON DELETE CASCADE cả hai phía.'
+  id varchar(64) [pk, default: `gen_random_uuid()`, note: '[P1] thay PK ghép (fact_id, message_id)']
+  fact_id varchar(64) [not null, ref: > clinical_facts.id]
+  kind varchar(16) [not null, default: 'chat', note: '[P1] chat | doctor; dữ liệu cũ = chat']
+  message_id varchar(64) [null, note: 'tin gốc (kind = chat). [P1] đổi CASCADE → SET NULL']
+  quote text [not null, default: '', note: '[P1] trích tin gốc; backfill từ messages.content']
+  encounter_id varchar(64) [null, ref: > encounters.id, note: '[P4] kind = doctor']
+  doctor_id varchar(64) [null, ref: > doctors.user_id, note: '[P1] kind = doctor']
+  detail text [not null, default: '', note: '[P1] giá trị fact nguồn này ghi nhận; backfill = detail hiện tại']
+  created_at timestamptz [not null, note: '[P1] backfill = messages.created_at']
+  Indexes {
+    fact_id
+    message_id
+  }
+  Note: '''
+  [P1] NHẬT KÝ CHỈ THÊM: bằng chứng + lịch sử thay đổi của fact.
+  Chỉ thêm dòng khi detail đổi hoặc nguồn đầu tiên của một hội thoại. Không đưa vào prompt.
+  CHECK kind_valid: kind IN ('chat', 'doctor'). fact_id ON DELETE CASCADE.
+  '''
 }
 
-Table pre_consultation_reports {
+Table clinical_episodes [headercolor: #E67E22] {
   id varchar(64) [pk, default: `gen_random_uuid()`]
-  consultation_session_id varchar(64) [unique, not null, ref: - consultation_sessions.id]
-  summary text [not null]
-  created_at timestamptz [not null]
-  Note: 'Báo cáo AI tóm tắt cho bác sĩ, 1 báo cáo / phiên tư vấn (mới có schema; tạm chỉ có summary). ON DELETE CASCADE.'
+  patient_profile_id varchar(64) [not null, ref: > patient_profiles.id]
+  body_site varchar(16) [not null, note: 'dau_mat | da_dau_toc | co | than_truoc | lung | tay | ban_tay | chan | ban_chan | sinh_duc | mong | nhieu_vung']
+  status varchar(16) [not null, default: 'open', note: 'open | in_exam | closed | expired']
+  last_conversation_id varchar(64) [null, ref: > conversations.id, note: 'hội thoại cập nhật gần nhất; ON DELETE SET NULL']
+  summary text [not null, default: '', note: 'báo cáo trước khám; sinh lúc đặt lịch, sinh lại khi bác sĩ mở mà dữ liệu đã đổi']
+  summary_at timestamptz [null]
+  urgency varchar(16) [null]
+  red_flags jsonb [not null, default: `'[]'`]
+  image_predictions jsonb [not null, default: `'[]'`, note: '[{file_id, top_k:[{label, score}]}] — thay fact image_finding']
+  model_version varchar(64) [not null, default: '']
+  opened_at timestamptz [not null]
+  updated_at timestamptz [not null, note: 'căn cứ hết hạn 30 ngày']
+  closed_at timestamptz [null]
+  Indexes {
+    (patient_profile_id, body_site) [unique, name: 'uq_clinical_episodes_active', note: "partial: WHERE status IN ('open','in_exam') — mỗi vùng tối đa 1 đợt đang hoạt động"]
+  }
+  Note: '''
+  [P2] ĐỢT BỆNH = (hồ sơ, vùng, đợt): chứa giả thuyết AI, fact theo đợt, báo cáo trước khám; lịch hẹn nối vào.
+  open → in_exam (bắt đầu khám, khoá giả thuyết) → closed (chốt kết luận).
+  open → expired: 30 ngày không cập nhật và không gắn lịch hẹn đang hoạt động (kiểm tra lúc ghi).
+  CHECK closed_at_when_closed: status IN ('open','in_exam') OR closed_at IS NOT NULL
+  ON DELETE CASCADE theo patient_profiles.
+  '''
 }
+
+Table ai_hypotheses [headercolor: #E67E22] {
+  id varchar(64) [pk, default: `gen_random_uuid()`]
+  episode_id varchar(64) [not null, ref: > clinical_episodes.id]
+  rank int [not null]
+  diagnosis_code varchar(64) [not null, note: 'LLM chọn trong danh mục: 22 lớp CNN | OTHER']
+  disease varchar(255) [not null, note: 'tên hiển thị (ReflectHypothesis.disease)']
+  confidence varchar(8) [not null, note: 'cao | vừa | thấp']
+  evidence jsonb [not null, default: `'[]'`, note: 'bằng chứng đã giải mã từ cites E#']
+  missing jsonb [not null, default: `'[]'`, note: 'điều còn thiếu để xác nhận / loại trừ']
+  Indexes {
+    (episode_id, rank) [unique]
+  }
+  Note: '''
+  [P2] Giả thuyết xếp hạng của đợt, từ node reflect (graph v2). Đợt open: mỗi lượt thay toàn bộ; từ in_exam: chỉ đọc.
+  Chỉ số so tự động diagnosis_code với finalize_reports.diagnosis_code (cùng OTHER không tính trúng). Không có cột bác sĩ chấm.
+  CHECK rank >= 1. ON DELETE CASCADE.
+  '''
+}
+
+// ===================== [P3–P4] Lịch hẹn & khám =====================
+
+TableGroup kham {
+  appointments
+  encounters
+}
+
+Table appointments [headercolor: #E67E22] {
+  id varchar(64) [pk, default: `gen_random_uuid()`]
+  patient_profile_id varchar(64) [not null, ref: > patient_profiles.id]
+  episode_id varchar(64) [not null, ref: > clinical_episodes.id, note: 'đợt open, chưa quá hạn, có ≥ 1 giả thuyết (đủ thông tin) — không có thì không đặt được']
+  doctor_id varchar(64) [null, ref: > doctors.user_id, note: 'null tới khi xác nhận']
+  scheduled_at timestamptz [not null]
+  status varchar(16) [not null, default: 'requested', note: 'requested | confirmed | in_progress | done | cancelled | no_show']
+  reason text [not null, default: '']
+  cancel_reason text [null]
+  created_at timestamptz [not null]
+  Indexes {
+    patient_profile_id
+    (doctor_id, scheduled_at)
+    episode_id [unique, name: 'uq_appointments_active_episode', note: "partial: WHERE status IN ('requested','confirmed','in_progress')"]
+  }
+  Note: '''
+  [P3] Lịch hẹn cho một đợt đã đủ thông tin; vùng lấy từ đợt. Không có khám vãng lai: mọi lần khám bắt đầu từ lịch hẹn.
+  Trước "Bắt đầu khám" được đổi sang đợt open đủ thông tin khác của hồ sơ.
+  CHECK cancel_reason_when_cancelled: status <> 'cancelled' OR cancel_reason IS NOT NULL
+  CHECK doctor_when_confirmed: status IN ('requested','cancelled') OR doctor_id IS NOT NULL
+  '''
+}
+
+Table encounters [headercolor: #E67E22] {
+  id varchar(64) [pk, default: `gen_random_uuid()`]
+  appointment_id varchar(64) [not null, unique, ref: - appointments.id, note: 'lần khám luôn từ lịch hẹn']
+  patient_profile_id varchar(64) [not null, ref: > patient_profiles.id]
+  doctor_id varchar(64) [null, ref: > doctors.user_id]
+  status varchar(16) [not null, default: 'open', note: 'open | closed']
+  opened_at timestamptz [not null]
+  closed_at timestamptz [null]
+  Note: '''
+  [P4] Lần khám thật; tạo khi bác sĩ bấm "Bắt đầu khám" (cùng transaction: đợt → in_exam, lịch hẹn → in_progress).
+  CHECK closed_at_when_closed: status <> 'closed' OR closed_at IS NOT NULL
+  '''
+}
+
+// lab_orders, prescriptions, finalize_reports.diagnosis_certainty: HOÃN — docs/pending/lab-prescription.md
 
 // ===================== File =====================
 
@@ -279,3 +395,4 @@ Table document_overrides {
 // Hai FK của messages ghi riêng để thể hiện ON DELETE SET NULL
 Ref: messages.video_call_id > video_calls.id [delete: set null]
 Ref: messages.consultation_session_id > consultation_sessions.id [delete: set null]
+Ref: clinical_provenances.message_id > messages.id [delete: set null]

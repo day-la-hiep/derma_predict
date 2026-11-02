@@ -1,7 +1,7 @@
 # Hai phiên bản graph tiền chẩn đoán (v1 / v2)
 
 ## Quy tắc
-- Chọn bản bằng `AGENT_GRAPH_VERSION` (`v1` | `v2`, mặc định `v1`) trong `.env`; **cần khởi động lại agent worker**. Chat graph (`triage` → `pre_diagnosis`) dùng chung cho cả hai.
+- Chọn bản bằng `AGENT_GRAPH_VERSION` (`v1` | `v2`, mặc định `v2` từ 2026-11-03 vì chỉ v2 sinh giả thuyết dạng dữ liệu cho đợt bệnh) trong `.env`; **cần khởi động lại agent worker**. Đổi về `v1` thì mất giả thuyết lưu vào đợt bệnh, nhưng có lại `ask_user`. Chat graph (`triage` → `pre_diagnosis`) dùng chung cho cả hai.
 - **v1** (`agent/graph/v1/`): `create_agent` + middleware. Middleware chỉ của v1 nằm ở `agent/middleware/v1/` (ép/nhắc lập luận, kiểm soát bằng chứng, critic); phần dùng chung ở `agent/middleware/common/` và `agent/common/evidence.py`.
 - **v2** (`agent/graph/v2/`): `StateGraph` `load_memory → (text_flow ∥ image_flow)`: làn chữ `text_flow` = `extract_facts → plan → choose_tools → tools → label_evidence → reflect → answer`, làn ảnh `image_flow` = `(image_cnn ∥ image_vision) → image_done`` (`plan` không có truy vấn mới thì sang thẳng `answer`). Sơ đồ và ví dụ chạy: `tmp/reasoning_core_flow.html`.
 

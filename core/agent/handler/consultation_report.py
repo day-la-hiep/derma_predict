@@ -81,11 +81,11 @@ async def handle_consultation_report(req: TurnRequest) -> None:
             message_repo = MessageRepository(db)
 
             # 1. Tiền sử / dữ kiện lâm sàng đã biết
-            past_facts_data = await consultation_repo.get_active_facts_with_provenance(patient_profile_id)
+            past_facts_data = await consultation_repo.list_facts_with_sources(patient_profile_id)
             if past_facts_data:
                 past_facts_text = "\n".join(
-                    f"- [{tpl.fact_type.upper()}] {tpl.label}: {fact.detail}"
-                    for fact, tpl, _ in past_facts_data
+                    f"- [{fact.fact_type.upper()}] {fact.label}: {fact.detail}"
+                    for fact, _ in past_facts_data
                 )
             else:
                 past_facts_text = "Chưa ghi nhận dữ kiện lâm sàng tiền sử nào trước đó."
