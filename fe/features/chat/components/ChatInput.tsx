@@ -9,6 +9,7 @@ import {
   PanelLeft,
   Paperclip,
   Sparkles,
+  Square,
   X,
 } from "lucide-react";
 import {
@@ -89,6 +90,7 @@ export function ChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sendMessage = useChatStore((s) => s.sendMessage);
+  const stopTurn = useChatStore((s) => s.stopTurn);
   const selectedModelId = useChatStore((s) => s.selectedModelId);
   const setModel = useChatStore((s) => s.setModel);
   const draft = useComposerStore((s) => s.draft);
@@ -540,6 +542,18 @@ export function ChatInput({
             <div className="flex items-center gap-2">
               
 
+              {streaming && conversationId ? (
+                <Hint content="Dừng trả lời. Phần đã trả lời được giữ lại.">
+                  <button
+                    type="button"
+                    onClick={() => stopTurn(conversationId)}
+                    aria-label="Dừng"
+                    className="flex size-9 items-center justify-center rounded-xl border border-brand/40 bg-brand/10 text-brand shadow-xs hover:bg-brand/20 active:scale-[0.98] transition-all cursor-pointer"
+                  >
+                    <Square className="size-3.5 fill-current" />
+                  </button>
+                </Hint>
+              ) : (
               <Hint content="Gửi (Enter). Xuống dòng: Shift + Enter. Gõ / để chọn kỹ năng.">
               <button
                 type="button"
@@ -551,6 +565,7 @@ export function ChatInput({
                 <ArrowUp className="size-4.5" />
               </button>
               </Hint>
+              )}
             </div>
           </div>
         </div>
