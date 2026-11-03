@@ -1,4 +1,4 @@
-"""Bounded context Tư vấn bác sĩ: phiên tư vấn, cuộc gọi video, báo cáo tiền tư vấn."""
+"""Bounded context Tư vấn bác sĩ (luồng cũ): phiên tư vấn, cuộc gọi video. Báo cáo trước khám nay là `ClinicalEpisode.summary`."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -24,7 +24,6 @@ class ConsultationSession(BaseModel):
     requested_at: datetime | None = None
     started_at: datetime | None = None
     resolved_at: datetime | None = None
-    report: PreConsultationReport | None = None  # sinh khi bệnh nhân gửi yêu cầu, bác sĩ đọc trước khi nhận ca
     video_calls: list[VideoCall] = []  # các cuộc gọi video bác sĩ và bệnh nhân thực hiện trong phiên này
 
     @model_validator(mode="after")
@@ -44,11 +43,3 @@ class VideoCall(BaseModel):
     status: Literal["pending", "ongoing", "ended"]
     started_at: datetime | None = None
     ended_at: datetime | None = None
-
-
-class PreConsultationReport(BaseModel):
-    """Báo cáo AI tóm tắt cho bác sĩ trước khi tư vấn (`ConsultationSession.report`, 1 báo cáo / phiên) — chỉ là gợi ý
-    hỗ trợ, không phải chẩn đoán. Fact lâm sàng bác sĩ xem trực tiếp từ `PatientProfile.clinical_facts`."""
-
-    summary: str
-    created_at: datetime | None = None

@@ -13,6 +13,7 @@
 1. **Lúc hoàn tất tiền tư vấn (`save_generated_report` trong `ConsultationService`)**:
    - Quét tất cả tin nhắn trong cuộc trò chuyện gắn với phiên, lọc các file `content_type` dạng ảnh (`image/*`).
    - Dựa trên `provenance_pairs` (`fact_id -> message_id`), tự động kết nối `(img)-[:EVIDENCES]->(fact)`.
+   - **Từ 2026-11-03 (Đợt 2) báo cáo không còn gửi fact** (fact lưu theo lượt chat vào đợt bệnh), nên bước này chỉ còn tạo node phiên + ảnh, **không còn cạnh `REPORTED_FACT` / `EVIDENCES` mới**. Graph sẽ dựng lại từ kết luận đã chốt ở Đợt 5 (xem `docs/notice/clinical-facts.md`).
 2. **Lúc bác sĩ chốt ca (`_create` trong `FinalizeReportService`)**:
    - Truyền danh sách `attached_images` có `body_site` và `confirmed_label` vào `sync_finalized_session`.
    - Cập nhật thông tin lên node `:PatientImage` và nối sang `:SuspectedCondition`.

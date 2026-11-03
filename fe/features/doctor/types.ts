@@ -2,7 +2,7 @@
  * Types cho màn hình bác sĩ — báo cáo tư vấn (consultation report).
  *
  * Map từ database schema: `consultation_sessions`, `pre_consultation_reports`,
- * `clinical_facts`, `clinical_fact_templates`, `patient_profiles`, `messages`.
+ * `clinical_facts`, `clinical_provenances`, `patient_profiles`, `messages`.
  */
 
 /* ────────── Patient Profile ────────── */
@@ -137,8 +137,10 @@ export interface ClinicalFact {
   templateLabel: string;
   factType: ClinicalFactType;
   detail: string;
-  status: "active" | "superseded";
+  /** bác sĩ xác nhận lúc chốt; null = AI ghi, chưa kiểm chứng */
+  verifiedAt: string | null;
   createdAt: string;
+  updatedAt: string | null;
   sourceMessageIds?: string[];
   sourceMessages?: SnapshotMessage[];
 }

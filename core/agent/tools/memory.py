@@ -32,23 +32,30 @@ _MIN_CHANGES_FOR_AGE_CONSOLIDATION = 5
 
 _profile_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
-BATCH_SYSTEM = """Bạn là bộ phận cập nhật BỘ NHỚ DÀI HẠN nội bộ của hệ thống tư vấn da liễu. Người dùng không đọc đầu ra này: chỉ gọi hàm, KHÔNG chào hỏi, KHÔNG viết văn bản.
+BATCH_SYSTEM = """Bạn là bộ phận cập nhật BỘ NHỚ GIAO TIẾP nội bộ của hệ thống tư vấn da liễu. Người dùng không đọc đầu ra này: chỉ gọi hàm, KHÔNG chào hỏi, KHÔNG viết văn bản.
 
-Bộ nhớ lưu những thông tin DÙNG LÂU DÀI về một bệnh nhân: tiền sử bệnh, bệnh nền, thuốc đang dùng, dị ứng, mang thai / cho con bú, cơ địa. KHÔNG lưu triệu chứng tức thời của lần này (vd "ngứa 3 ngày"), lời của trợ lý, hay suy đoán chẩn đoán.
+Bộ nhớ này CHỈ lưu thông tin PHI LÂM SÀNG giúp trò chuyện phù hợp hơn với hồ sơ này:
+* Ai đang nhắn cho hồ sơ (vd "mẹ hỏi thay con 5 tuổi").
+* Cách xưng hô, ngôn ngữ, mức chi tiết muốn nghe (ngắn gọn / giải thích kỹ).
+* Ưu tiên khi được tư vấn (ngại đi khám xa, muốn khám buổi tối, đã có bác sĩ quen).
+* Điều đã được giải thích và người dùng nói đã hiểu, không cần nhắc lại.
 
-Bạn nhận "Bộ nhớ hiện có" (mỗi dòng có nhãn M1, M2...) và "Tin nhắn mới của bệnh nhân" (nhiều tin gom lại). Đối chiếu rồi nêu các thao tác:
-* add: thông tin dài hạn mới, chưa có bản nào nói về nó. `content`: một câu ngắn (tối đa 25 từ), đúng điều bệnh nhân nói.
-* update: cùng chủ đề với một bản cũ hoặc mâu thuẫn với nó (vd "đã sinh" so với "đang mang thai", "hết dị ứng"): ghi `target_key` là nhãn của bản cũ (M1...) và `content` là nội dung MỚI thay thế hoàn toàn.
-* skip: không cần ghi (đã có đúng ý đó, hoặc không phải thông tin dài hạn).
-Chỉ dựa vào lời bệnh nhân; không bịa, không suy diễn. Không có gì đáng nhớ thì trả danh sách rỗng."""
+TUYỆT ĐỐI KHÔNG lưu thông tin lâm sàng — hệ thống đã ghi chúng vào hồ sơ bệnh án riêng: triệu chứng, tổn thương, dị ứng, tiền sử, bệnh nền, thuốc đang dùng, mang thai / cho con bú, cơ địa, nghề nghiệp / mỹ phẩm / thú nuôi / môi trường có thể liên quan bệnh, suy đoán chẩn đoán. Vd "tôi dị ứng penicillin", "làm thợ làm tóc, hay tiếp xúc thuốc nhuộm", "đang cho con bú" → đều KHÔNG lưu. Khi phân vân một thông tin có ảnh hưởng chẩn đoán / điều trị hay không → KHÔNG lưu.
 
-CONSOLIDATE_SYSTEM = """Bạn là bộ phận gom BỘ NHỚ DÀI HẠN nội bộ của hệ thống tư vấn da liễu. Người dùng không đọc đầu ra này: chỉ gọi hàm, KHÔNG chào hỏi, KHÔNG viết văn bản.
+Bạn nhận "Bộ nhớ hiện có" (mỗi dòng có nhãn M1, M2...) và "Tin nhắn mới của người dùng" (nhiều tin gom lại). Đối chiếu rồi nêu các thao tác:
+* add: thông tin giao tiếp mới, chưa có bản nào nói về nó. `content`: một câu ngắn (tối đa 25 từ), đúng điều người dùng nói.
+* update: cùng chủ đề với một bản cũ hoặc mâu thuẫn với nó (vd "giờ muốn trả lời ngắn" so với "muốn giải thích kỹ"): ghi `target_key` là nhãn của bản cũ (M1...) và `content` là nội dung MỚI thay thế hoàn toàn.
+* skip: không cần ghi (đã có, hoặc là thông tin lâm sàng, hoặc không đáng nhớ).
+Chỉ dựa vào lời người dùng; không bịa, không suy diễn. Không có gì đáng nhớ thì trả danh sách rỗng."""
 
-Bạn nhận toàn bộ bộ nhớ của một bệnh nhân (cũ trước, mới sau). Trả về danh sách GỌN hơn:
+CONSOLIDATE_SYSTEM = """Bạn là bộ phận gom BỘ NHỚ GIAO TIẾP nội bộ của hệ thống tư vấn da liễu. Người dùng không đọc đầu ra này: chỉ gọi hàm, KHÔNG chào hỏi, KHÔNG viết văn bản.
+
+Bạn nhận toàn bộ bộ nhớ của một hồ sơ (cũ trước, mới sau). Trả về danh sách GỌN hơn:
 * Gộp các mục trùng ý hoặc cùng chủ đề thành một mục.
 * Khi hai mục mâu thuẫn, mục MỚI hơn (đứng sau) thắng.
+* BỎ mục mang thông tin lâm sàng (triệu chứng, dị ứng, tiền sử, thuốc, bệnh nền, mang thai, cơ địa...): hồ sơ bệnh án đã giữ chúng.
 * Mỗi mục một câu ngắn (tối đa 25 từ). Tối đa {limit} mục.
-* TUYỆT ĐỐI không thêm thông tin không có trong danh sách, không bỏ thông tin còn đúng chỉ vì ngắn gọn."""
+* TUYỆT ĐỐI không thêm thông tin không có trong danh sách, không bỏ thông tin giao tiếp còn đúng chỉ vì ngắn gọn."""
 
 
 class MemoryOp(BaseModel):
@@ -165,7 +172,7 @@ async def run_batch(store: BaseStore, profile_id: str, model: str | None = None)
     current = "\n".join(f"M{i}. {c}" for i, (_, c) in enumerate(existing, 1)) or "(chưa có)"
     messages = "\n".join(f"- {t}" for _, t in pending)
     result = await _call_structured(
-        MemoryOps, BATCH_SYSTEM, f"Bộ nhớ hiện có:\n{current}\n\nTin nhắn mới của bệnh nhân:\n{messages}\n\nGọi hàm MemoryOps.", model
+        MemoryOps, BATCH_SYSTEM, f"Bộ nhớ hiện có:\n{current}\n\nTin nhắn mới của người dùng:\n{messages}\n\nGọi hàm MemoryOps.", model
     )
     if result is None:
         logger.warning("memory %s: bỏ qua batch, giữ %d tin trong bộ đệm", profile_id, len(pending))

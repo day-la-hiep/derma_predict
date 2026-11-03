@@ -81,8 +81,9 @@ class FinalizeReportIndexService:
             except Exception:  # noqa: BLE001
                 age = None
 
-        allergies = p_profile.get("allergies") or (profile.allergies if profile else "")
-        medical_history = p_profile.get("medical_history") or (profile.medical_history if profile else "")
+        # hồ sơ không còn cột dị ứng / tiền sử: snapshot đã ghép sẵn từ fact dài hạn lúc chốt
+        allergies = p_profile.get("allergies") or ""
+        medical_history = p_profile.get("medical_history") or ""
 
         reasoning = assessment.get("reasoning", "")
         urgency = assessment.get("urgency", "")

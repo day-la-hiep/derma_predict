@@ -8,7 +8,6 @@ from app.models.consultation_session import ConsultationSession
 from app.models.conversation import Conversation
 from app.models.clinical import (
     ClinicalFact,
-    ClinicalFactTemplate,
     ClinicalProvenance,
     PreConsultationReport,
 )
@@ -122,81 +121,26 @@ class ConsultationRepository:
         await self._db.flush()
         return report
 
-    async def get_clinical_facts_by_patient(
-        self, patient_profile_id: str
-    ) -> list[tuple[ClinicalFact, ClinicalFactTemplate, list[Message]]]:
-        stmt = (
-            select(ClinicalFact, ClinicalFactTemplate)
-            .join(ClinicalFactTemplate, ClinicalFact.template_id == ClinicalFactTemplate.id)
-            .where(ClinicalFact.patient_profile_id == patient_profile_id)
-            .order_by(ClinicalFact.created_at.desc())
-        )
-        rows = [(r[0], r[1]) for r in (await self._db.execute(stmt)).all()]
-        if not rows:
+    async def list_facts_with_sources(
+        self, patient_profile_id: str, newest_first: bool = False
+    ) -> list[tuple[ClinicalFact, list[Message]]]:
+        """Fact hiện trạng của hồ sơ + tin nhắn nguồn còn tồn tại (cũ trước)."""
+        order = ClinicalFact.created_at.desc() if newest_first else ClinicalFact.created_at.asc()
+        stmt = select(ClinicalFact).where(ClinicalFact.patient_profile_id == patient_profile_id).order_by(order)
+        facts = list((await self._db.execute(stmt)).scalars().all())
+        if not facts:
             return []
         prov_stmt = (
             select(ClinicalProvenance.fact_id, Message)
             .join(Message, Message.id == ClinicalProvenance.message_id)
-            .where(ClinicalProvenance.fact_id.in_([f.id for f, _ in rows]))
+            .where(ClinicalProvenance.fact_id.in_([f.id for f in facts]))
             .order_by(Message.created_at.asc())
         )
-        by_fact: dict[str, list[Message]] = defaultdict(list)
+        by_fact: dict[str, dict[str, Message]] = defaultdict(dict)
         for fact_id, message in (await self._db.execute(prov_stmt)).all():
-            by_fact[fact_id].append(message)
-        return [(f, t, by_fact.get(f.id, [])) for f, t in rows]
-
-    async def get_or_create_template(
-        self, fact_type: str, label: str
-    ) -> ClinicalFactTemplate:
-        stmt = select(ClinicalFactTemplate).where(ClinicalFactTemplate.label == label)
-        result = await self._db.execute(stmt)
-        tpl = result.scalar_one_or_none()
-        if tpl:
-            return tpl
-        tpl = ClinicalFactTemplate(
-            fact_type=fact_type,
-            label=label,
-        )
-        self._db.add(tpl)
-        await self._db.flush()
-        return tpl
-
-    async def add_clinical_facts(
-        self, facts: list[ClinicalFact]
-    ) -> list[ClinicalFact]:
-        for fact in facts:
-            self._db.add(fact)
-        await self._db.flush()
-        return facts
-
-    async def add_provenances(self, pairs: list[tuple[str, str]]) -> None:
-        """(fact_id, message_id) — tin nhắn gốc mà fact được trích ra."""
-        self._db.add_all(ClinicalProvenance(fact_id=f, message_id=m) for f, m in dict.fromkeys(pairs))
-        await self._db.flush()
-
-    async def get_active_facts_with_provenance(
-        self, patient_profile_id: str
-    ) -> list[tuple[ClinicalFact, ClinicalFactTemplate, list[Message]]]:
-        """Fact đang hiệu lực của bệnh nhân + tin nhắn nguồn (cũ trước), để điền sẵn form chốt báo cáo kết luận."""
-        stmt = (
-            select(ClinicalFact, ClinicalFactTemplate)
-            .join(ClinicalFactTemplate, ClinicalFact.template_id == ClinicalFactTemplate.id)
-            .where(ClinicalFact.patient_profile_id == patient_profile_id, ClinicalFact.status == "active")
-            .order_by(ClinicalFact.created_at.asc())
-        )
-        rows = [(f, t) for f, t in (await self._db.execute(stmt)).all()]
-        if not rows:
-            return []
-        prov_stmt = (
-            select(ClinicalProvenance.fact_id, Message)
-            .join(Message, Message.id == ClinicalProvenance.message_id)
-            .where(ClinicalProvenance.fact_id.in_([f.id for f, _ in rows]))
-            .order_by(Message.created_at.asc())
-        )
-        by_fact: dict[str, list[Message]] = defaultdict(list)
-        for fact_id, message in (await self._db.execute(prov_stmt)).all():
-            by_fact[fact_id].append(message)
-        return [(f, t, by_fact.get(f.id, [])) for f, t in rows]
+            # một tin có thể ghi nhận cùng fact nhiều lần (giá trị khác nhau) nhưng chỉ hiện một lần làm nguồn
+            by_fact[fact_id][message.id] = message
+        return [(f, list(by_fact[f.id].values())) for f in facts]
 
     async def accept_session(
         self, session: ConsultationSession, doctor_id: str

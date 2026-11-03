@@ -79,8 +79,9 @@ export function adaptSession(raw: any): ConsultationSession {
     templateLabel: f.templateLabel ?? f.template_label ?? "Dữ kiện lâm sàng",
     factType: (f.factType ?? f.fact_type ?? "other") as ClinicalFactType,
     detail: f.detail ?? "",
-    status: f.status === "superseded" ? "superseded" : "active",
+    verifiedAt: f.verifiedAt ?? f.verified_at ?? null,
     createdAt: f.createdAt ?? f.created_at ?? new Date().toISOString(),
+    updatedAt: f.updatedAt ?? f.updated_at ?? null,
     sourceMessageIds: f.sourceMessageIds ?? f.source_message_ids ?? [],
     sourceMessages: (f.sourceMessages ?? f.source_messages ?? []).map((m: any) => ({
       id: m.id ?? "",

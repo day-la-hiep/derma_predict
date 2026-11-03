@@ -3,15 +3,17 @@
 - `shared`         — File dùng chung
 - `identity`       — User / Doctor / Admin, PatientProfile
 - `conversation`   — Conversation, Message
-- `consultation`   — ConsultationSession, VideoCall, PreConsultationReport
-- `clinical`       — ClinicalFactTemplate, ClinicalFact
+- `consultation`   — ConsultationSession, VideoCall (luồng tư vấn cũ)
+- `clinical`       — ClinicalFact, ClinicalProvenance
+- `episode`        — ClinicalEpisode (đợt bệnh), AiHypothesis, ImagePrediction
+- `visit`          — Appointment, Encounter
 - `finalize_report` — FinalizeReport (+ snapshot phiếu đã chốt), PatientImage
 - `document`       — Document và pipeline ingest
 
-Các context tham chiếu vòng nhau (Conversation ↔ ConsultationSession ↔ ClinicalFact, PatientProfile ↔ FinalizeReport), nên
+Các context tham chiếu vòng nhau (PatientProfile ↔ ClinicalEpisode ↔ Conversation, FinalizeReport ↔ Encounter), nên
 mọi file chỉ import chéo trong `TYPE_CHECKING` và model được rebuild một lần ở đây, không phụ thuộc thứ tự import."""
-from app.dto.base.clinical import ClinicalFact, ClinicalFactTemplate, ClinicalProvenance
-from app.dto.base.consultation import ConsultationSession, PreConsultationReport, VideoCall
+from app.dto.base.clinical import ClinicalFact, ClinicalProvenance
+from app.dto.base.consultation import ConsultationSession, VideoCall
 from app.dto.base.conversation import Conversation, Message, MessageMetadata
 from app.dto.base.document import (
     Document,
@@ -32,13 +34,16 @@ from app.dto.base.finalize_report import (
     SnapshotPatientProfile,
     SnapshotProvenance,
 )
+from app.dto.base.episode import AiHypothesis, ClinicalEpisode, HypothesisEvidence, ImagePrediction, LabelScore
 from app.dto.base.shared import File
+from app.dto.base.visit import Appointment, Encounter
 
 __all__ = [
-    "Admin", "Assessment", "ClinicalFact", "ClinicalFactTemplate", "ClinicalProvenance", "ConsultationSession",
-    "Conversation", "Doctor", "Document", "DocumentChunk", "DocumentFigure", "File",
-    "FinalizeReport", "FinalizeReportSnapshot", "Message", "MessageMetadata", "NewDocument", "PatientImage",
-    "PatientProfile", "PreConsultationReport", "DocumentStage", "DocumentStageOverride", "SnapshotClinicalFact",
+    "Admin", "AiHypothesis", "Appointment", "Assessment", "ClinicalEpisode", "ClinicalFact", "ClinicalProvenance",
+    "ConsultationSession", "Conversation", "Doctor", "Document", "DocumentChunk", "DocumentFigure", "Encounter", "File",
+    "FinalizeReport", "FinalizeReportSnapshot", "HypothesisEvidence", "ImagePrediction", "LabelScore", "Message",
+    "MessageMetadata", "NewDocument", "PatientImage",
+    "PatientProfile", "DocumentStage", "DocumentStageOverride", "SnapshotClinicalFact",
     "SnapshotMessage", "SnapshotPatientProfile", "SnapshotProvenance", "User", "VideoCall",
 ]
 

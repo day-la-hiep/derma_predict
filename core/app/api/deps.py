@@ -39,6 +39,7 @@ from app.services.knowledge_base_service import KnowledgeBaseService
 from app.services.knowledge_graph_service import KnowledgeGraphService
 from app.services.retrieval_service import RetrievalService
 from app.services.message_service import MessageService
+from app.services.clinical_record_service import ClinicalRecordService
 from app.services.patient_profile_service import PatientProfileService
 from app.services.finalize_report_service import FinalizeReportService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
@@ -246,8 +247,10 @@ def get_patient_profile_service(
     finalize_report_repository: Annotated[
         FinalizeReportRepository, Depends(get_finalize_report_repository)
     ],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PatientProfileService:
-    return PatientProfileService(patient_profile_repository, finalize_report_repository)
+    # cùng session với 2 repo (FastAPI cache `get_db` trong một request) nên hồ sơ + fact ghi trong một transaction
+    return PatientProfileService(patient_profile_repository, finalize_report_repository, ClinicalRecordService(db))
 
 
 def get_finalize_report_service(

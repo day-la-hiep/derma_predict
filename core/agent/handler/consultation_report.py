@@ -1,13 +1,11 @@
 """Handler xử lý sinh Báo cáo tiền tư vấn & trích xuất Dữ kiện lâm sàng trong Agent Worker."""
 import json
 import logging
-import uuid
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.common.llm import get_model
-from agent.common.fact_extractor import validate_facts_evidence
 from agent.dto.schemas import AgentResponseMessage, TurnRequest
 from app.api.deps import get_postgres_client, get_rabbitmq_client
 from app.config.constants import AGENT_RESPONSE_QUEUE
@@ -36,14 +34,6 @@ Mỗi tin trong đoạn hội thoại hiện tại có số thứ tự dạng `[
 
 BẮT BUỘC TRẢ VỀ ĐÚNG ĐỊNH DẠNG JSON SAU (không kèm markdown code block hoặc text thừa):
 {
-  "facts": [
-    {
-      "template_label": "Tên chuẩn của triệu chứng/tổn thương/thuốc/nhận định",
-      "fact_type": "symptom | lesion | history | medication | allergy | image_finding | other",
-      "detail": "Mô tả chi tiết cụ thể từ nội dung trao đổi",
-      "source_messages": [1]
-    }
-  ],
   "summary": "Nội dung tóm tắt lâm sàng (định dạng Markdown)"
 }
 
@@ -81,11 +71,11 @@ async def handle_consultation_report(req: TurnRequest) -> None:
             message_repo = MessageRepository(db)
 
             # 1. Tiền sử / dữ kiện lâm sàng đã biết
-            past_facts_data = await consultation_repo.get_active_facts_with_provenance(patient_profile_id)
+            past_facts_data = await consultation_repo.list_facts_with_sources(patient_profile_id)
             if past_facts_data:
                 past_facts_text = "\n".join(
-                    f"- [{tpl.fact_type.upper()}] {tpl.label}: {fact.detail}"
-                    for fact, tpl, _ in past_facts_data
+                    f"- [{fact.fact_type.upper()}] {fact.label}: {fact.detail}"
+                    for fact, _ in past_facts_data
                 )
             else:
                 past_facts_text = "Chưa ghi nhận dữ kiện lâm sàng tiền sử nào trước đó."
@@ -111,11 +101,8 @@ async def handle_consultation_report(req: TurnRequest) -> None:
         chat_transcript = "\n".join(
             f"[#{i}][{m.sender.upper()}]: {m.content}" for i, m in enumerate(messages, start=1)
         )
-        messages_content = [m.content or "" for m in messages]
 
         summary_text = ""
-        validated_facts: list[dict[str, Any]] = []
-        provenance_pairs: list[list[str]] = []
 
         try:
             # Pre-condition check (Gatekeeper): nếu hội thoại không có tin nhắn nào từ bệnh nhân
@@ -161,19 +148,8 @@ async def handle_consultation_report(req: TurnRequest) -> None:
                     cleaned = "\n".join(lines).strip()
 
                 parsed = json.loads(cleaned)
+                # fact đã lưu sau mỗi lượt chat theo đợt bệnh; báo cáo chỉ còn phần tóm tắt
                 summary_text = parsed.get("summary", "")
-                raw_facts = parsed.get("facts", [])
-
-                # Chạy qua middleware validation & evidence check
-                validated_facts = validate_facts_evidence(raw_facts, messages_content)
-
-                # Chuẩn bị fact_id và provenance pairs
-                for rf in validated_facts:
-                    fact_id = f"cf-{uuid.uuid4()}"
-                    rf["id"] = fact_id
-                    for idx in rf.get("source_messages", []):
-                        if 1 <= idx <= len(messages):
-                            provenance_pairs.append([fact_id, messages[idx - 1].id])
 
         except Exception as exc:  # noqa: BLE001
             logger.exception("Lỗi khi worker sinh báo cáo tiền tư vấn: %s", exc)
@@ -192,8 +168,6 @@ async def handle_consultation_report(req: TurnRequest) -> None:
             status="report_ready",
             session_id=session_id,
             report_summary=summary_text,
-            facts=validated_facts,
-            provenance_pairs=provenance_pairs,
         )
 
         await get_rabbitmq_client().publish(

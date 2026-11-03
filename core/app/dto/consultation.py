@@ -25,8 +25,9 @@ class ClinicalFactOutput(BaseModel):
     template_label: str
     fact_type: str
     detail: str
-    status: str
+    verified_at: str | None = None  # bác sĩ xác nhận lúc chốt; None = AI ghi, chưa kiểm chứng
     created_at: str
+    updated_at: str | None = None
     source_message_ids: list[str] = []
     source_messages: list[ClinicalFactSourceMessageOutput] = []
 

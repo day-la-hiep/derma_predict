@@ -10,7 +10,7 @@ from langgraph.runtime import Runtime
 from pydantic import BaseModel
 
 from agent.common.evidence import message_text
-from agent.common.fact_extractor import extract_facts, facts_text, merge_facts
+from agent.common.fact_extractor import LONG_TERM_TYPES, extract_facts, fact_key, facts_text, merge_facts
 from agent.common.llm import get_model
 from agent.context.agent_context import AgentContext
 from agent.graph.v2.image import join_images
@@ -116,7 +116,8 @@ async def load_memory_node(state: PreDiagState, runtime: Runtime[AgentContext]) 
 async def extract_facts_node(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
     ctx = runtime.context
     messages = state["messages"]
-    known = state.get("facts", [])
+    # bảng là nguồn chính: giá trị trong DB (vd bác sĩ vừa xác nhận) đè giá trị cũ trong checkpoint
+    known = merge_facts(state.get("facts", []), ctx.known_facts)
     upto = state.get("facts_upto", 0)
     if upto > len(messages):
         logger.warning("facts_upto=%d lớn hơn số tin nhắn %d, trích lại từ đầu", upto, len(messages))
@@ -130,7 +131,18 @@ async def extract_facts_node(state: PreDiagState, runtime: Runtime[AgentContext]
     merged = merge_facts(known, new)
     if new:
         await emit_tool_step(ctx, "extract_facts", {"new": len(new)}, facts_text(merged))
+    # gửi Core: fact mới / đổi trong lượt + fact theo đợt còn chưa rõ vùng (chưa lưu được, Core gắn khi hội thoại đã có đợt)
+    saved = {fact_key(f) for f in ctx.known_facts}
+    pending = [
+        f for f in merged
+        if f.get("fact_type") not in LONG_TERM_TYPES and not f.get("body_site") and fact_key(f) not in saved
+    ]
+    ctx.turn_facts = list({fact_key(f): f for f in [*new, *pending]}.values())
     return {"facts": merged, "facts_upto": len(messages)}
+
+
+def _clinical_block(facts: list[dict[str, Any]]) -> str:
+    return f"Hồ sơ lâm sàng (dữ kiện đã ghi nhận của người bệnh):\n{facts_text(facts)}"
 
 
 async def plan(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
@@ -139,7 +151,7 @@ async def plan(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[str,
     # extract_facts và nhánh ảnh chạy song song nên chỉ tới đây mới gộp được dữ kiện từ ảnh vào `facts`.
     facts = merge_facts(state.get("facts", []), state.get("image_facts", []))
     context = (
-        f"Dữ kiện lâm sàng đã biết:\n{facts_text(facts)}\n\n"
+        f"{_clinical_block(facts)}\n\n"
         f"Giả thuyết đã có căn cứ từ các lượt trước:\n{_plan_text(state.get('plan', []), [])}\n\n"
         f"Đã tra cứu (kèm kết quả): {'; '.join(state.get('call_results', [])) or '(chưa)'}\n\n"
         f"Bằng chứng đã thu được:\n{_digest(evidence)}"
@@ -242,6 +254,7 @@ async def reflect(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[s
     exhausted = rounds >= cap
     budget = "Đã HẾT lượt tra cứu: next phải là \"answer\"." if exhausted else f"Đã tra cứu {rounds}/{cap} vòng."
     context = (
+        f"{_clinical_block(state.get('facts', []))}\n\n"
         f"evidence_status: {state.get('evidence_status', 'none')}\n"
         f"{budget}\n"
         f"Giả thuyết hiện tại:\n{_plan_text(state.get('plan', []), state.get('unsupported', []))}\n"
@@ -252,6 +265,15 @@ async def reflect(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[s
     await emit_tool_start(ctx, REASONING_TOOL, {"stage": "after_evidence"})
     result = await _structured(ctx, ReflectInput, [SystemMessage(content=system), *_history(state["messages"])])
     plan_, unsupported, notes = ground_hypotheses(result.hypotheses, evidence)
+    texts = {e["id"]: e for e in evidence}
+    # mã E# chỉ có nghĩa trong lượt: lưu nội dung bằng chứng; lần reflect cuối của lượt là bản gửi về Core
+    ctx.turn_hypotheses = [
+        {
+            **{k: h[k] for k in ("disease", "code", "body_site", "confidence", "missing")},
+            "evidence": [{"source": texts[c]["source"], "text": texts[c]["text"][:500]} for c in h["cites"] if c in texts],
+        }
+        for h in plan_
+    ]
     next_action = result.next
     if exhausted and next_action == "retrieve":
         next_action = "answer"
@@ -266,10 +288,13 @@ async def answer(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[st
     plan_ = state.get("plan", [])
     if plan_:
         cited = {c for h in plan_ for c in h["cites"]}
-        context = f"Giả thuyết:\n{_plan_text(plan_, [])}\n\nBằng chứng:\n{_evidence_text(state.get('evidence', []), cited)}"
+        context = (
+            f"{_clinical_block(state.get('facts', []))}\n\n"
+            f"Giả thuyết:\n{_plan_text(plan_, [])}\n\nBằng chứng:\n{_evidence_text(state.get('evidence', []), cited)}"
+        )
         base = ANSWER_FOUND.format(context=context)
     else:
-        base = ANSWER_NONE.format(context="")
+        base = ANSWER_NONE.format(context=_clinical_block(state.get("facts", [])))
     system = inject_memory(base, ctx.memory_text)
     ai = await _model(ctx).ainvoke([SystemMessage(content=system), *_history(state["messages"])])
     return {"messages": [ai]}

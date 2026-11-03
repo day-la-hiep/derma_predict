@@ -24,10 +24,7 @@ from app.dto.response.message import MessageMetadataDto, MessageOutput
 from app.exception.errors import ConflictError, ForbiddenError, NotFoundError
 from app.infra.rabbitmq_client import RabbitMQClient
 from app.infra.redis_client import RedisClient
-from app.models.clinical import (
-    ClinicalFact,
-    PreConsultationReport,
-)
+from app.models.clinical import PreConsultationReport
 from app.models.consultation_session import ConsultationSession
 from app.models.message import Message
 from app.models.user import User
@@ -36,6 +33,7 @@ from app.repositories.consultation_repository import ConsultationRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.file_repository import FileRepository
 from app.repositories.message_repository import MessageRepository
+from app.repositories.clinical_record_repository import ClinicalRecordRepository
 from app.services.finalize_report_service import to_patient_profile_dto
 from app.repositories.user_repository import UserRepository
 from app.services.patient_graph_service import PatientGraphService
@@ -103,7 +101,34 @@ class ConsultationService:
 
     async def _patient_dto(self, patient_profile_id: str | None) -> PatientProfileDto | None:
         profile = await self._db.get(PatientProfile, patient_profile_id) if patient_profile_id else None
-        return to_patient_profile_dto(profile) if profile else None
+        if profile is None:
+            return None
+        return to_patient_profile_dto(profile, (await ClinicalRecordRepository(self._db).long_term_facts([profile.id]))[profile.id])
+
+    async def _facts_output(self, patient_profile_id: str) -> list[ClinicalFactOutput]:
+        rows = await self._repo.list_facts_with_sources(patient_profile_id, newest_first=True)
+        return [
+            ClinicalFactOutput(
+                id=f.id,
+                template_label=f.label,
+                fact_type=f.fact_type,
+                detail=f.detail,
+                verified_at=f.verified_at.isoformat() if f.verified_at else None,
+                created_at=f.created_at.isoformat(),
+                updated_at=f.updated_at.isoformat(),
+                source_message_ids=[m.id for m in msgs],
+                source_messages=[
+                    ClinicalFactSourceMessageOutput(
+                        id=m.id,
+                        sender=m.sender,
+                        content=m.content,
+                        created_at=m.created_at.isoformat() if m.created_at else None,
+                    )
+                    for m in msgs
+                ],
+            )
+            for f, msgs in rows
+        ]
 
     async def _owned_session(self, session_id: str, doctor_id: str) -> ConsultationSession:
         session = await self._repo.get_session(session_id)
@@ -198,30 +223,7 @@ class ConsultationService:
             conv = await self._conv_repo.get(s.conversation_id)
             title = conv.title if conv else "Hội thoại da liễu"
             report = await self._repo.get_report(s.id)
-            facts_dto: list[ClinicalFactOutput] = []
-            if conv and conv.patient_profile_id:
-                raw_facts = await self._repo.get_clinical_facts_by_patient(conv.patient_profile_id)
-                facts_dto = [
-                    ClinicalFactOutput(
-                        id=f.id,
-                        template_label=tpl.label,
-                        fact_type=tpl.fact_type,
-                        detail=f.detail,
-                        status=f.status,
-                        created_at=f.created_at.isoformat(),
-                        source_message_ids=[m.id for m in msgs],
-                        source_messages=[
-                            ClinicalFactSourceMessageOutput(
-                                id=m.id,
-                                sender=m.sender,
-                                content=m.content,
-                                created_at=m.created_at.isoformat() if m.created_at else None,
-                            )
-                            for m in msgs
-                        ],
-                    )
-                    for f, tpl, msgs in raw_facts
-                ]
+            facts_dto = await self._facts_output(conv.patient_profile_id) if conv and conv.patient_profile_id else []
             patient = await self._patient_dto(conv.patient_profile_id if conv else None)
             results.append(self._to_output(s, title, report, facts_dto, patient))
         return results
@@ -233,30 +235,7 @@ class ConsultationService:
         conv = await self._conv_repo.get(session.conversation_id)
         title = conv.title if conv else "Hội thoại da liễu"
         report = await self._repo.get_report(session.id)
-        facts_dto: list[ClinicalFactOutput] = []
-        if conv and conv.patient_profile_id:
-            raw_facts = await self._repo.get_clinical_facts_by_patient(conv.patient_profile_id)
-            facts_dto = [
-                ClinicalFactOutput(
-                    id=f.id,
-                    template_label=tpl.label,
-                    fact_type=tpl.fact_type,
-                    detail=f.detail,
-                    status=f.status,
-                    created_at=f.created_at.isoformat(),
-                    source_message_ids=[m.id for m in msgs],
-                    source_messages=[
-                        ClinicalFactSourceMessageOutput(
-                            id=m.id,
-                            sender=m.sender,
-                            content=m.content,
-                            created_at=m.created_at.isoformat() if m.created_at else None,
-                        )
-                        for m in msgs
-                    ],
-                )
-                for f, tpl, msgs in raw_facts
-            ]
+        facts_dto = await self._facts_output(conv.patient_profile_id) if conv and conv.patient_profile_id else []
         patient = await self._patient_dto(conv.patient_profile_id if conv else None)
         return self._to_output(session, title, report, facts_dto, patient)
 
@@ -358,62 +337,21 @@ class ConsultationService:
         )
         await self._repo.create_report(report)
 
-        # 2. Lưu Facts
-        facts_to_save: list[ClinicalFact] = []
-        facts_dto: list[ClinicalFactOutput] = []
-        now = datetime.now(UTC)
-
-        for rf in facts:
-            f_type = rf.get("fact_type", "symptom")
-            f_label = rf.get("template_label", "Dữ kiện lâm sàng")
-            f_detail = rf.get("detail", "")
-            f_id = rf.get("id") or f"cf-{uuid.uuid4()}"
-
-            tpl = await self._repo.get_or_create_template(f_type, f_label)
-            facts_to_save.append(
-                ClinicalFact(
-                    id=f_id,
-                    patient_profile_id=patient_profile_id,
-                    template_id=tpl.id,
-                    detail=f_detail,
-                    status="active",
-                    created_at=now,
-                )
-            )
-            facts_dto.append(
-                ClinicalFactOutput(
-                    id=f_id,
-                    template_label=tpl.label,
-                    fact_type=tpl.fact_type,
-                    detail=f_detail,
-                    status="active",
-                    created_at=now.isoformat(),
-                )
-            )
-
-        if facts_to_save:
-            await self._repo.add_clinical_facts(facts_to_save)
-
-        # 3. Lưu Provenances
-        saved_fact_ids = {f.id for f in facts_to_save}
-        valid_pairs = [
-            (p[0], p[1])
-            for p in provenance_pairs
-            if len(p) >= 2 and p[0] in saved_fact_ids
-        ]
-        if valid_pairs:
-            await self._repo.add_provenances(valid_pairs)
+        # Fact không lưu ở đây nữa: agent lưu sau mỗi lượt chat theo đợt bệnh (`ClinicalRecordService.apply_turn`)
+        if facts:
+            logger.warning("[consultation] bỏ %d fact trong báo cáo session=%s: fact đã lưu theo lượt chat", len(facts), session_id)
+        facts_dto = await self._facts_output(patient_profile_id) if patient_profile_id else []
 
         await self._db.commit()
 
-        # 4. Broadcast realtime kết quả qua SSE cho Bác sĩ và Bệnh nhân
+        # 5. Broadcast realtime kết quả qua SSE cho Bác sĩ và Bệnh nhân
         conv_title = conv.title if conv else "Hội thoại tư vấn"
         patient = await self._patient_dto(patient_profile_id)
         out = self._to_output(session, conv_title, report, facts_dto, patient)
         await self._announce(out)
         logger.info("Đã lưu báo cáo tiền tư vấn và phát event cập nhật cho session=%s", session_id)
 
-        # 5. Đồng bộ đồ thị hành trình bệnh nhân (Patient Journey Knowledge Graph) trên Neo4j
+        # 6. Đồng bộ đồ thị hành trình bệnh nhân (Patient Journey Knowledge Graph) trên Neo4j
         if self._patient_graph and patient_profile_id:
             try:
                 # Thu thập các ảnh bệnh nhân gửi trong cuộc trò chuyện gắn với phiên này
