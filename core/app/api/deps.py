@@ -41,6 +41,7 @@ from app.services.retrieval_service import RetrievalService
 from app.services.message_service import MessageService
 from app.services.clinical_record_service import ClinicalRecordService
 from app.services.patient_profile_service import PatientProfileService
+from app.services.appointment_service import AppointmentService
 from app.services.finalize_report_service import FinalizeReportService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
 from app.services.finalize_report_index_service import FinalizeReportIndexService
@@ -306,6 +307,12 @@ def get_conversation_service(
     message_service: Annotated[MessageService, Depends(get_message_service)],
 ) -> ConversationService:
     return ConversationService(conversation_repository, patient_profile_repository, message_service)
+
+
+def get_appointment_service(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AppointmentService:
+    return AppointmentService(db, get_file_store_service())
 
 
 from app.services.consultation_service import ConsultationService

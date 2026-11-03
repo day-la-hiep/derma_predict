@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, Field
 
-from app.common.constant import ClinicalFactType, Urgency
+from app.common.constant import ClinicalFactType, DiagnosisCode, Urgency
 
 
 class FactInput(BaseModel):
@@ -33,3 +33,9 @@ class FinalizeReportInput(BaseModel):
     facts: list[FactInput] = []
     images: list[PatientImageInput] = []
 
+
+
+class FinalizeEncounterInput(FinalizeReportInput):
+    """Chốt một lần khám: `facts` là danh sách đầy đủ sau khi bác sĩ sửa; fact có sẵn không có trong danh sách bị xoá."""
+
+    diagnosis_code: DiagnosisCode

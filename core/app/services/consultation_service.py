@@ -1,6 +1,5 @@
 """Nghiệp vụ Tư vấn & Báo cáo tiền tư vấn (Pre-consultation Report Generation)."""
 import json
-from collections import defaultdict
 from dataclasses import dataclass
 import logging
 from typing import Any
@@ -350,48 +349,6 @@ class ConsultationService:
         out = self._to_output(session, conv_title, report, facts_dto, patient)
         await self._announce(out)
         logger.info("Đã lưu báo cáo tiền tư vấn và phát event cập nhật cho session=%s", session_id)
-
-        # 6. Đồng bộ đồ thị hành trình bệnh nhân (Patient Journey Knowledge Graph) trên Neo4j
-        if self._patient_graph and patient_profile_id:
-            try:
-                # Thu thập các ảnh bệnh nhân gửi trong cuộc trò chuyện gắn với phiên này
-                images_payload: list[dict[str, Any]] = []
-                if conv:
-                    messages = await self._msg_repo.list_by_conversation(session.conversation_id)
-                    msg_ids = [m.id for m in messages]
-                    files_map = await self._files.for_messages(msg_ids)
-
-                    # Ánh xạ message_id -> fact_ids qua provenance_pairs
-                    msg_to_fact_ids: dict[str, list[str]] = defaultdict(list)
-                    for pair in provenance_pairs:
-                        if len(pair) >= 2:
-                            msg_to_fact_ids[pair[1]].append(pair[0])
-
-                    for m_id, f_list in files_map.items():
-                        for f in f_list:
-                            if (f.content_type or "").startswith("image/"):
-                                images_payload.append(
-                                    {
-                                        "file_id": f.id,
-                                        "url": f"/api/v1/files/{f.id}/view",
-                                        "content_type": f.content_type,
-                                        "fact_ids": msg_to_fact_ids.get(m_id, []),
-                                    }
-                                )
-
-                await self._patient_graph.sync_pre_consultation(
-                    patient_id=patient_profile_id,
-                    session_id=session_id,
-                    session_date=session.requested_at,
-                    summary=summary,
-                    reason=session.reason or "Bệnh nhân yêu cầu bác sĩ tư vấn",
-                    facts=facts,
-                    gender=patient.gender if patient else "unknown",
-                    dob=patient.dob if patient else "",
-                    images=images_payload,
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Không thể đồng bộ session %s sang Neo4j: %s", session_id, exc)
 
 
     async def send_doctor_reply(

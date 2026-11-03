@@ -1,7 +1,7 @@
 """Khởi tạo dữ liệu cho môi trường mới"""
 import json
 import sys
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # chạy được từ `core/` mà không cần cài package
@@ -17,11 +17,13 @@ from app.config.security import hash_password  # noqa: E402
 from app.models.admin import Admin  # noqa: E402
 from app.models.clinical import ClinicalFact, ClinicalProvenance  # noqa: E402
 from app.models.doctor import Doctor  # noqa: E402
+from app.models.episode import AiHypothesis, ClinicalEpisode  # noqa: E402
 from app.models.document import Document, DocumentOverride, DocumentStage  # noqa: E402
 from app.models.file import File  # noqa: E402
 from app.models.finalize_report import FinalizeReport  # noqa: E402
 from app.models.patient_profile import PatientProfile  # noqa: E402
 from app.models.user import User  # noqa: E402
+from app.models.visit import Appointment, Encounter  # noqa: E402
 
 # id cố định: FE hard-code `user-1`; hồ sơ `pp-<user_id>-self` cùng quy ước với migration `align_schema_with_base`.
 # Giá trị của `user-1` PHẢI khớp `USER_1` trong migration đó.
@@ -188,6 +190,122 @@ FINALIZE_REPORTS = [
 ]
 
 
+def _days(n: float) -> datetime:
+    return datetime.now(UTC) + timedelta(days=n)
+
+
+# Đợt bệnh mẫu cho luồng đặt lịch → khám → chốt (ca demo):
+#   ep-self-face   mở, có giả thuyết, chưa có lịch   → bệnh nhân đặt lịch được
+#   ep-self-foot   mở, chưa có giả thuyết            → KHÔNG đặt được (ca F)
+#   ep-spouse-body mở, lịch đã xác nhận ngày mai     → bác sĩ bấm "Bắt đầu khám"
+#   ep-child-arm   mở, lịch đang chờ xác nhận        → bác sĩ xác nhận / đổi đợt / huỷ
+#   ep-parent-face đã chốt (đã khám, có kết luận)    → xem lịch sử, chỉ số top-1
+EPISODES = [
+    {"id": "ep-self-face", "patient_profile_id": "pp-user-1-self", "body_site": "dau_mat", "status": "open",
+     "opened_at": _days(-3), "updated_at": _days(-1)},
+    {"id": "ep-self-foot", "patient_profile_id": "pp-user-1-self", "body_site": "ban_chan", "status": "open",
+     "opened_at": _days(-1), "updated_at": _days(-1)},
+    {"id": "ep-spouse-body", "patient_profile_id": "pp-user-1-spouse", "body_site": "than_truoc", "status": "open",
+     "opened_at": _days(-5), "updated_at": _days(-2)},
+    {"id": "ep-child-arm", "patient_profile_id": "pp-user-1-child", "body_site": "tay", "status": "open",
+     "opened_at": _days(-2), "updated_at": _days(-1)},
+    {"id": "ep-parent-face", "patient_profile_id": "pp-user-1-parent", "body_site": "dau_mat", "status": "closed",
+     "opened_at": _days(-20), "updated_at": _days(-12), "closed_at": _days(-12)},
+]
+# (episode, hạng, mã, tên bệnh, độ tin cậy, điều còn thiếu)
+HYPOTHESES = [
+    ("ep-self-face", 1, "Eczema", "Viêm da cơ địa", "cao", ["Tiền sử gia đình dị ứng"]),
+    ("ep-self-face", 2, "Rosacea", "Trứng cá đỏ", "thấp", ["Có đỏ mặt khi nóng / uống rượu không"]),
+    ("ep-spouse-body", 1, "Tinea", "Nấm da thân", "cao", ["Soi tươi cạo vảy"]),
+    ("ep-spouse-body", 2, "Eczema", "Chàm đồng tiền", "vừa", []),
+    ("ep-child-arm", 1, "DrugEruption", "Dị ứng thuốc / phát ban", "vừa", ["Thuốc đã dùng 48 giờ qua"]),
+    ("ep-child-arm", 2, "Infestations_Bites", "Côn trùng đốt", "thấp", []),
+    ("ep-parent-face", 1, "Actinic_Keratosis", "Dày sừng ánh sáng", "vừa", ["Sinh thiết"]),
+    ("ep-parent-face", 2, "SkinCancer", "Ung thư da", "thấp", []),
+]
+# (episode, loại, nhãn, chi tiết, trích lời bệnh nhân)
+EPISODE_FACTS = [
+    ("ep-self-face", "symptom", "Ngứa", "Ngứa má hai bên, nhiều về đêm", "Em bị ngứa hai bên má, đêm ngứa nhiều hơn"),
+    ("ep-self-face", "lesion", "Da đỏ khô", "Má hai bên, bong vảy mịn", "Da má đỏ, khô và bong vảy"),
+    ("ep-self-foot", "symptom", "Ngứa kẽ chân", "", "Kẽ ngón chân ngứa mấy hôm nay"),
+    ("ep-spouse-body", "lesion", "Mảng đỏ hình vòng", "Hông trái, bờ gồ có vảy", "Có mảng tròn đỏ ở hông, giữa lành"),
+    ("ep-spouse-body", "symptom", "Ngứa", "Tăng khi ra mồ hôi", "Ra mồ hôi là ngứa hơn"),
+    ("ep-child-arm", "lesion", "Sẩn phù", "Hai cẳng tay, nổi sau bữa trưa", "Bé nổi mẩn đỏ ở tay sau khi ăn"),
+    ("ep-parent-face", "lesion", "Mảng sần thô", "Gò má phải, ~1 cm", "Có mảng thô ráp ở má"),
+    ("ep-parent-face", "symptom", "Ngứa nhẹ", "", "Thỉnh thoảng hơi ngứa"),
+]
+# (id lịch, đợt, trạng thái, bác sĩ, lệch ngày, lý do)
+APPOINTMENTS = [
+    ("ap-spouse-body", "ep-spouse-body", "confirmed", "doctor-1", 1, "Mảng đỏ ở hông không hết"),
+    ("ap-child-arm", "ep-child-arm", "requested", None, 2, "Bé nổi mẩn sau khi ăn"),
+    ("ap-parent-face", "ep-parent-face", "done", "doctor-1", -14, "Mảng thô ở má"),
+]
+
+
+def _seed_visits(s: Session) -> list[str]:
+    created: list[str] = []
+    now = datetime.now(UTC)
+    for e in EPISODES:
+        if s.get(ClinicalEpisode, e["id"]) is None:
+            s.add(ClinicalEpisode(**e))
+            created.append(f"episode {e['id']}")
+    s.flush()
+    for ep, rank, code, disease, conf, missing in HYPOTHESES:
+        hid = f"h-{ep}-{rank}"
+        if s.get(AiHypothesis, hid) is None:
+            s.add(AiHypothesis(id=hid, episode_id=ep, rank=rank, diagnosis_code=code, disease=disease, confidence=conf,
+                               evidence=[{"source": "guideline", "text": f"Mô tả phù hợp {disease}"}], missing=missing))
+            created.append(f"hypothesis {hid}")
+    for i, (ep, ftype, label, detail, quote) in enumerate(EPISODE_FACTS):
+        fid = f"f-{ep}-{i}"
+        if s.get(ClinicalFact, fid) is None:
+            profile_id = next(e["patient_profile_id"] for e in EPISODES if e["id"] == ep)
+            s.add(ClinicalFact(id=fid, patient_profile_id=profile_id, episode_id=ep, fact_type=ftype, label=label,
+                               detail=detail, created_at=now, updated_at=now))
+            s.flush()
+            s.add(ClinicalProvenance(fact_id=fid, kind="chat", quote=quote, detail=detail, created_at=now))
+            created.append(f"fact {fid}")
+    s.flush()
+    for aid, ep, status, doctor, offset, reason in APPOINTMENTS:
+        if s.get(Appointment, aid) is None:
+            profile_id = next(e["patient_profile_id"] for e in EPISODES if e["id"] == ep)
+            s.add(Appointment(id=aid, patient_profile_id=profile_id, episode_id=ep, doctor_id=doctor,
+                              scheduled_at=_days(offset), status=status, reason=reason, created_at=_days(offset - 1)))
+            created.append(f"appointment {aid}")
+    s.flush()
+    # lần khám đã chốt của đợt `ep-parent-face`: kết luận khác giả thuyết top-1 để chỉ số top-3 có ca "trượt top-1, trúng top-3"
+    if s.get(Encounter, "enc-parent-face") is None:
+        s.add(Encounter(id="enc-parent-face", appointment_id="ap-parent-face", patient_profile_id="pp-user-1-parent",
+                        doctor_id="doctor-1", status="closed", opened_at=_days(-12), closed_at=_days(-12)))
+        s.flush()
+        snap = _snapshot(
+            "pp-user-1-parent",
+            "Mảng sần thô, dính, trên nền da tổn thương do nắng ở gò má — nghi dày sừng ánh sáng, cần theo dõi.",
+            "few_days",
+            ["Bôi kem chống nắng mỗi ngày.", "Tái khám sau 3 tháng, sinh thiết nếu mảng dày lên hoặc loét."],
+            [
+                ("lesion", "Mảng sần thô", "Gò má phải, ~1 cm, dính", "doctor_corrected"),
+                ("symptom", "Ngứa nhẹ", "", "patient_reported"),
+            ],
+        )
+        snap["removed_facts"] = []
+        s.add(FinalizeReport(
+            id="mr-parent-face", patient_profile_id="pp-user-1-parent", doctor_id="doctor-1", encounter_id="enc-parent-face",
+            diagnosis="Dày sừng ánh sáng", diagnosis_code="Actinic_Keratosis", is_reference_case=True,
+            notes="Chống nắng, tái khám sau 3 tháng.", created_at=_days(-12), snapshot=snap,
+        ))
+        # fact của đợt đã chốt được bác sĩ xác nhận
+        for fid in ("f-ep-parent-face-6", "f-ep-parent-face-7"):
+            fact = s.get(ClinicalFact, fid)
+            if fact is not None:
+                fact.verified_at, fact.verified_by_id = _days(-12), "doctor-1"
+                s.add(ClinicalProvenance(fact_id=fid, kind="doctor", doctor_id="doctor-1", encounter_id="enc-parent-face",
+                                         quote=fact.label, detail=fact.detail, created_at=_days(-12)))
+        created.append("encounter enc-parent-face + finalize_report mr-parent-face")
+    s.commit()
+    return created
+
+
 def _restore_documents(s: Session) -> list[str]:
     """Khôi phục record tài liệu RAG đã có; chỉ DB — file MinIO và point Qdrant nằm ngoài Postgres nên không bị reset theo."""
     if not DOCUMENTS_SEED.exists():
@@ -298,7 +416,7 @@ def main() -> None:
     for store in (get_file_store_service(), get_document_file_store()):
         store.ensure_bucket()
     with get_postgres_client().sync_session_factory() as s:
-        created = _seed(s) + _restore_documents(s)
+        created = _seed(s) + _seed_visits(s) + _restore_documents(s)
     print("Đã tạo: " + ", ".join(created) if created else "Dữ liệu mẫu đã có sẵn, không tạo thêm.")
 
 

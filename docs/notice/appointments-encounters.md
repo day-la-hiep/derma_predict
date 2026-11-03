@@ -1,0 +1,13 @@
+# Lịch hẹn và lần khám (Appointment / Encounter)
+
+- **Luồng.** Chat thu thập → đợt bệnh có ≥ 1 giả thuyết → bệnh nhân đặt lịch (`POST /appointments`) → bác sĩ xác nhận → "Bắt đầu khám" → chốt (`POST /doctor/encounters/{id}/finalize`). Lịch: `requested → confirmed → in_progress → done` (hoặc `cancelled` / `no_show`).
+- **Chỉ đặt lịch từ đợt "đủ thông tin"**: đợt `open`, chưa quá hạn, chưa có lịch còn hiệu lực, có giả thuyết. Lý do không đặt được trả ở `not_bookable_reason`. Mỗi đợt tối đa 1 lịch còn hiệu lực (partial unique index).
+- **Bệnh nhân không thấy giả thuyết AI** (API `/patient-profiles/{id}/episodes` không trả). Bác sĩ thấy kèm lời nhắc "không phải chẩn đoán y khoa".
+- **Báo cáo trước khám = `clinical_episodes.summary`**, ghép tất định từ fact + giả thuyết (không gọi LLM), sinh lúc đặt lịch / đổi đợt / bắt đầu khám và sinh lại khi bác sĩ mở mà đợt đã đổi. Vì vậy chat thêm sau khi đặt lịch vẫn cập nhật đúng đợt.
+- **Đợt gắn lịch hẹn còn hiệu lực không hết hạn** sau 30 ngày (`is_expired` trong `clinical_record_service.py`).
+- **Bắt đầu khám** (1 transaction): tạo `encounters`, lịch → `in_progress`, đợt → `in_exam`. Từ đây `_save_hypotheses` bỏ qua cập nhật giả thuyết (khoá); fact vẫn ghi được. Trước đó bác sĩ có thể đổi lịch sang đợt khác của cùng hồ sơ (`change-episode`).
+- **Chốt** (1 transaction, rồi mới nạp Qdrant + graph; lỗi nạp chỉ ghi log): form là danh sách fact *đầy đủ* sau khi sửa. Fact có sẵn mà không có trong form bị **xoá** và chép vào `snapshot.removed_facts`; fact giữ/sửa/thêm đều được `verified_at` + nhật ký `kind = doctor` (kèm `encounter_id`). Snapshot dựng từ trạng thái *trước* khi sửa để biết `origin` (`doctor_corrected` / `doctor_observed`). `diagnosis_code` bắt buộc; đợt → `closed`, nên chat tiếp về vùng đó mở đợt mới.
+- **Không đổi fact giữa nhóm dài hạn (dị ứng, tiền sử, thuốc) và nhóm theo đợt** khi chốt (vi phạm CHECK `long_term_no_episode`). Chưa có thao tác "gộp" 2 fact trùng: bác sĩ xoá một dòng và sửa dòng còn lại; nhật ký của dòng bị xoá mất theo.
+- **Graph.** `sync_pre_consultation` đã bỏ; `sync_finalized_session` tự MERGE bệnh nhân / phiên (id = id lần khám, hoặc id phiên tư vấn với luồng cũ) / fact lấy từ snapshot. Node vẫn mang nhãn `ConsultationSession` để màn hành trình cũ chạy tiếp.
+- **Luồng tư vấn cũ giữ nguyên** (phiên + video call + `pre_consultation_reports`); chưa drop bảng này vì còn dùng. FE bác sĩ chưa gỡ hàng đợi `pending`, chỉ thêm mục "Lịch khám".
+- **Chưa làm / đơn giản hoá.** Không kiểm tra trùng giờ giữa các lịch, không có giờ làm việc của bác sĩ, không thông báo realtime khi có lịch mới (FE tải lại khi mở), 1 lịch = 1 đợt = 1 mã kết luận, chưa có test tự động cho luồng này (đã thử bằng script + HTTP trên DB tạm), FE chưa thử trên trình duyệt.

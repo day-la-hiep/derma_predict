@@ -1,11 +1,14 @@
 """Truy vấn DB cho hồ sơ lâm sàng: đợt bệnh, fact theo phạm vi (hồ sơ / đợt), nhật ký nguồn, giả thuyết AI."""
-from sqlalchemy import delete, func, or_, select
+from collections import defaultdict
+
+from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.clinical import ClinicalFact, ClinicalProvenance
 from app.models.episode import AiHypothesis, ClinicalEpisode
 from app.models.file import File
 from app.models.message import Message
+from app.models.visit import Appointment
 
 ACTIVE_STATUSES = ("open", "in_exam")
 
@@ -118,3 +121,72 @@ class ClinicalRecordRepository:
         for f in facts:
             await self._db.delete(f)
         await self._db.flush()
+
+    async def get_episode(self, episode_id: str) -> ClinicalEpisode | None:
+        return await self._db.get(ClinicalEpisode, episode_id)
+
+    async def active_episodes_of_profile(self, patient_profile_id: str) -> list[ClinicalEpisode]:
+        stmt = (
+            select(ClinicalEpisode)
+            .where(ClinicalEpisode.patient_profile_id == patient_profile_id, ClinicalEpisode.status.in_(ACTIVE_STATUSES))
+            .order_by(ClinicalEpisode.updated_at.desc())
+        )
+        return list((await self._db.execute(stmt)).scalars().all())
+
+    async def has_active_appointment(self, episode_id: str) -> bool:
+        stmt = select(
+            exists().where(
+                Appointment.episode_id == episode_id,
+                Appointment.status.in_(("requested", "confirmed", "in_progress")),
+            )
+        )
+        return bool((await self._db.execute(stmt)).scalar())
+
+    async def hypotheses(self, episode_ids: list[str]) -> dict[str, list[AiHypothesis]]:
+        out: dict[str, list[AiHypothesis]] = {eid: [] for eid in episode_ids}
+        if not episode_ids:
+            return out
+        stmt = select(AiHypothesis).where(AiHypothesis.episode_id.in_(episode_ids)).order_by(AiHypothesis.rank.asc())
+        for h in (await self._db.execute(stmt)).scalars().all():
+            out[h.episode_id].append(h)
+        return out
+
+    async def episode_facts(self, episode_ids: list[str]) -> dict[str, list[ClinicalFact]]:
+        out: dict[str, list[ClinicalFact]] = {eid: [] for eid in episode_ids}
+        if not episode_ids:
+            return out
+        stmt = select(ClinicalFact).where(ClinicalFact.episode_id.in_(episode_ids)).order_by(ClinicalFact.created_at.asc())
+        for f in (await self._db.execute(stmt)).scalars().all():
+            if f.episode_id:
+                out[f.episode_id].append(f)
+        return out
+
+    async def facts_with_sources(self, patient_profile_id: str, episode_id: str | None) -> list[tuple[ClinicalFact, list[Message]]]:
+        """Fact dài hạn của hồ sơ + fact của một đợt (nếu có), cùng tin nhắn nguồn còn tồn tại; cũ trước."""
+        scope = ClinicalFact.episode_id.is_(None)
+        if episode_id:
+            scope = scope | (ClinicalFact.episode_id == episode_id)
+        stmt = (
+            select(ClinicalFact)
+            .where(ClinicalFact.patient_profile_id == patient_profile_id, scope)
+            .order_by(ClinicalFact.created_at.asc())
+        )
+        facts = list((await self._db.execute(stmt)).scalars().all())
+        if not facts:
+            return []
+        prov = (
+            select(ClinicalProvenance.fact_id, Message)
+            .join(Message, Message.id == ClinicalProvenance.message_id)
+            .where(ClinicalProvenance.fact_id.in_([f.id for f in facts]))
+            .order_by(Message.created_at.asc())
+        )
+        by_fact: dict[str, dict[str, Message]] = defaultdict(dict)
+        for fact_id, message in (await self._db.execute(prov)).all():
+            by_fact[fact_id][message.id] = message
+        return [(f, list(by_fact[f.id].values())) for f in facts]
+
+    async def files_by_ids(self, file_ids: list[str]) -> dict[str, File]:
+        if not file_ids:
+            return {}
+        stmt = select(File).where(File.id.in_(file_ids))
+        return {f.id: f for f in (await self._db.execute(stmt)).scalars().all()}

@@ -6,6 +6,8 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.constant import (
+    BODY_SITE_LABELS,
+    DIAGNOSIS_CODE_LABELS,
     LONG_TERM_FACT_TYPES,
     BodySite,
     ClinicalFactType,
@@ -15,7 +17,9 @@ from app.common.constant import (
     ProvenanceKind,
 )
 from app.config.settings import settings
+from app.dto.consultation import PatientProfileDto
 from app.dto.request.patient_profile import ProfileFactInput
+from app.models.patient_profile import PatientProfile
 from app.models.clinical import ClinicalFact, ClinicalProvenance
 from app.models.episode import AiHypothesis, ClinicalEpisode
 from app.repositories.clinical_record_repository import ClinicalRecordRepository
@@ -34,9 +38,57 @@ def long_term_text(facts: list[ClinicalFact], fact_type: ClinicalFactType) -> st
     return "; ".join(f"{f.label} ({f.detail})" if f.detail else f.label for f in facts if f.fact_type == fact_type.value)
 
 
+def to_patient_profile_dto(profile: PatientProfile, long_term: list[ClinicalFact]) -> PatientProfileDto:
+    """`allergies` / `medical_history` không còn là cột: ghép từ fact dài hạn để thẻ bệnh nhân của bác sĩ giữ nguyên."""
+    return PatientProfileDto(
+        id=profile.id,
+        full_name=profile.full_name,
+        dob=profile.dob.isoformat(),
+        gender=profile.gender,
+        relationship=profile.relationship,
+        phone=profile.phone,
+        allergies=long_term_text(long_term, ClinicalFactType.ALLERGY),
+        medical_history=long_term_text(long_term, ClinicalFactType.HISTORY),
+    )
+
+
 def _site(value: Any) -> str | None:
     raw = str(value or "").strip().lower()
     return raw if raw in BodySite._value2member_map_ else None
+
+
+def build_episode_summary(
+    episode: ClinicalEpisode, facts: list[ClinicalFact], long_term: list[ClinicalFact], hypotheses: list[AiHypothesis]
+) -> str:
+    """Báo cáo trước khám ghép tất định từ dữ liệu đã lưu (không gọi LLM) nên sinh lại được bất cứ lúc nào."""
+
+    def line(f: ClinicalFact) -> str:
+        return f"- {f.label}: {f.detail}" if f.detail else f"- {f.label}"
+
+    parts = [f"Vùng: {BODY_SITE_LABELS.get(BodySite(episode.body_site), episode.body_site)}."]
+    if facts:
+        parts.append("Triệu chứng / tổn thương bệnh nhân khai:\n" + "\n".join(line(f) for f in facts))
+    if long_term:
+        parts.append("Dị ứng / tiền sử / thuốc:\n" + "\n".join(f"{line(f)} [{f.fact_type}]" for f in long_term))
+    if hypotheses:
+        parts.append(
+            "Gợi ý của AI (không phải chẩn đoán y khoa):\n"
+            + "\n".join(
+                f"{h.rank}. {h.disease} [{h.diagnosis_code}] - độ tin cậy {h.confidence}"
+                for h in hypotheses
+            )
+        )
+    if episode.red_flags:
+        parts.append("Dấu hiệu cần lưu ý: " + "; ".join(str(r) for r in episode.red_flags))
+    return "\n\n".join(parts)
+
+
+async def is_expired(repo: ClinicalRecordRepository, episode: ClinicalEpisode, now: datetime) -> bool:
+    """Đợt open quá hạn không cập nhật; đợt đang gắn lịch hẹn còn hiệu lực thì không hết hạn (đặt lịch trước vài tuần)."""
+    limit = timedelta(days=settings.CLINICAL_EPISODE_EXPIRE_DAYS)
+    if episode.status != EpisodeStatus.OPEN.value or now - episode.updated_at <= limit:
+        return False
+    return not await repo.has_active_appointment(episode.id)
 
 
 class ClinicalRecordService:
@@ -244,7 +296,7 @@ class _Turn:
         if site in self.touched:
             return self.touched[site]
         episode = await self.repo.active_episode(self.profile_id, site)
-        if episode is not None and self._expired(episode):
+        if episode is not None and await self._expired(episode):
             episode.status = EpisodeStatus.EXPIRED.value
             episode.closed_at = self.now
             await self.repo.flush()  # nhả unique index "1 đợt hoạt động / vùng" trước khi mở đợt mới
@@ -259,10 +311,8 @@ class _Turn:
         self.touched[site] = episode
         return episode
 
-    def _expired(self, episode: ClinicalEpisode) -> bool:
-        # TODO(đợt 4): đợt gắn lịch hẹn đang hoạt động không hết hạn
-        limit = timedelta(days=settings.CLINICAL_EPISODE_EXPIRE_DAYS)
-        return episode.status == EpisodeStatus.OPEN.value and self.now - episode.updated_at > limit
+    async def _expired(self, episode: ClinicalEpisode) -> bool:
+        return await is_expired(self.repo, episode, self.now)
 
     def only_touched_site(self) -> str | None:
         return next(iter(self.touched)) if len(self.touched) == 1 else None
@@ -274,5 +324,5 @@ class _Turn:
             return site
         if self.touched:
             return None
-        episodes = [e for e in await self.repo.open_episodes_of_conversation(self.conversation_id) if not self._expired(e)]
+        episodes = [e for e in await self.repo.open_episodes_of_conversation(self.conversation_id) if not await self._expired(e)]
         return episodes[0].body_site if len(episodes) == 1 else None

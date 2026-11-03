@@ -3,6 +3,8 @@ export const chatPaths = {
   entry: "/chats",
   // màn quản lý hồ sơ, không nằm dưới /chats
   profiles: "/profile",
+  // màn lịch khám, cùng cấp với hồ sơ
+  appointments: "/appointments",
   // hội thoại mới luôn kèm hồ sơ
   new: (profileId: string) => `/chats/new/${encodeURIComponent(profileId)}`,
   // hội thoại độc lập: hồ sơ lấy từ chính hội thoại
@@ -12,12 +14,14 @@ export const chatPaths = {
 export type ChatRoute =
   | { kind: "entry" }
   | { kind: "profiles" }
+  | { kind: "appointments" }
   | { kind: "new"; profileId?: string }
   | { kind: "conversation"; id: string };
 
 export function parseChatRoute(pathname: string): ChatRoute {
   const [area, first, second] = pathname.split("/").filter(Boolean);
   if (area === "profile") return { kind: "profiles" };
+  if (area === "appointments") return { kind: "appointments" };
   if (!first) return { kind: "entry" };
   if (first === "new") return { kind: "new", profileId: second ? decodeURIComponent(second) : undefined };
   return { kind: "conversation", id: decodeURIComponent(first) };

@@ -70,6 +70,8 @@ class ClinicalProvenance(Base):
     )
     quote: Mapped[str] = mapped_column(Text, default="", server_default="")
     doctor_id: Mapped[str | None] = mapped_column(ForeignKey("doctors.user_id", ondelete="SET NULL"), default=None)
+    # kind = doctor: lần khám bác sĩ ghi nhận giá trị này
+    encounter_id: Mapped[str | None] = mapped_column(ForeignKey("encounters.id", ondelete="SET NULL"), default=None)
     detail: Mapped[str] = mapped_column(Text, default="", server_default="")  # giá trị fact nguồn này ghi nhận
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
