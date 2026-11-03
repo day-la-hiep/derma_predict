@@ -3,6 +3,7 @@ import logging
 from typing import Any
 
 from agent.common.evidence import JSON_RESULT_TOOLS
+from agent.common.clinical_codes import normalize_body_site, normalize_code
 from agent.graph.v2.schemas import ReflectHypothesis
 
 logger = logging.getLogger(__name__)
@@ -108,5 +109,13 @@ def ground_hypotheses(
             logger.warning("giả thuyết %s bị bỏ vì không có bằng chứng hợp lệ", h.disease)
             unsupported.append(h.disease)
             continue
-        plan.append({"disease": h.disease, "confidence": h.confidence, "cites": valid, "missing": h.missing})
+        site = normalize_body_site(h.body_site)
+        plan.append({
+            "disease": h.disease,
+            "code": normalize_code(h.code, h.disease).value,
+            "body_site": site.value if site else "",
+            "confidence": h.confidence,
+            "cites": valid,
+            "missing": h.missing,
+        })
     return plan, unsupported, notes

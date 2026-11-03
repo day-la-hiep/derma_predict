@@ -87,6 +87,8 @@ def upgrade() -> None:
         WHERE p.fact_id = q.fact_id AND p.message_id = q.message_id AND p.id > q.id
     """)
     op.execute("DELETE FROM clinical_facts f USING _fact_keeper k WHERE k.id = f.id AND k.id <> k.keeper_id")
+    # migration sau chạy trong cùng transaction và tạo lại bảng tạm cùng tên
+    op.execute("DROP TABLE _fact_keeper")
 
     # 4. Bỏ supersede và template
     op.drop_column('clinical_facts', 'superseded_by_id')

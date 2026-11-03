@@ -1,8 +1,22 @@
+from typing import Any
+
 from agent.context.agent_context import AgentContext
 from agent.dto.schemas import TurnRequest
 from app.api.deps import get_postgres_client
 from app.config.settings import settings
+from app.repositories.clinical_record_repository import ClinicalRecordRepository
 from app.repositories.conversation_repository import ConversationRepository
+
+
+async def _known_facts(profile_id: str) -> list[dict[str, Any]]:
+    if not profile_id:
+        return []
+    async with get_postgres_client().session_factory() as db:
+        rows = await ClinicalRecordRepository(db).current_facts(profile_id)
+    return [
+        {"template_label": f.label, "fact_type": f.fact_type, "detail": f.detail, "body_site": site or "", "source_messages": []}
+        for f, site in rows
+    ]
 
 
 async def _conversation_for(conversation_id: str) -> tuple[str, str, str]:
@@ -30,4 +44,5 @@ async def build_context(req: TurnRequest) -> AgentContext:
             if a.content_type.startswith("image/")
         ],
         model=model,
+        known_facts=await _known_facts(profile_id),
     )

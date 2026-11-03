@@ -171,6 +171,7 @@ class MessageService:
                 type="turn",
                 conversation_id=conversation_id,
                 message_id=assistant_message.id,
+                user_message_id=user_message.id,
                 corr_id=corr_id,
                 content=content,
                 attached_files=_turn_attachments(attached_files or []),

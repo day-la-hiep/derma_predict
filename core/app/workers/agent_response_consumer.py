@@ -15,6 +15,7 @@ from app.api.deps import (
     get_redis_client,
 )
 from app.repositories.message_repository import MessageRepository
+from app.services.clinical_record_service import ClinicalRecordService
 from app.services.consultation_service import ConsultationService
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,9 @@ async def _on_message(message: AbstractIncomingMessage) -> None:
             )
             await db.commit()
 
+        if msg.status == "done" and (msg.facts or msg.hypotheses or msg.image_predictions):
+            await _save_clinical(msg)
+
         if msg.status == "done":
             # Turn tạm dừng (`status="question"`) vẫn CÒN active — resume tiếp tục CÙNG
             # `message_id`, chỉ xoá key khi turn thật sự kết thúc.
@@ -78,6 +82,18 @@ async def _on_message(message: AbstractIncomingMessage) -> None:
                     conversation_id=msg.conversation_id
                 )
             )
+
+
+async def _save_clinical(msg: AgentResponseMessage) -> None:
+    # session riêng: lỗi ghi hồ sơ lâm sàng không được làm mất câu trả lời đã lưu
+    try:
+        async with get_postgres_client().session_factory() as db:
+            await ClinicalRecordService(db).apply_turn(
+                msg.conversation_id, msg.facts or [], msg.hypotheses or [], msg.image_predictions or []
+            )
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        logger.exception("[clinical] không lưu được kết quả lâm sàng của lượt %s", msg.message_id)
 
 
 async def start_consuming() -> None:

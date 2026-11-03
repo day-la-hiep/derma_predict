@@ -50,7 +50,7 @@ async def _run_lane(rt: Any) -> dict[str, Any]:
 
 
 class ImageLaneTest(unittest.IsolatedAsyncioTestCase):
-    async def test_join_builds_hints_and_facts_then_clears(self) -> None:
+    async def test_join_builds_hints_then_clears(self) -> None:
         rt = _rt(["a", "missing"])
         rt.context.image_result = asyncio.get_running_loop().create_future()
         p = _patches()
@@ -60,7 +60,8 @@ class ImageLaneTest(unittest.IsolatedAsyncioTestCase):
             again = await image.join_images(cast(Any, {**state, **out}), rt.context)
         self.assertEqual([e["id"] for e in out["evidence"]], ["H1", "H2"])  # tra ca bệnh đang tắt
         self.assertTrue(all(e["kind"] == "hint" for e in out["evidence"]))
-        self.assertEqual(out["facts"][0]["fact_type"], "image_finding")
+        self.assertNotIn("facts", out)  # kết quả ảnh không còn thành fact
+        self.assertEqual(rt.context.turn_images[0]["storage_key"], "a")
         self.assertEqual(again, {})  # vòng sau không gộp lại
 
     async def test_join_waits_for_lane(self) -> None:
@@ -83,7 +84,7 @@ class ImageLaneTest(unittest.IsolatedAsyncioTestCase):
             state = await _run_lane(rt)
             out = await image.join_images(cast(Any, state), rt.context)
         self.assertEqual(out["evidence"], [])
-        self.assertEqual(out["facts"], [])
+        self.assertEqual(rt.context.turn_images, [])  # ảnh không tải được thì không có dự đoán gửi Core
 
     async def test_no_image_lane_no_wait(self) -> None:
         self.assertEqual(await image.join_images({"messages": []}, _rt([]).context), {})

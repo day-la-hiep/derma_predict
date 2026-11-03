@@ -6,8 +6,8 @@ from langchain_core.tools import StructuredTool
 from langgraph.runtime import Runtime
 
 from agent.common.vision import VisionError, describe_skin_image
+from agent.common.clinical_codes import ALIASES as _ALIASES, canon as _canon
 from agent.context.agent_context import AgentContext, ImageResult
-from agent.common.fact_extractor import merge_facts
 from agent.graph.v2.evidence import add_evidence
 from agent.graph.v2.state import ImageState, PreDiagState
 from agent.middleware.common.tool import emit_tool_step
@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 MAX_IMAGES = 3
 # Tạm tắt tra ca bệnh theo nhãn CNN top-1; bật lại thì làn ảnh thêm hint `search_finalize_report_by_image`.
 SEARCH_CASES_BY_LABEL = False
-_FACT_CHARS = 400
 
 
 async def _load_image(key: str) -> bytes | None:
@@ -133,54 +132,15 @@ async def image_done(state: ImageState, runtime: Runtime[AgentContext]) -> dict[
     hints += [("analyze_skin_image_multimodal", {"object_key": r["key"]}, r["text"]) for r in vision]
     if found and found.get("cases"):
         hints.append(("search_finalize_report_by_image", {"label": found["label"]}, _cases_text(found["label"], found["cases"])))
-    facts = [
-        {
-            "template_label": f"Mô tả ảnh {i}",
-            "fact_type": "image_finding",
-            "detail": "(AI mô tả, chưa xác nhận) " + r["text"][:_FACT_CHARS],
-            "source_messages": [],
-        }
-        for i, r in enumerate(vision, 1)
+    # kết quả CNN theo ảnh gửi về Core (đợt bệnh), không còn thành fact image_finding
+    runtime.context.turn_images = [
+        {"storage_key": r["key"], "top_k": [{"label": t["disease"], "score": float(t["confidence"])} for t in r["top"]]}
+        for r in cnn
     ]
     future = runtime.context.image_result
     if future is not None and not future.done():
-        future.set_result({"hints": hints, "facts": facts, "candidates": _candidates(cnn), "descriptions": [r["text"] for r in vision]})
+        future.set_result({"hints": hints, "candidates": _candidates(cnn), "descriptions": [r["text"] for r in vision]})
     return {}
-
-
-# shortcut: bảng tên tay cho 22 lớp của CNN (tiếng Anh + tiếng Việt thường gặp), lớp mới thì thêm vào đây; tên ngoài bảng chỉ so khớp theo chuỗi.
-_ALIASES: dict[str, tuple[str, ...]] = {
-    "Acne": ("acne", "mụn trứng cá"),
-    "Actinic_Keratosis": ("actinic keratosis", "dày sừng quang hoá", "dày sừng quang hóa", "dày sừng ánh nắng"),
-    "Benign_tumors": ("benign", "u lành", "u nang", "lipoma"),
-    "Bullous": ("bullous", "pemphig", "bóng nước", "bọng nước"),
-    "Candidiasis": ("candida", "nấm men"),
-    "DrugEruption": ("drug eruption", "phát ban do thuốc", "dị ứng thuốc", "ban đỏ do thuốc"),
-    "Eczema": ("eczema", "atopic", "viêm da cơ địa", "chàm", "contact dermatitis", "viêm da tiếp xúc"),
-    "Infestations_Bites": ("scabies", "ghẻ", "côn trùng", "bite", "chấy", "rận"),
-    "Lichen": ("lichen", "liken"),
-    "Lupus": ("lupus",),
-    "Moles": ("nốt ruồi", "mole", "nevus"),
-    "Psoriasis": ("psoriasis", "vảy nến"),
-    "Rosacea": ("rosacea", "trứng cá đỏ"),
-    "Seborrh_Keratoses": ("seborrheic keratosis", "dày sừng tiết bã", "dày sừng bã"),
-    "SkinCancer": ("ung thư da", "carcinoma", "melanoma", "skin cancer"),
-    "Sun_Sunlight_Damage": ("sun damage", "tổn thương do nắng", "cháy nắng", "sunlight"),
-    "Tinea": ("tinea", "nấm da", "hắc lào", "lang ben"),
-    "Vascular_Tumors": ("hemangioma", "u mạch", "u máu"),
-    "Vasculitis": ("vasculitis", "viêm mạch"),
-    "Vitiligo": ("vitiligo", "bạch biến"),
-    "Warts": ("wart", "mụn cóc"),
-}
-
-
-def _canon(name: str) -> str:
-    """Tên bệnh về mã lớp CNN nếu khớp bảng tên (Việt hoặc Anh), không thì chuỗi chữ thường."""
-    low = name.lower().replace("_", " ")
-    for cls, aliases in _ALIASES.items():
-        if cls.lower().replace("_", " ") in low or any(a in low for a in aliases):
-            return cls
-    return low.strip()
 
 
 def cross_check(candidates: list[dict[str, Any]], descriptions: list[str], hypotheses: list[str]) -> str | None:
@@ -224,4 +184,4 @@ async def join_images(state: PreDiagState, ctx: AgentContext) -> dict[str, Any]:
     for name, args, text in hints:
         add_evidence(evidence, [{"kind": "hint", "source": name, "text": text}])
         await emit_tool_step(ctx, name, args, text)
-    return {"evidence": evidence, "facts": merge_facts(state.get("facts", []), result["facts"])}
+    return {"evidence": evidence}

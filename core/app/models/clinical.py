@@ -8,10 +8,22 @@ from app.models.base import Base
 
 class ClinicalFact(Base):
     __tablename__ = "clinical_facts"
+    __table_args__ = (
+        CheckConstraint(
+            "fact_type IN ('symptom', 'lesion', 'history', 'medication', 'allergy', 'other')", name="fact_type_valid"
+        ),
+        CheckConstraint(
+            "(fact_type IN ('allergy', 'history', 'medication')) = (episode_id IS NULL)", name="long_term_no_episode"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, server_default=text("gen_random_uuid()"))  # DB sinh
     # fact thuộc về người bệnh, không thuộc một cuộc chat; hội thoại sinh ra fact truy ngược qua `ClinicalProvenance`
     patient_profile_id: Mapped[str] = mapped_column(ForeignKey("patient_profiles.id", ondelete="CASCADE"), index=True)
+    # NULL = fact dài hạn (allergy / history / medication) của hồ sơ; còn lại thuộc một đợt bệnh
+    episode_id: Mapped[str | None] = mapped_column(
+        ForeignKey("clinical_episodes.id", ondelete="CASCADE"), index=True, default=None
+    )
     fact_type: Mapped[str] = mapped_column(String(32))  # `ClinicalFactType`
     label: Mapped[str] = mapped_column(String(255))
     ontology_id: Mapped[str | None] = mapped_column(String(128), default=None)
@@ -23,13 +35,23 @@ class ClinicalFact(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 
-# Bảng fact là hiện trạng: mỗi (hồ sơ, loại, nhãn) một dòng, nhãn so không phân biệt hoa thường
+# Bảng fact là hiện trạng: mỗi (phạm vi, loại, nhãn) một dòng, nhãn so không phân biệt hoa thường.
+# Phạm vi của fact dài hạn là hồ sơ, của fact theo đợt là đợt — "ngứa" ở mặt và ở chân là 2 dòng.
 Index(
-    "uq_clinical_facts_profile_type_label",
+    "uq_clinical_facts_long_term",
     ClinicalFact.patient_profile_id,
     ClinicalFact.fact_type,
     func.lower(ClinicalFact.label),
     unique=True,
+    postgresql_where=ClinicalFact.episode_id.is_(None),
+)
+Index(
+    "uq_clinical_facts_episode",
+    ClinicalFact.episode_id,
+    ClinicalFact.fact_type,
+    func.lower(ClinicalFact.label),
+    unique=True,
+    postgresql_where=ClinicalFact.episode_id.is_not(None),
 )
 
 

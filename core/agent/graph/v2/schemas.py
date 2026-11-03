@@ -2,6 +2,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from agent.common.clinical_codes import BODY_SITE_CHOICES
+
 
 def _as_list(value: Any) -> Any:
     """Model hay trả 1 chuỗi thay vì list — bọc lại thay vì từ chối cả lần lập luận."""
@@ -56,8 +58,14 @@ class PlanInput(BaseModel):
     _short = field_validator("queries", mode="after")(_clip)
 
 
+CODE_CHOICES = "Acne | Actinic_Keratosis | Benign_tumors | Bullous | Candidiasis | DrugEruption | Eczema | Infestations_Bites | Lichen | Lupus | Moles | Psoriasis | Rosacea | Seborrh_Keratoses | SkinCancer | Sun_Sunlight_Damage | Tinea | Unknown_Normal | Vascular_Tumors | Vasculitis | Vitiligo | Warts | OTHER"
+
+
 class ReflectHypothesis(BaseModel):
     disease: str = Field(description="Tên bệnh ngắn (tối đa 8 từ), không phải câu văn")
+    # chuỗi thay vì Literal: model nhỏ hay ghi lệch, chuẩn hoá ở `agent/common/clinical_codes.py` thay vì bắt gọi lại cả lần lập luận
+    code: str = Field(default="", description=f"Mã nhóm bệnh gần nhất, chọn đúng một: {CODE_CHOICES}")
+    body_site: str = Field(default="", description=f"Vùng da của vấn đề giả thuyết này giải thích, chọn đúng một mã (phần trong ngoặc chỉ để giải thích): {BODY_SITE_CHOICES}; để trống nếu chưa rõ")
     confidence: Literal["cao", "vừa", "thấp"]
     cites: list[str] = Field(default_factory=list, description="Chỉ các mã bằng chứng E# (ví dụ E1, E3) ủng hộ giả thuyết; không viết chữ khác")
     missing: list[str] = Field(default_factory=list, description="Điều còn thiếu: cụm danh từ, mỗi mục tối đa 10 từ")

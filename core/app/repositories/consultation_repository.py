@@ -1,7 +1,7 @@
 """Truy vấn DB cho `ConsultationSession`, `PreConsultationReport`, `ClinicalFact`."""
 from collections import defaultdict
 from datetime import UTC, datetime
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.consultation_session import ConsultationSession
@@ -141,39 +141,6 @@ class ConsultationRepository:
             # một tin có thể ghi nhận cùng fact nhiều lần (giá trị khác nhau) nhưng chỉ hiện một lần làm nguồn
             by_fact[fact_id][message.id] = message
         return [(f, list(by_fact[f.id].values())) for f in facts]
-
-    async def find_fact(self, patient_profile_id: str, fact_type: str, label: str) -> ClinicalFact | None:
-        """Theo khoá duy nhất (hồ sơ, loại, nhãn không phân biệt hoa thường)."""
-        stmt = select(ClinicalFact).where(
-            ClinicalFact.patient_profile_id == patient_profile_id,
-            ClinicalFact.fact_type == fact_type,
-            func.lower(ClinicalFact.label) == label.lower(),
-        )
-        return (await self._db.execute(stmt)).scalar_one_or_none()
-
-    async def add_fact(self, fact: ClinicalFact) -> ClinicalFact:
-        self._db.add(fact)
-        await self._db.flush()
-        return fact
-
-    async def provenance_messages(self, fact_ids: list[str]) -> set[tuple[str, str]]:
-        """Các cặp (fact_id, message_id) đã có trong nhật ký."""
-        if not fact_ids:
-            return set()
-        stmt = select(ClinicalProvenance.fact_id, ClinicalProvenance.message_id).where(
-            ClinicalProvenance.fact_id.in_(fact_ids), ClinicalProvenance.message_id.is_not(None)
-        )
-        return {(f, m) for f, m in (await self._db.execute(stmt)).all() if m}
-
-    async def add_provenances(self, provenances: list[ClinicalProvenance]) -> None:
-        self._db.add_all(provenances)
-        await self._db.flush()
-
-    async def message_contents(self, message_ids: list[str]) -> dict[str, str]:
-        if not message_ids:
-            return {}
-        stmt = select(Message.id, Message.content).where(Message.id.in_(message_ids))
-        return {mid: content or "" for mid, content in (await self._db.execute(stmt)).all()}
 
     async def accept_session(
         self, session: ConsultationSession, doctor_id: str

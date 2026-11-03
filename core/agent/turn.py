@@ -174,6 +174,7 @@ async def _drive(req: TurnRequest, input_: object) -> None:
             content=partial,
             status="done",
             reasoning=context.reasoning_steps,
+            context=context,
         )
         return
     except Exception as exc:  # noqa: BLE001
@@ -187,6 +188,7 @@ async def _drive(req: TurnRequest, input_: object) -> None:
             content=_ERROR_TEXT,
             status="done",
             reasoning=context.reasoning_steps,
+            context=context,
         )
         return
 
@@ -202,6 +204,7 @@ async def _drive(req: TurnRequest, input_: object) -> None:
         content=answer,
         status="done",
         reasoning=context.reasoning_steps,
+        context=context,
     )
     _schedule_memory_update(req, context)
 
@@ -219,8 +222,9 @@ def _schedule_memory_update(req: TurnRequest, context: AgentContext) -> None:
 
 async def handle_turn(req: TurnRequest) -> None:
     """Turn mới."""
+    # id DB của tin người dùng: nguồn của fact trích từ tin này trỏ đúng bảng `messages`
     await _drive(
-        req, {"messages": [HumanMessage(content=_human_message_content(req))]}
+        req, {"messages": [HumanMessage(content=_human_message_content(req), id=req.user_message_id)]}
     )
 
 
@@ -242,8 +246,9 @@ async def finish_turn(
     status: Literal["done", "question"],
     choice: dict[str, Any] | None = None,
     reasoning: list[dict[str, Any]] | None = None,
+    context: AgentContext | None = None,
 ) -> None:
-    """Kết thúc/tạm dừng turn"""
+    """Kết thúc/tạm dừng turn; `context` có thì gửi kèm kết quả lâm sàng của lượt."""
     await emit(channel, event)
     await get_redis_client().publish(channel, STREAM_DONE_SENTINEL)
     await get_rabbitmq_client().publish(
@@ -255,6 +260,9 @@ async def finish_turn(
             status=status,
             choice=choice,
             reasoning=reasoning or None,
+            facts=(context.turn_facts or None) if context else None,
+            hypotheses=(context.turn_hypotheses or None) if context else None,
+            image_predictions=(context.turn_images or None) if context else None,
         )
         .model_dump_json()
         .encode("utf-8"),

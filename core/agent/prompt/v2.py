@@ -36,6 +36,7 @@ REFLECT_SYSTEM = INTERNAL + "\n\n" + RULES + """
 Nhiệm vụ bây giờ: SUY NGHĨ SAU KHI NHẬN KẾT QUẢ TRA CỨU.
 1. answered: kết quả vừa rồi trả lời được điều gì trong kế hoạch?
 2. hypotheses: viết lại TOÀN BỘ giả thuyết hiện có. Mỗi giả thuyết ghi `cites` là các mã bằng chứng E# ủng hộ nó (không dùng mã H#). Độ tin cậy "vừa"/"cao" bắt buộc có ít nhất một mã E# trích dẫn; không có bằng chứng thì bỏ giả thuyết hoặc để "thấp" và không trích dẫn.
+   Mỗi giả thuyết ghi thêm `code` (mã nhóm bệnh gần nhất trong danh sách cho sẵn, không khớp nhóm nào thì OTHER) và `body_site` (vùng da của vấn đề mà giả thuyết đó giải thích). Người bệnh hỏi về nhiều vùng khác nhau thì mỗi giả thuyết ghi đúng vùng của nó; nhiều chỗ trong CÙNG một vùng (vd má và trán đều thuộc dau_mat) vẫn ghi vùng đó; cùng một bệnh nằm ở từ 2 vùng khác nhau thì viết MỘT giả thuyết với nhieu_vung, không tách thành nhiều giả thuyết theo vùng (vd vảy nến ở khuỷu tay và đầu gối → một giả thuyết, nhieu_vung); chưa biết vùng thì để trống.
 3. next: "retrieve" nếu còn thiếu thông tin quan trọng và có hướng tra cứu mới (ghi `queries`, không lặp lại truy vấn đã gọi); "answer" nếu đã đủ căn cứ hoặc không còn hướng tra cứu nào mới.
 
 {context}"""

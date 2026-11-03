@@ -6,7 +6,6 @@ from typing import Any, TypedDict
 
 class ImageResult(TypedDict):
     hints: list[tuple[str, dict[str, Any], str]]
-    facts: list[dict[str, Any]]
     # Kết quả riêng của làn ảnh để bước gộp kiểm tra chéo với giả thuyết của làn chữ: nhãn CNN (disease, confidence) và các đoạn mô tả.
     candidates: list[dict[str, Any]]
     descriptions: list[str]
@@ -34,6 +33,12 @@ class AgentContext:
     memory_text: str = ""
     # Làn ảnh (`image_flow`) đặt kết quả vào đây khi xong; `label_evidence` của làn chữ chờ nó. Dùng Future vì state graph cha chỉ được ghi khi cả hai làn kết thúc.
     image_result: "asyncio.Future[ImageResult] | None" = None
+    # Fact hiện trạng trong DB (dài hạn + đợt đang hoạt động), nạp ở `build_context`; bảng là nguồn chính, state chỉ là bộ đệm.
+    known_facts: list[dict[str, Any]] = field(default_factory=list)
+    # Kết quả lâm sàng của lượt, các node ghi vào đây; `turn.py` gửi về Core khi lượt xong (cùng cách `reasoning_steps`).
+    turn_facts: list[dict[str, Any]] = field(default_factory=list)
+    turn_hypotheses: list[dict[str, Any]] = field(default_factory=list)
+    turn_images: list[dict[str, Any]] = field(default_factory=list)
     # Số lần đã gọi theo tên hiển thị của tool trong lượt (vòng lặp tra cứu gọi lại cùng tool) → id bước không đè nhau.
     tool_counts: dict[str, int] = field(default_factory=dict)
     # Bước đã `tool_start` nhưng chưa có kết quả, theo tên; `emit_tool_step` lấy theo thứ tự để khớp start với result.
