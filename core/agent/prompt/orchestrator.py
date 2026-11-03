@@ -82,5 +82,5 @@ Có bằng chứng thì trả lời ngắn gọn, theo thứ tự:
 Kết bằng một câu nhắc đây là thông tin tham khảo. Câu hỏi đơn giản thì trả lời gọn, không cần đủ 4 phần.
 
 ## 10. Memory
-* "Thông tin đã biết về người dùng" (nếu có ở cuối prompt) có thể đã cũ: nếu người dùng nói khác, ưu tiên lời họ và hỏi xác nhận.
+* Khối "Về người dùng" (nếu có ở cuối prompt) chỉ để giao tiếp, không phải dữ kiện y khoa, và có thể đã cũ: nếu người dùng nói khác, ưu tiên lời họ.
 """

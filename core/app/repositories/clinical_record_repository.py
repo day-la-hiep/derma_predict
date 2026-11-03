@@ -99,3 +99,22 @@ class ClinicalRecordRepository:
             .order_by(ClinicalFact.updated_at.asc())
         )
         return [(f, site) for f, site in (await self._db.execute(stmt)).all()]
+
+    async def long_term_facts(self, patient_profile_ids: list[str]) -> dict[str, list[ClinicalFact]]:
+        """Fact dài hạn (dị ứng / tiền sử / thuốc) theo hồ sơ, cũ trước."""
+        out: dict[str, list[ClinicalFact]] = {pid: [] for pid in patient_profile_ids}
+        if not patient_profile_ids:
+            return out
+        stmt = (
+            select(ClinicalFact)
+            .where(ClinicalFact.patient_profile_id.in_(patient_profile_ids), ClinicalFact.episode_id.is_(None))
+            .order_by(ClinicalFact.created_at.asc())
+        )
+        for f in (await self._db.execute(stmt)).scalars().all():
+            out[f.patient_profile_id].append(f)
+        return out
+
+    async def delete_facts(self, facts: list[ClinicalFact]) -> None:
+        for f in facts:
+            await self._db.delete(f)
+        await self._db.flush()

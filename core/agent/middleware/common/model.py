@@ -30,8 +30,12 @@ async def load_memory(store: BaseStore | None, profile_id: str) -> str:
     return "\n".join(f"- {content}" for _, content in memories)
 
 
+# memory chỉ còn thông tin giao tiếp; tách tên khối khỏi "Hồ sơ lâm sàng" để model không lấy làm căn cứ y khoa
+MEMORY_HEADER = "Về người dùng (chỉ để giao tiếp cho phù hợp, KHÔNG phải dữ kiện y khoa):"
+
+
 def inject_memory(base: str, memory_text: str) -> str:
-    return f"{base}\n\nThông tin đã biết về người dùng:\n{memory_text}" if memory_text else base
+    return f"{base}\n\n{MEMORY_HEADER}\n{memory_text}" if memory_text else base
 
 
 async def with_memory(base: str, store: BaseStore | None, ctx: AgentContext) -> str:

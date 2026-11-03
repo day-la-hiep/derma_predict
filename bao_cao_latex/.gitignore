@@ -1,4 +1,4 @@
-# LaTeX build artifacts
+12# LaTeX build artifacts
 *.aux
 *.bbl
 *.bcf
@@ -6,7 +6,7 @@
 *.fdb_latexmk
 *.fls
 *.log
-*.out
+*.outđi
 *.run.xml
 *.synctex.gz
 *.toc

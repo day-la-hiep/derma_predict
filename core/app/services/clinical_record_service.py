@@ -15,6 +15,7 @@ from app.common.constant import (
     ProvenanceKind,
 )
 from app.config.settings import settings
+from app.dto.request.patient_profile import ProfileFactInput
 from app.models.clinical import ClinicalFact, ClinicalProvenance
 from app.models.episode import AiHypothesis, ClinicalEpisode
 from app.repositories.clinical_record_repository import ClinicalRecordRepository
@@ -28,6 +29,11 @@ _LONG_TERM = {t.value for t in LONG_TERM_FACT_TYPES}
 _FACT_TYPES = {t.value for t in ClinicalFactType if t is not ClinicalFactType.IMAGE_FINDING}
 
 
+def long_term_text(facts: list[ClinicalFact], fact_type: ClinicalFactType) -> str:
+    """Gộp fact dài hạn thành một dòng cho các chỗ còn hiển thị dạng chuỗi (thẻ bệnh nhân, snapshot, payload Qdrant)."""
+    return "; ".join(f"{f.label} ({f.detail})" if f.detail else f.label for f in facts if f.fact_type == fact_type.value)
+
+
 def _site(value: Any) -> str | None:
     raw = str(value or "").strip().lower()
     return raw if raw in BodySite._value2member_map_ else None
@@ -38,6 +44,10 @@ class ClinicalRecordService:
         self._db = db
         self._repo = ClinicalRecordRepository(db)
         self._conversations = ConversationRepository(db)
+
+    @property
+    def repo(self) -> ClinicalRecordRepository:
+        return self._repo
 
     async def apply_turn(
         self,
@@ -72,6 +82,55 @@ class ClinicalRecordService:
         if images:
             codes = {site: {str(h.get("code") or "") for h in items} for site, items in by_site.items()}
             await self._save_images(turn, images, codes)
+
+    async def replace_long_term_facts(self, patient_profile_id: str, items: list[ProfileFactInput]) -> list[ClinicalFact]:
+        """Form hồ sơ là danh sách đầy đủ: thêm / sửa theo (loại, nhãn), xoá mục không còn. Không commit."""
+        now = datetime.now(UTC)
+        wanted: dict[tuple[str, str], tuple[str, str]] = {}
+        for item in items:
+            label = " ".join(item.label.split())[:255]
+            if label:
+                wanted[(item.fact_type, label.lower())] = (label, item.detail.strip())
+        existing = (await self._repo.long_term_facts([patient_profile_id]))[patient_profile_id]
+        by_key = {(f.fact_type, f.label.lower()): f for f in existing}
+
+        removed = [f for key, f in by_key.items() if key not in wanted]
+        if removed:
+            logger.info("[clinical] hồ sơ %s: xoá %d fact dài hạn qua form", patient_profile_id, len(removed))
+            await self._repo.delete_facts(removed)
+
+        logs: list[ClinicalProvenance] = []
+        for (fact_type, _), (label, detail) in wanted.items():
+            fact = by_key.get((fact_type, label.lower()))
+            if fact is None:
+                fact = await self._repo.add_fact(
+                    ClinicalFact(
+                        patient_profile_id=patient_profile_id,
+                        fact_type=fact_type,
+                        label=label,
+                        detail=detail,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+            elif (label, detail) != (fact.label, fact.detail):
+                if detail != fact.detail:
+                    fact.verified_at = None  # giá trị mới chưa ai kiểm chứng
+                    fact.verified_by_id = None
+                fact.label, fact.detail, fact.updated_at = label, detail, now
+            else:
+                continue
+            logs.append(
+                ClinicalProvenance(
+                    fact_id=fact.id,
+                    kind=ProvenanceKind.PROFILE.value,
+                    quote=f"{label}: {detail}" if detail else label,
+                    detail=detail,
+                    created_at=now,
+                )
+            )
+        await self._repo.add_provenances(logs)
+        return (await self._repo.long_term_facts([patient_profile_id]))[patient_profile_id]
 
     async def _save_hypotheses(self, episode: ClinicalEpisode, items: list[dict[str, Any]]) -> None:
         if episode.status != EpisodeStatus.OPEN.value:

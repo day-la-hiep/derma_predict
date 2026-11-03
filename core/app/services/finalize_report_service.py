@@ -37,10 +37,12 @@ from app.models.finalize_report import FinalizeReport
 from app.models.message import Message
 from app.models.patient_profile import PatientProfile
 from app.repositories.consultation_repository import ConsultationRepository
+from app.repositories.clinical_record_repository import ClinicalRecordRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.file_repository import FileRepository
 from app.repositories.finalize_report_repository import FinalizeReportRepository
 from app.repositories.patient_profile_repository import PatientProfileRepository
+from app.services.clinical_record_service import long_term_text
 from app.services.file_store_service import FileStoreService
 
 logger = logging.getLogger(__name__)
@@ -48,7 +50,8 @@ logger = logging.getLogger(__name__)
 FactRow = tuple[ClinicalFact, list[Message]]
 
 
-def to_patient_profile_dto(profile: PatientProfile) -> PatientProfileDto:
+def to_patient_profile_dto(profile: PatientProfile, long_term: list[ClinicalFact]) -> PatientProfileDto:
+    """`allergies` / `medical_history` không còn là cột: ghép từ fact dài hạn để thẻ bệnh nhân của bác sĩ giữ nguyên."""
     return PatientProfileDto(
         id=profile.id,
         full_name=profile.full_name,
@@ -56,8 +59,8 @@ def to_patient_profile_dto(profile: PatientProfile) -> PatientProfileDto:
         gender=profile.gender,
         relationship=profile.relationship,
         phone=profile.phone,
-        allergies=profile.allergies,
-        medical_history=profile.medical_history,
+        allergies=long_term_text(long_term, ClinicalFactType.ALLERGY),
+        medical_history=long_term_text(long_term, ClinicalFactType.HISTORY),
     )
 
 
@@ -87,6 +90,10 @@ def _snapshot_provenances(messages: list[Message], files: dict[str, list[File]])
         )
         for m in messages
     ]
+
+
+def _fact_line(f: SnapshotClinicalFact) -> str:
+    return f"{f.label} ({f.detail})" if f.detail else f.label
 
 
 def build_snapshot(
@@ -120,8 +127,9 @@ def build_snapshot(
             gender=Gender(profile.gender),
             relationship=ProfileRelationship(profile.relationship),
             phone=profile.phone,
-            allergies=profile.allergies,
-            medical_history=profile.medical_history,
+            # chuỗi cho phiếu / payload Qdrant: lấy từ fact bác sĩ đã chốt, không đọc lại DB
+            allergies="; ".join(_fact_line(f) for f in facts if f.fact_type == ClinicalFactType.ALLERGY),
+            medical_history="; ".join(_fact_line(f) for f in facts if f.fact_type == ClinicalFactType.HISTORY),
         ),
         assessment=Assessment(
             reasoning=body.reasoning.strip(),
@@ -149,6 +157,7 @@ class FinalizeReportService:
         self._consultations = ConsultationRepository(db)
         self._conversations = ConversationRepository(db)
         self._files = FileRepository(db)
+        self._clinical = ClinicalRecordRepository(db)
         self._file_store = file_store
         self._index_service = index_service
         self._patient_graph = patient_graph_service
@@ -157,11 +166,12 @@ class FinalizeReportService:
 
     async def list_mine(self, doctor_id: str, doctor_name: str, q: str) -> list[FinalizeReportItemOutput]:
         rows = await self._reports.list_for_doctor(doctor_id, q.strip())
+        long_term = await self._clinical.long_term_facts(list({p.id for _, p in rows}))
         conv_ids = await self._conversation_ids([r for r, _ in rows])
         images_map = await self._reports.list_images_for_reports([r.id for r, _ in rows])
         return [
             FinalizeReportItemOutput(
-                **self._report_output(r, doctor_name, conv_ids, images_map.get(r.id, [])).model_dump(), patient=to_patient_profile_dto(p)
+                **self._report_output(r, doctor_name, conv_ids, images_map.get(r.id, [])).model_dump(), patient=to_patient_profile_dto(p, long_term[p.id])
             )
             for r, p in rows
         ]
@@ -183,7 +193,7 @@ class FinalizeReportService:
         rows = await self._consultations.list_facts_with_sources(profile.id)
         files = await self._files_of(rows)
         return FinalizeDraftOutput(
-            patient=to_patient_profile_dto(profile),
+            patient=to_patient_profile_dto(profile, (await self._clinical.long_term_facts([profile.id]))[profile.id]),
             suggestions=await self._graph_suggestions(profile.id, rows),
             facts=[
                 DraftFactOutput(

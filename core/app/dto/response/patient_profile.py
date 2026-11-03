@@ -3,6 +3,14 @@
 from pydantic import BaseModel
 
 
+class ProfileFactOutput(BaseModel):
+    id: str
+    fact_type: str
+    label: str
+    detail: str
+    verified_at: str | None = None  # bác sĩ đã xác nhận lúc chốt
+
+
 class PatientProfileOutput(BaseModel):
     id: str
     full_name: str
@@ -10,8 +18,7 @@ class PatientProfileOutput(BaseModel):
     gender: str
     relationship: str
     phone: str | None = None
-    allergies: str
-    medical_history: str
+    long_term_facts: list[ProfileFactOutput] = []  # dị ứng / tiền sử / thuốc, gồm cả mục AI trích từ chat
     created_at: str
 
 

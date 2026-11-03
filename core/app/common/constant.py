@@ -158,6 +158,7 @@ DIAGNOSIS_CODE_LABELS: dict[DiagnosisCode, str] = {
 class ProvenanceKind(str, Enum):
     CHAT = "chat"  # AI trích từ tin nhắn của bệnh nhân
     DOCTOR = "doctor"  # bác sĩ ghi / xác nhận lúc chốt
+    PROFILE = "profile"  # bệnh nhân tự khai ở form hồ sơ (chỉ fact dài hạn)
 
 
 class EpisodeStatus(str, Enum):

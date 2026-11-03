@@ -26,6 +26,7 @@ Từ đoạn hội thoại, nêu các dữ kiện MỚI hoặc ĐÃ THAY ĐỔI 
 * Dữ kiện đã biết mà không đổi thì KHÔNG nhắc lại. Dữ kiện bị người bệnh đính chính hoặc thay đổi thì trả lại ĐÚNG NGUYÊN VĂN nhãn đã biết, `detail` là giá trị đầy đủ MỚI thay thế giá trị cũ (không nối thêm).
 * Cùng ý với một dữ kiện đã biết thì dùng lại nguyên văn nhãn đó, không đặt nhãn mới (vd đã có "Ngứa" thì không viết "Ngứa da").
 * `body_site`: với symptom / lesion / other, ghi vùng da của dữ kiện; nhiều chỗ trong CÙNG một vùng vẫn ghi vùng đó; người bệnh chưa nói vị trí thì để trống. Với history / medication / allergy luôn để trống.
+* Yếu tố nền có thể ảnh hưởng chẩn đoán / điều trị (nghề nghiệp tiếp xúc hoá chất, mỹ phẩm / chất tẩy hay dùng, thú nuôi, nơi ở ẩm thấp, mang thai / cho con bú, cơ địa) ghi là history. Vd "làm thợ làm tóc, hay tiếp xúc thuốc nhuộm" → history "Tiếp xúc thuốc nhuộm tóc (nghề nghiệp)".
 * Không có dữ kiện lâm sàng nào mới (chào hỏi, hỏi chung) thì trả danh sách rỗng.
 * `source_messages`: số thứ tự `[#i]` của các tin [PATIENT] làm căn cứ; không bịa số."""
 

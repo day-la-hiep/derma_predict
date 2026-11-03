@@ -9,11 +9,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # chạy được 
 from alembic.config import Config  # noqa: E402
 from alembic.runtime.migration import MigrationContext  # noqa: E402
 from alembic.script import ScriptDirectory  # noqa: E402
+from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.api.deps import get_document_file_store, get_file_store_service, get_postgres_client  # noqa: E402
 from app.config.security import hash_password  # noqa: E402
 from app.models.admin import Admin  # noqa: E402
+from app.models.clinical import ClinicalFact, ClinicalProvenance  # noqa: E402
 from app.models.doctor import Doctor  # noqa: E402
 from app.models.document import Document, DocumentOverride, DocumentStage  # noqa: E402
 from app.models.file import File  # noqa: E402
@@ -41,7 +43,13 @@ FAMILY_PROFILES = [
     {"id": "pp-user-1-child", "user_id": "user-1", "full_name": "Nguyễn Minh Khôi", "dob": date(2018, 4, 11), "gender": "male",
      "relationship": "child"},
     {"id": "pp-user-1-parent", "user_id": "user-1", "full_name": "Đỗ Lan Anh", "dob": date(1974, 9, 9), "gender": "female",
-     "relationship": "parent", "medical_history": "Tăng huyết áp"},
+     "relationship": "parent"},
+]
+# dị ứng / tiền sử mẫu là fact dài hạn (bệnh nhân tự khai) để màn hồ sơ và thẻ bệnh nhân của bác sĩ có dữ liệu khi demo
+LONG_TERM_FACTS = [
+    ("pp-user-1-self", "allergy", "Penicillin"),
+    ("pp-user-1-self", "history", "Viêm da cơ địa mạn tính"),
+    ("pp-user-1-parent", "history", "Tăng huyết áp"),
 ]
 
 
@@ -253,18 +261,25 @@ def _seed(s: Session) -> list[str]:
         pid = f"pp-{owner}-self"
         if s.get(PatientProfile, pid) is None:
             u = next(x for x in USERS if x["id"] == owner)
-            # dị ứng/tiền sử mẫu để màn hồ sơ (bệnh nhân) và màn tư vấn (bác sĩ) có dữ liệu thật khi demo
-            s.add(PatientProfile(
-                id=pid, user_id=owner, full_name=u["full_name"], dob=u["dob"], gender=u["gender"],
-                allergies="Penicillin" if owner == "user-1" else "",
-                medical_history="Viêm da cơ địa mạn tính" if owner == "user-1" else "",
-            ))
+            s.add(PatientProfile(id=pid, user_id=owner, full_name=u["full_name"], dob=u["dob"], gender=u["gender"]))
             created.append(f"patient_profile {pid}")
     for p in FAMILY_PROFILES:
         if s.get(PatientProfile, p["id"]) is None:
             s.add(PatientProfile(**p))
             created.append(f"patient_profile {p['id']}")
     s.flush()
+    now = datetime.now(UTC)
+    for pid, fact_type, label in LONG_TERM_FACTS:
+        exists = s.scalar(select(ClinicalFact.id).where(
+            ClinicalFact.patient_profile_id == pid, ClinicalFact.episode_id.is_(None),
+            ClinicalFact.fact_type == fact_type, func.lower(ClinicalFact.label) == label.lower(),
+        ))
+        if exists is None:
+            fact = ClinicalFact(patient_profile_id=pid, fact_type=fact_type, label=label, detail="", created_at=now, updated_at=now)
+            s.add(fact)
+            s.flush()
+            s.add(ClinicalProvenance(fact_id=fact.id, kind="profile", quote=label, created_at=now))
+            created.append(f"clinical_fact {pid}/{fact_type}/{label}")
     for r in FINALIZE_REPORTS:
         existing = s.get(FinalizeReport, r["id"])
         if existing is None:

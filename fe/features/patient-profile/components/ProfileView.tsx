@@ -1,17 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, BadgeCheck, Loader2, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Hint, HintIcon } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { EMPTY_PROFILE, GENDER_LABELS, HINTS, RELATIONSHIP_LABELS } from "../constants";
+import { EMPTY_PROFILE, FACT_TYPE_LABELS, GENDER_LABELS, HINTS, RELATIONSHIP_LABELS } from "../constants";
 import { useFinalizeReports, useProfileActions, useProfiles } from "../hooks";
-import type { Gender, PatientProfile, PatientProfileInput, ProfileRelationship } from "../types";
+import type {
+  Gender,
+  LongTermFactType,
+  PatientProfile,
+  PatientProfileInput,
+  ProfileFactInput,
+  ProfileRelationship,
+} from "../types";
 
 type Tab = "info" | "reports";
 
@@ -29,8 +35,7 @@ function toInput(p: PatientProfile): PatientProfileInput {
     gender: p.gender,
     relationship: p.relationship,
     phone: p.phone,
-    allergies: p.allergies,
-    medical_history: p.medical_history,
+    long_term_facts: p.long_term_facts.map(({ fact_type, label, detail }) => ({ fact_type, label, detail })),
   };
 }
 
@@ -46,6 +51,57 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
+function FactsEditor({
+  facts,
+  verified,
+  onChange,
+}: {
+  facts: ProfileFactInput[];
+  verified: Set<string>;
+  onChange: (facts: ProfileFactInput[]) => void;
+}) {
+  const patch = (i: number, value: Partial<ProfileFactInput>) =>
+    onChange(facts.map((f, j) => (j === i ? { ...f, ...value } : f)));
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
+        Dị ứng · tiền sử · thuốc đang dùng
+        <HintIcon content={HINTS.facts} />
+      </span>
+      {facts.length === 0 && <p className="text-xs text-muted-foreground/80">Chưa có thông tin.</p>}
+      {facts.map((f, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <Select value={f.fact_type} onValueChange={(v) => patch(i, { fact_type: v as LongTermFactType })}>
+            <SelectTrigger className="w-36 shrink-0"><SelectValue /></SelectTrigger>
+            <SelectContent position="popper" side="bottom" align="start">
+              {Object.entries(FACT_TYPE_LABELS).map(([v, l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Input value={f.label} onChange={(e) => patch(i, { label: e.target.value })} placeholder="Ví dụ: penicillin" />
+          <Input value={f.detail} onChange={(e) => patch(i, { detail: e.target.value })} placeholder="Chi tiết (không bắt buộc)" />
+          {verified.has(`${f.fact_type}:${f.label.trim().toLowerCase()}`) && (
+            <Hint content="Bác sĩ đã xác nhận khi khám">
+              <BadgeCheck className="size-4 shrink-0 text-brand" />
+            </Hint>
+          )}
+          <Button type="button" variant="ghost" size="iconSm" aria-label="Xoá dòng" onClick={() => onChange(facts.filter((_, j) => j !== i))}>
+            <X className="size-4 text-muted-foreground" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="self-start"
+        onClick={() => onChange([...facts, { fact_type: "allergy", label: "", detail: "" }])}
+      >
+        <Plus className="size-4" /> Thêm dòng
+      </Button>
+    </div>
+  );
+}
+
 function ProfileForm({ profile, onDone }: { profile: PatientProfile | null; onDone: (saved: PatientProfile) => void }) {
   const { create, update } = useProfileActions();
   // nơi gọi đặt `key` theo id hồ sơ nên đổi hồ sơ là dựng lại form, không cần đồng bộ state bằng effect
@@ -56,9 +112,20 @@ function ProfileForm({ profile, onDone }: { profile: PatientProfile | null; onDo
   const saving = create.isPending || update.isPending;
   const valid = form.full_name.trim() && form.dob;
 
+  const verified = new Set(
+    (profile?.long_term_facts ?? []).filter((f) => f.verified_at).map((f) => `${f.fact_type}:${f.label.toLowerCase()}`)
+  );
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    const body = { ...form, full_name: form.full_name.trim(), phone: form.phone?.trim() || null };
+    const body = {
+      ...form,
+      full_name: form.full_name.trim(),
+      phone: form.phone?.trim() || null,
+      long_term_facts: form.long_term_facts
+        .map((f) => ({ ...f, label: f.label.trim(), detail: f.detail.trim() }))
+        .filter((f) => f.label),
+    };
     const onSuccess = (saved: PatientProfile) => {
       toast.success(profile ? "Đã lưu" : "Đã thêm hồ sơ");
       onDone(saved);
@@ -96,12 +163,7 @@ function ProfileForm({ profile, onDone }: { profile: PatientProfile | null; onDo
           <Input value={form.phone ?? ""} onChange={(e) => set("phone", e.target.value)} placeholder="Không bắt buộc" />
         </Field>
       </div>
-      <Field label="Dị ứng" hint={HINTS.allergies}>
-        <Textarea rows={2} value={form.allergies} onChange={(e) => set("allergies", e.target.value)} placeholder="Ví dụ: penicillin" />
-      </Field>
-      <Field label="Tiền sử" hint={HINTS.history}>
-        <Textarea rows={3} value={form.medical_history} onChange={(e) => set("medical_history", e.target.value)} placeholder="Bệnh đã mắc" />
-      </Field>
+      <FactsEditor facts={form.long_term_facts} verified={verified} onChange={(v) => set("long_term_facts", v)} />
       <div className="flex justify-end">
         <Button type="submit" variant="brand" disabled={!valid || saving}>
           {saving && <Loader2 className="size-4 animate-spin" />}

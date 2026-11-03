@@ -59,7 +59,7 @@ class ClinicalProvenance(Base):
     """`ClinicalFact.provenances` — nhật ký chỉ thêm: mỗi dòng là một lần một nguồn ghi nhận giá trị của fact."""
 
     __tablename__ = "clinical_provenances"
-    __table_args__ = (CheckConstraint("kind IN ('chat', 'doctor')", name="kind_valid"),)
+    __table_args__ = (CheckConstraint("kind IN ('chat', 'doctor', 'profile')", name="kind_valid"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, server_default=text("gen_random_uuid()"))  # DB sinh
     fact_id: Mapped[str] = mapped_column(ForeignKey("clinical_facts.id", ondelete="CASCADE"), index=True)

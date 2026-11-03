@@ -33,6 +33,7 @@ from app.repositories.consultation_repository import ConsultationRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.file_repository import FileRepository
 from app.repositories.message_repository import MessageRepository
+from app.repositories.clinical_record_repository import ClinicalRecordRepository
 from app.services.finalize_report_service import to_patient_profile_dto
 from app.repositories.user_repository import UserRepository
 from app.services.patient_graph_service import PatientGraphService
@@ -100,7 +101,9 @@ class ConsultationService:
 
     async def _patient_dto(self, patient_profile_id: str | None) -> PatientProfileDto | None:
         profile = await self._db.get(PatientProfile, patient_profile_id) if patient_profile_id else None
-        return to_patient_profile_dto(profile) if profile else None
+        if profile is None:
+            return None
+        return to_patient_profile_dto(profile, (await ClinicalRecordRepository(self._db).long_term_facts([profile.id]))[profile.id])
 
     async def _facts_output(self, patient_profile_id: str) -> list[ClinicalFactOutput]:
         rows = await self._repo.list_facts_with_sources(patient_profile_id, newest_first=True)

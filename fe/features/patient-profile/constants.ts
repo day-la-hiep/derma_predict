@@ -1,4 +1,4 @@
-import type { Gender, PatientProfileInput, ProfileRelationship } from "./types";
+import type { Gender, LongTermFactType, PatientProfileInput, ProfileRelationship } from "./types";
 
 export const RELATIONSHIP_LABELS: Record<ProfileRelationship, string> = {
   self: "Bản thân",
@@ -16,13 +16,18 @@ export const EMPTY_PROFILE: PatientProfileInput = {
   gender: "male",
   relationship: "other",
   phone: null,
-  allergies: "",
-  medical_history: "",
+  long_term_facts: [],
+};
+
+export const FACT_TYPE_LABELS: Record<LongTermFactType, string> = {
+  allergy: "Dị ứng",
+  history: "Tiền sử",
+  medication: "Thuốc đang dùng",
 };
 
 export const HINTS = {
   delete: "Chỉ xoá được hồ sơ chưa có cuộc trò chuyện hay báo cáo kết luận, và không phải hồ sơ cuối cùng.",
-  allergies: "Dị ứng thuốc, thức ăn… do bạn tự khai.",
-  history: "Bệnh đã/đang mắc, phẫu thuật, bệnh mạn tính… do bạn tự khai.",
+  facts:
+    "Dị ứng, bệnh đã/đang mắc, thuốc đang dùng. Gồm cả thông tin trợ lý ghi lại khi bạn trò chuyện; bác sĩ xem và xác nhận khi khám. Xoá một dòng là xoá khỏi hồ sơ.",
   reports: "Báo cáo kết luận do bác sĩ ghi sau mỗi lần khám. Bạn chỉ xem, không sửa được.",
 };

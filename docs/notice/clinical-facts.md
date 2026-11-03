@@ -1,6 +1,6 @@
 # Dữ kiện lâm sàng: bảng hiện trạng + nhật ký nguồn + đợt bệnh
 
-Từ migration `07a23a2f124b` (fact hiện trạng) và `9d9ebfce7f5b` (đợt bệnh), 2026-11-03. Thiết kế đầy đủ: `tmp/plan/2026-11-03-de-xuat-schema.html`.
+Từ migration `07a23a2f124b` (fact hiện trạng), `9d9ebfce7f5b` (đợt bệnh) và `5b2e8c41d7a9` (bỏ cột dị ứng / tiền sử), 2026-11-03. Thiết kế đầy đủ: `tmp/plan/2026-11-03-de-xuat-schema.html`.
 
 ## Quy tắc
 - **`clinical_facts` là hiện trạng, sửa tại chỗ.** Không còn `status` / `superseded_by_id`, không còn bảng template. Nhãn so không phân biệt hoa thường ("Ngứa" = "ngứa").
@@ -9,7 +9,14 @@ Từ migration `07a23a2f124b` (fact hiện trạng) và `9d9ebfce7f5b` (đợt b
 - **Ghi theo lượt chat** (`ClinicalRecordService.apply_turn`, gọi từ `agent_response_consumer` khi `status="done"`): giả thuyết của `reflect` thay toàn bộ `ai_hypotheses` của đợt (đợt `in_exam` thì khoá, bỏ qua); fact upsert theo phạm vi; dự đoán CNN vào `clinical_episodes.image_predictions`.
 - **`clinical_provenances` là nhật ký chỉ thêm.** Mỗi dòng: một nguồn ghi nhận giá trị nào (`detail`) lúc nào. Đây là chỗ duy nhất giữ lịch sử giá trị của fact (vd tin m1 "3 ngày", tin m2 "10 ngày").
 - Lưu fact: nhãn chuẩn hoá khoảng trắng → tìm theo khoá → có thì cập nhật `detail` (khác giá trị cũ thì xoá `verified_at`), chưa có thì tạo. Nhật ký chỉ thêm cặp (fact, tin) **chưa có**; `quote` chép nội dung tin (tối đa 500 ký tự). **Báo cáo tiền tư vấn không còn ghi fact** (handler chỉ viết `summary`).
+- **Hồ sơ không còn cột `allergies` / `medical_history`.** Form hồ sơ gửi `long_term_facts` = danh sách ĐẦY ĐỦ fact dài hạn (`ClinicalRecordService.replace_long_term_facts`): thêm / sửa theo (loại, nhãn), **mục bỏ khỏi form bị xoá — kể cả mục AI trích từ chat hay bác sĩ đã xác nhận**. Nhật ký `kind = 'profile'`. PATCH không gửi `long_term_facts` thì giữ nguyên.
+- `PatientProfileDto.allergies` / `medical_history` (thẻ bệnh nhân của bác sĩ) và `SnapshotPatientProfile.allergies` / `medical_history` vẫn là chuỗi nhưng được **ghép từ fact** (`long_term_text`; snapshot ghép từ fact bác sĩ gửi lúc chốt). Payload Qdrant ca bệnh đọc từ snapshot.
 - `message_id` của nhật ký là `ON DELETE SET NULL`: xoá hội thoại không làm fact mất bằng chứng (đọc `quote`).
+
+## Memory (LangGraph store) ≠ fact
+- Memory theo hồ sơ chỉ còn thông tin **giao tiếp** (ai nhắn hộ, xưng hô, mức chi tiết, ưu tiên). Prompt `BATCH_SYSTEM` / `CONSOLIDATE_SYSTEM` cấm lưu lâm sàng; phơi nhiễm (nghề nghiệp, mỹ phẩm, thú nuôi), mang thai / cho con bú → bộ trích fact ghi `history`.
+- Trong prompt agent, memory nằm ở khối "Về người dùng" (không phải căn cứ y khoa), fact ở khối "Hồ sơ lâm sàng" (plan / reflect / answer).
+- Memory cũ (câu tự do lâm sàng) xoá bằng `scripts/clear_profile_memories.py --apply` (mặc định chạy thử); giữ `memories_archive`.
 
 ## Điểm dễ nhầm
 - **Mục chưa rõ vùng** (fact theo đợt, giả thuyết, ảnh không có `body_site` hợp lệ) gắn vào: đợt duy nhất lượt này đã chạm → nếu không, đợt `open` duy nhất của hội thoại → nếu vẫn không xác định được thì **bỏ (log)**. Fact bị bỏ vẫn nằm trong state của agent và được gửi lại ở lượt sau. Ảnh khi lượt chạm nhiều vùng: gắn vào đợt có giả thuyết trùng nhãn top-1 của CNN.

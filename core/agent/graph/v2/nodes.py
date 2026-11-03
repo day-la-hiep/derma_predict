@@ -141,13 +141,17 @@ async def extract_facts_node(state: PreDiagState, runtime: Runtime[AgentContext]
     return {"facts": merged, "facts_upto": len(messages)}
 
 
+def _clinical_block(facts: list[dict[str, Any]]) -> str:
+    return f"Hồ sơ lâm sàng (dữ kiện đã ghi nhận của người bệnh):\n{facts_text(facts)}"
+
+
 async def plan(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
     ctx = runtime.context
     evidence = state.get("evidence", [])
     # extract_facts và nhánh ảnh chạy song song nên chỉ tới đây mới gộp được dữ kiện từ ảnh vào `facts`.
     facts = merge_facts(state.get("facts", []), state.get("image_facts", []))
     context = (
-        f"Dữ kiện lâm sàng đã biết:\n{facts_text(facts)}\n\n"
+        f"{_clinical_block(facts)}\n\n"
         f"Giả thuyết đã có căn cứ từ các lượt trước:\n{_plan_text(state.get('plan', []), [])}\n\n"
         f"Đã tra cứu (kèm kết quả): {'; '.join(state.get('call_results', [])) or '(chưa)'}\n\n"
         f"Bằng chứng đã thu được:\n{_digest(evidence)}"
@@ -250,6 +254,7 @@ async def reflect(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[s
     exhausted = rounds >= cap
     budget = "Đã HẾT lượt tra cứu: next phải là \"answer\"." if exhausted else f"Đã tra cứu {rounds}/{cap} vòng."
     context = (
+        f"{_clinical_block(state.get('facts', []))}\n\n"
         f"evidence_status: {state.get('evidence_status', 'none')}\n"
         f"{budget}\n"
         f"Giả thuyết hiện tại:\n{_plan_text(state.get('plan', []), state.get('unsupported', []))}\n"
@@ -283,10 +288,13 @@ async def answer(state: PreDiagState, runtime: Runtime[AgentContext]) -> dict[st
     plan_ = state.get("plan", [])
     if plan_:
         cited = {c for h in plan_ for c in h["cites"]}
-        context = f"Giả thuyết:\n{_plan_text(plan_, [])}\n\nBằng chứng:\n{_evidence_text(state.get('evidence', []), cited)}"
+        context = (
+            f"{_clinical_block(state.get('facts', []))}\n\n"
+            f"Giả thuyết:\n{_plan_text(plan_, [])}\n\nBằng chứng:\n{_evidence_text(state.get('evidence', []), cited)}"
+        )
         base = ANSWER_FOUND.format(context=context)
     else:
-        base = ANSWER_NONE.format(context="")
+        base = ANSWER_NONE.format(context=_clinical_block(state.get("facts", [])))
     system = inject_memory(base, ctx.memory_text)
     ai = await _model(ctx).ainvoke([SystemMessage(content=system), *_history(state["messages"])])
     return {"messages": [ai]}
