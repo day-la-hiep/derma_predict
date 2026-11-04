@@ -45,7 +45,9 @@ class FinalizeReportRepository:
         diagnosis: str,
         notes: str,
         is_reference_case: bool,
-        consultation_session_id: str,
+        consultation_session_id: str | None = None,
+        encounter_id: str | None = None,
+        diagnosis_code: str | None = None,
         snapshot: dict[str, Any] | None = None,
     ) -> FinalizeReport:
         report = FinalizeReport(
@@ -55,12 +57,18 @@ class FinalizeReportRepository:
             notes=notes,
             is_reference_case=is_reference_case,
             consultation_session_id=consultation_session_id,
+            encounter_id=encounter_id,
+            diagnosis_code=diagnosis_code,
             snapshot=snapshot,
         )
         self._db.add(report)
         await self._db.flush()
         await self._db.refresh(report)
         return report
+
+    async def exists_for_encounter(self, encounter_id: str) -> bool:
+        stmt = select(FinalizeReport.id).where(FinalizeReport.encounter_id == encounter_id).limit(1)
+        return (await self._db.execute(stmt)).first() is not None
 
     async def add_patient_image(
         self,

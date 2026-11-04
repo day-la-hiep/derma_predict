@@ -34,7 +34,7 @@ function Chip({ children, onClick }: { children: React.ReactNode; onClick?: () =
 }
 
 // Gợi ý từ đồ thị: bấm để đưa vào form, bác sĩ vẫn tự quyết nội dung kết luận
-function SuggestionPanel({
+export function SuggestionPanel({
   suggestions: s,
   onPick,
 }: {

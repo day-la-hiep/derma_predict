@@ -9,6 +9,7 @@ import { ChatHeader } from "./ChatHeader";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
 import { QuestionModal } from "./QuestionModal";
+import { AppointmentsView } from "@/features/appointments";
 import { ProfileView } from "@/features/patient-profile/components/ProfileView";
 import { useActiveProfile, useProfiles } from "@/features/patient-profile/hooks";
 import { useActiveProfileStore } from "@/features/patient-profile/store";
@@ -18,7 +19,7 @@ export function ChatPage() {
   const router = useRouter();
   const routeKey = usePathname();
   const route = parseChatRoute(routeKey);
-  const view = route.kind === "profiles" ? "profile" : "chat";
+  const view = route.kind === "profiles" ? "profile" : route.kind === "appointments" ? "appointments" : "chat";
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -116,6 +117,10 @@ export function ChatPage() {
             router.push(chatPaths.profiles);
             setSidebarOpen(false);
           }}
+          onOpenAppointments={() => {
+            router.push(chatPaths.appointments);
+            setSidebarOpen(false);
+          }}
           onNewChat={() => goNew(newChatProfileId)}
           onSelectConversation={(id) => router.push(chatPaths.conversation(id))}
           onSwitchProfile={(profileId) => goNew(profileId)}
@@ -124,6 +129,8 @@ export function ChatPage() {
         <div className="flex min-w-0 flex-1 flex-col bg-background">
           {view === "profile" ? (
             <ProfileView onBack={() => router.push(chatPaths.entry)} />
+          ) : view === "appointments" ? (
+            <AppointmentsView onBack={() => router.push(chatPaths.entry)} />
           ) : syncing ? (
             <div className="flex-1" aria-busy="true" />
           ) : (

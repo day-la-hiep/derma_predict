@@ -17,40 +17,33 @@ class PatientGraphService:
     def __init__(self, neo4j: Neo4jClient) -> None:
         self._neo4j = neo4j
 
-    async def sync_pre_consultation(
+    async def sync_finalized_session(
         self,
         patient_id: str,
+        gender: str,
+        dob: str,
         session_id: str,
         session_date: datetime,
-        summary: str,
-        reason: str,
+        doctor_id: str,
+        suspected_condition: str,
+        notes: str,
+        instructions: list[str],
         facts: list[dict[str, Any]],
-        gender: str = "unknown",
-        dob: str = "",
         images: list[dict[str, Any]] | None = None,
     ) -> None:
-        """Đồng bộ một phiên tư vấn (Pre-consultation), các dữ kiện lâm sàng và ảnh da lên đồ thị."""
-        if not patient_id or not session_id:
+        """Nạp một lần khám đã chốt: MERGE bệnh nhân / phiên (id lần khám hoặc phiên tư vấn cũ) / fact từ snapshot, rồi nhận định, lời khuyên, ảnh."""
+        if not session_id or not patient_id:
             return
 
-        date_iso = session_date.isoformat()
+        now_iso = datetime.now(UTC).isoformat()
 
-        # 1. Tạo Node Patient, Session và nối chuỗi thời gian NEXT với phiên tư vấn liền trước
+        # Query 0: bệnh nhân + phiên, nối chuỗi thời gian NEXT với phiên liền trước
         upsert_session_query = """
         MERGE (p:Patient {id: $patient_id})
         ON CREATE SET p.gender = $gender, p.dob = $dob
-
         MERGE (s:ConsultationSession {id: $session_id})
-        ON CREATE SET 
-            s.date = $session_date,
-            s.status = 'pre_consultation',
-            s.reason = $reason,
-            s.summary = $summary
-        ON MATCH SET
-            s.summary = $summary
-
+        ON CREATE SET s.date = $session_date
         MERGE (p)-[:HAD_SESSION]->(s)
-
         WITH p, s
         OPTIONAL MATCH (p)-[:HAD_SESSION]->(prev:ConsultationSession)
         WHERE prev.id <> s.id AND prev.date < s.date
@@ -65,98 +58,38 @@ class PatientGraphService:
             gender=gender,
             dob=dob,
             session_id=session_id,
-            session_date=date_iso,
-            reason=reason or "Bệnh nhân yêu cầu bác sĩ tư vấn",
-            summary=summary or "",
+            session_date=session_date.isoformat(),
         )
 
-        # 2. Nạp các Facts lâm sàng và liên kết với phiên tư vấn
-        if facts:
-            upsert_facts_query = """
-            MATCH (s:ConsultationSession {id: $session_id})
-            UNWIND $facts AS f
-            MERGE (fact:ClinicalFact {id: f.id})
-            SET fact.name = f.label,
-                fact.type = f.fact_type,
-                fact.detail = f.detail,
-                fact.status = coalesce(f.status, 'active')
-            MERGE (s)-[r:REPORTED_FACT]->(fact)
-            SET r.fact_type = f.fact_type
-            """
-            clean_facts = [
-                {
-                    "id": f.get("id", ""),
-                    "label": f.get("template_label") or f.get("label") or "Dữ kiện lâm sàng",
-                    "fact_type": f.get("fact_type", "symptom"),
-                    "detail": f.get("detail", ""),
-                    "status": f.get("status", "active"),
-                }
-                for f in facts
-                if f.get("id")
-            ]
-            if clean_facts:
-                await self._neo4j.run(
-                    upsert_facts_query,
-                    session_id=session_id,
-                    facts=clean_facts,
-                )
-
-                # 3. Liên kết thực thể lâm sàng với Ontology DermO (nếu có term khớp)
-                map_dermo_query = """
+        # Query 0b: fact lâm sàng bác sĩ đã chốt (id ghép từ phiên + thứ tự vì snapshot không giữ id fact)
+        clean_facts = [
+            {
+                "id": f"{session_id}:{i}",
+                "label": f.get("label") or "Dữ kiện lâm sàng",
+                "fact_type": f.get("fact_type", "symptom"),
+                "detail": f.get("detail", ""),
+            }
+            for i, f in enumerate(facts)
+        ]
+        if clean_facts:
+            await self._neo4j.run(
+                """
+                MATCH (s:ConsultationSession {id: $session_id})
                 UNWIND $facts AS f
-                MATCH (fact:ClinicalFact {id: f.id})
+                MERGE (fact:ClinicalFact {id: f.id})
+                SET fact.name = f.label, fact.type = f.fact_type, fact.detail = f.detail, fact.status = 'active'
+                MERGE (s)-[r:REPORTED_FACT]->(fact)
+                SET r.fact_type = f.fact_type
+                WITH fact
                 OPTIONAL MATCH (d:DermoTerm)
                 WHERE NOT d.is_obsolete AND toLower(d.name) = toLower(fact.name)
                 FOREACH (_ IN CASE WHEN d IS NOT NULL THEN [1] ELSE [] END |
                     MERGE (fact)-[:MAPS_TO]->(d)
                 )
-                """
-                await self._neo4j.run(map_dermo_query, facts=clean_facts)
-
-        # 4. Nạp các Ảnh bệnh nhân gửi trong phiên và liên kết với phiên / fact
-        if images:
-            upsert_images_query = """
-            MATCH (s:ConsultationSession {id: $session_id})
-            UNWIND $images AS img
-            MERGE (pi:PatientImage {id: img.file_id})
-            SET pi.file_id = img.file_id,
-                pi.url = img.url,
-                pi.content_type = img.content_type,
-                pi.body_site = coalesce(img.body_site, pi.body_site, '')
-            MERGE (s)-[:HAS_IMAGE]->(pi)
-            WITH pi, img
-            UNWIND coalesce(img.fact_ids, []) AS f_id
-            MATCH (f:ClinicalFact {id: f_id})
-            MERGE (pi)-[:EVIDENCES]->(f)
-            """
-            clean_images = [
-                {
-                    "file_id": img.get("file_id", ""),
-                    "url": img.get("url") or f"/api/v1/files/{img.get('file_id')}/view",
-                    "content_type": img.get("content_type", "image/jpeg"),
-                    "body_site": img.get("body_site", ""),
-                    "fact_ids": [fid for fid in img.get("fact_ids", []) if fid],
-                }
-                for img in images
-                if img.get("file_id")
-            ]
-            if clean_images:
-                await self._neo4j.run(upsert_images_query, session_id=session_id, images=clean_images)
-
-    async def sync_finalized_session(
-        self,
-        session_id: str,
-        doctor_id: str,
-        suspected_condition: str,
-        notes: str,
-        instructions: list[str],
-        images: list[dict[str, Any]] | None = None,
-    ) -> None:
-        """Đồng bộ khi Bác sĩ hoàn tất phiên tư vấn: nhận định sơ bộ, lời khuyên và nhãn ảnh xác nhận."""
-        if not session_id:
-            return
-
-        now_iso = datetime.now(UTC).isoformat()
+                """,
+                session_id=session_id,
+                facts=clean_facts,
+            )
 
         # Query 1: Cập nhật trạng thái Session + SuspectedCondition
         finalize_query = """

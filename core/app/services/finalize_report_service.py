@@ -3,7 +3,21 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.common.constant import ClinicalFactType, FactOrigin, Gender, MessageSender, ProfileRelationship
+from datetime import UTC, datetime
+
+from app.common.constant import (
+    DIAGNOSIS_CODE_LABELS,
+    LONG_TERM_FACT_TYPES,
+    AppointmentStatus,
+    ClinicalFactType,
+    EncounterStatus,
+    EpisodeStatus,
+    FactOrigin,
+    Gender,
+    MessageSender,
+    ProfileRelationship,
+    ProvenanceKind,
+)
 from app.dto.base import (
     Assessment,
     File as FileEntity,
@@ -15,12 +29,13 @@ from app.dto.base import (
     SnapshotProvenance,
 )
 from app.dto.common import FileDto
-from app.dto.consultation import PatientProfileDto
-from app.dto.request.finalize_report import FactInput, FinalizeReportInput, PatientImageInput
+from app.dto.request.finalize_report import FactInput, FinalizeEncounterInput, FinalizeReportInput, PatientImageInput
 from app.dto.response.finalize_report import (
     FinalizeReportItemOutput,
     FinalizeReportOutput,
     DraftFactOutput,
+    DiagnosisOptionOutput,
+    EncounterDraftOutput,
     FinalizeDraftOutput,
     GraphSuggestionOutput,
     FinalizeReportSnapshotOutput,
@@ -30,38 +45,27 @@ from app.dto.response.finalize_report import (
     SnapshotProvenanceOutput,
 )
 from app.exception.errors import ConflictError, ForbiddenError, InvalidError, NotFoundError
-from app.models.clinical import ClinicalFact
+from app.models.clinical import ClinicalFact, ClinicalProvenance
 from app.models.consultation_session import ConsultationSession
 from app.models.file import File
 from app.models.finalize_report import FinalizeReport
 from app.models.message import Message
 from app.models.patient_profile import PatientProfile
+from app.models.visit import Appointment
+from app.repositories.appointment_repository import AppointmentRepository
 from app.repositories.consultation_repository import ConsultationRepository
 from app.repositories.clinical_record_repository import ClinicalRecordRepository
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.file_repository import FileRepository
 from app.repositories.finalize_report_repository import FinalizeReportRepository
 from app.repositories.patient_profile_repository import PatientProfileRepository
-from app.services.clinical_record_service import long_term_text
+from app.services.appointment_service import AppointmentService
+from app.services.clinical_record_service import to_patient_profile_dto
 from app.services.file_store_service import FileStoreService
 
 logger = logging.getLogger(__name__)
 
 FactRow = tuple[ClinicalFact, list[Message]]
-
-
-def to_patient_profile_dto(profile: PatientProfile, long_term: list[ClinicalFact]) -> PatientProfileDto:
-    """`allergies` / `medical_history` không còn là cột: ghép từ fact dài hạn để thẻ bệnh nhân của bác sĩ giữ nguyên."""
-    return PatientProfileDto(
-        id=profile.id,
-        full_name=profile.full_name,
-        dob=profile.dob.isoformat(),
-        gender=profile.gender,
-        relationship=profile.relationship,
-        phone=profile.phone,
-        allergies=long_term_text(long_term, ClinicalFactType.ALLERGY),
-        medical_history=long_term_text(long_term, ClinicalFactType.HISTORY),
-    )
 
 
 def _candidate_names(texts: list[str]) -> list[str]:
@@ -101,6 +105,7 @@ def build_snapshot(
     body: FinalizeReportInput,
     source_facts: dict[str, FactRow],
     files: dict[str, list[File]],
+    removed: list[FactRow] | None = None,
 ) -> FinalizeReportSnapshot:
     """Chép mọi thứ cần hiển thị phiếu vào một bản bất biến; nguồn của fact lấy từ DB, không tin nội dung client gửi."""
     facts: list[SnapshotClinicalFact] = []
@@ -137,6 +142,16 @@ def build_snapshot(
             instructions=[i.strip() for i in body.instructions if i.strip()],
         ),
         clinical_facts=facts,
+        removed_facts=[
+            SnapshotClinicalFact(
+                fact_type=ClinicalFactType(fact.fact_type),
+                label=fact.label,
+                detail=fact.detail,
+                origin=default_origin(fact.fact_type),
+                provenances=_snapshot_provenances(messages, files),
+            )
+            for fact, messages in (removed or [])
+        ],
     )
 
 
@@ -152,13 +167,16 @@ class FinalizeReportService:
         index_service: FinalizeReportIndexService | None = None,
         patient_graph_service: PatientGraphService | None = None,
     ) -> None:
+        self._db = db
         self._reports = FinalizeReportRepository(db)
+        self._appointments = AppointmentRepository(db)
         self._profiles = PatientProfileRepository(db)
         self._consultations = ConsultationRepository(db)
         self._conversations = ConversationRepository(db)
         self._files = FileRepository(db)
         self._clinical = ClinicalRecordRepository(db)
         self._file_store = file_store
+        self._appointments_service = AppointmentService(db, file_store)
         self._index_service = index_service
         self._patient_graph = patient_graph_service
 
@@ -251,9 +269,25 @@ class FinalizeReportService:
     async def _create(
         self, profile: PatientProfile, doctor_id: str, body: FinalizeReportInput, session_id: str
     ) -> FinalizeReport:
+        """Luồng cũ (phiên tư vấn): ghi báo cáo rồi nạp Qdrant / graph ngay."""
         source_facts = await self._source_facts(profile.id, body.facts)
         files = await self._files_of(list(source_facts.values()))
         snapshot = build_snapshot(profile, body, source_facts, files)
+        report, attached = await self._store_report(profile, doctor_id, body, snapshot, session_id=session_id)
+        await self._publish(report, profile, doctor_id, body, snapshot, attached, session_id)
+        return report
+
+    async def _store_report(
+        self,
+        profile: PatientProfile,
+        doctor_id: str,
+        body: FinalizeReportInput,
+        snapshot: FinalizeReportSnapshot,
+        *,
+        session_id: str | None = None,
+        encounter_id: str | None = None,
+        diagnosis_code: str | None = None,
+    ) -> tuple[FinalizeReport, list[tuple[Any, Any]]]:
         report = await self._reports.create(
             patient_profile_id=profile.id,
             doctor_id=doctor_id,
@@ -261,13 +295,16 @@ class FinalizeReportService:
             notes=body.notes.strip(),
             is_reference_case=body.is_reference_case,
             consultation_session_id=session_id,
+            encounter_id=encounter_id,
+            diagnosis_code=diagnosis_code,
             snapshot=snapshot.model_dump(mode="json"),
         )
         # Gắn ảnh bệnh bác sĩ chọn từ đoạn chat vào báo cáo kết luận
-        attached_images: list[tuple[Any, Any]] = []
+        attached: list[tuple[Any, Any]] = []
         for img_input in body.images:
             file_row = await self._files.get(img_input.file_id)
             if file_row is None:
+                logger.warning("[finalize] bỏ ảnh %s: không thấy file", img_input.file_id)
                 continue
             patient_image = await self._reports.add_patient_image(
                 finalize_report_id=report.id,
@@ -276,36 +313,173 @@ class FinalizeReportService:
                 description=img_input.description,
                 confirmed_label=img_input.confirmed_label,
             )
-            attached_images.append((patient_image, file_row))
-        # Nạp ca bệnh vào Qdrant (kèm ảnh đã gắn) để chatbot tra cứu theo ảnh
+            attached.append((patient_image, file_row))
+        return report, attached
+
+    async def _publish(
+        self,
+        report: FinalizeReport,
+        profile: PatientProfile,
+        doctor_id: str,
+        body: FinalizeReportInput,
+        snapshot: FinalizeReportSnapshot,
+        attached: list[tuple[Any, Any]],
+        session_node_id: str,
+    ) -> None:
+        """Nạp ca bệnh vào Qdrant (kèm ảnh) và graph bệnh nhân; lỗi chỉ ghi log vì kết luận đã lưu."""
         if self._index_service:
             try:
-                await self._index_service.index_report(report, profile, images=attached_images)
+                await self._index_service.index_report(report, profile, images=attached)
             except Exception:  # noqa: BLE001
-                # Không chặn chốt báo cáo; báo cáo này sẽ thiếu trong Qdrant tới khi chạy scripts/reindex_qdrant.py
+                # báo cáo này sẽ thiếu trong Qdrant tới khi chạy `make reindex-qdrant`
                 logger.warning("Không nạp được báo cáo %s vào Qdrant", report.id, exc_info=True)
         if self._patient_graph:
             try:
-                final_images_payload = [
-                    {
-                        "file_id": img.file_id,
-                        "body_site": img.body_site,
-                        "description": img.description,
-                        "confirmed_label": img.confirmed_label,
-                    }
-                    for img, _ in attached_images
-                ]
                 await self._patient_graph.sync_finalized_session(
-                    session_id=session_id,
+                    patient_id=profile.id,
+                    gender=profile.gender,
+                    dob=profile.dob.isoformat(),
+                    session_id=session_node_id,
+                    session_date=report.created_at,
                     doctor_id=doctor_id,
                     suspected_condition=body.diagnosis,
                     notes=body.notes,
                     instructions=body.instructions,
-                    images=final_images_payload,
+                    facts=[f.model_dump(mode="json") for f in snapshot.clinical_facts],
+                    images=[
+                        {
+                            "file_id": img.file_id,
+                            "body_site": img.body_site,
+                            "description": img.description,
+                            "confirmed_label": img.confirmed_label,
+                        }
+                        for img, _ in attached
+                    ],
                 )
             except Exception:  # noqa: BLE001
-                logger.warning("Không đồng bộ phiên %s vào đồ thị bệnh nhân", session_id, exc_info=True)
-        return report
+                logger.warning("Không đồng bộ %s vào đồ thị bệnh nhân", session_node_id, exc_info=True)
+
+    # ---------------------------------------------------------------- khám trực tiếp (lần khám từ lịch hẹn)
+
+    async def draft_for_encounter(self, encounter_id: str, doctor_id: str) -> EncounterDraftOutput:
+        appointment = await self._encounter_appointment(encounter_id, doctor_id)
+        profile = await self._profiles.get(appointment.patient_profile_id)
+        if profile is None:
+            raise NotFoundError("hồ sơ bệnh nhân của lần khám")
+        detail = await self._appointments_service.detail(doctor_id, appointment.id)
+        rows = await self._clinical.facts_with_sources(profile.id, appointment.episode_id)
+        files = await self._files_of(rows)
+        return EncounterDraftOutput(
+            encounter_id=encounter_id,
+            appointment_id=appointment.id,
+            episode=detail.episode,
+            images=detail.episode.image_predictions,
+            diagnosis_options=[DiagnosisOptionOutput(code=c.value, label=label) for c, label in DIAGNOSIS_CODE_LABELS.items()],
+            patient=to_patient_profile_dto(profile, [f for f, _ in rows if f.episode_id is None]),
+            suggestions=await self._graph_suggestions(profile.id, rows),
+            facts=[
+                DraftFactOutput(
+                    source_fact_id=fact.id,
+                    fact_type=ClinicalFactType(fact.fact_type),
+                    label=fact.label,
+                    detail=fact.detail,
+                    origin=default_origin(fact.fact_type),
+                    provenances=self._provenances_output(_snapshot_provenances(messages, files)),
+                )
+                for fact, messages in rows
+            ],
+        )
+
+    async def finalize_encounter(
+        self, encounter_id: str, doctor_id: str, doctor_name: str, body: FinalizeEncounterInput
+    ) -> FinalizeReportOutput:
+        """Một transaction: ghi fact + nhật ký doctor + kết luận, đóng lần khám / lịch hẹn / đợt; sau khi lưu mới nạp Qdrant + graph."""
+        appointment = await self._encounter_appointment(encounter_id, doctor_id)
+        encounter = await self._appointments.get_encounter(encounter_id)
+        episode = await self._clinical.get_episode(appointment.episode_id)
+        profile = await self._profiles.get(appointment.patient_profile_id)
+        if encounter is None or episode is None or profile is None:
+            raise NotFoundError("lần khám")
+        if encounter.status != EncounterStatus.OPEN.value or episode.status != EpisodeStatus.IN_EXAM.value:
+            raise ConflictError("Lần khám này đã được chốt.")
+        if await self._reports.exists_for_encounter(encounter_id):
+            raise ConflictError("Lần khám này đã có kết luận.")
+
+        rows = await self._clinical.facts_with_sources(profile.id, episode.id)
+        by_id = {fact.id: (fact, messages) for fact, messages in rows}
+        keys = [(f.fact_type.value, " ".join(f.label.split()).lower()) for f in body.facts]
+        if len(keys) != len(set(keys)):
+            raise InvalidError("Có hai dữ kiện trùng loại và nhãn, hãy gộp lại thành một.")
+        for f in body.facts:
+            source = by_id.get(f.source_fact_id) if f.source_fact_id else None
+            if f.source_fact_id and source is None:
+                raise InvalidError("Dữ kiện nguồn không còn hiệu lực hoặc không thuộc lần khám này, hãy tải lại form.")
+            if source and (source[0].episode_id is None) != (f.fact_type in LONG_TERM_FACT_TYPES):
+                raise InvalidError("Không đổi dữ kiện giữa nhóm dài hạn (dị ứng, tiền sử, thuốc) và nhóm theo đợt.")
+        kept = {f.source_fact_id for f in body.facts if f.source_fact_id}
+        removed = [row for fid, row in by_id.items() if fid not in kept]
+
+        # snapshot dựng từ trạng thái TRƯỚC khi sửa để so ra fact bác sĩ đã đổi
+        files = await self._files_of(rows)
+        snapshot = build_snapshot(profile, body, by_id, files, removed)
+
+        now = datetime.now(UTC)
+        await self._clinical.delete_facts([fact for fact, _ in removed])
+        for f in body.facts:
+            label, detail = " ".join(f.label.split()), f.detail.strip()
+            source = by_id.get(f.source_fact_id) if f.source_fact_id else None
+            if source:
+                fact = source[0]
+                fact.fact_type, fact.label, fact.detail, fact.updated_at = f.fact_type.value, label, detail, now
+            else:
+                fact = await self._clinical.add_fact(
+                    ClinicalFact(
+                        patient_profile_id=profile.id,
+                        episode_id=None if f.fact_type in LONG_TERM_FACT_TYPES else episode.id,
+                        fact_type=f.fact_type.value,
+                        label=label,
+                        detail=detail,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+            fact.verified_at, fact.verified_by_id = now, doctor_id
+            await self._clinical.add_provenances(
+                [
+                    ClinicalProvenance(
+                        fact_id=fact.id,
+                        kind=ProvenanceKind.DOCTOR.value,
+                        doctor_id=doctor_id,
+                        encounter_id=encounter_id,
+                        quote=label,
+                        detail=detail,
+                        created_at=now,
+                    )
+                ]
+            )
+
+        report, attached = await self._store_report(
+            profile, doctor_id, body, snapshot, encounter_id=encounter_id, diagnosis_code=body.diagnosis_code.value
+        )
+        encounter.status, encounter.closed_at = EncounterStatus.CLOSED.value, now
+        appointment.status = AppointmentStatus.DONE.value
+        episode.status, episode.closed_at = EpisodeStatus.CLOSED.value, now
+        await self._db.commit()
+
+        await self._publish(report, profile, doctor_id, body, snapshot, attached, encounter_id)
+        images = await self._reports.list_images(report.id)
+        return self._report_output(report, doctor_name, {}, images)
+
+    async def _encounter_appointment(self, encounter_id: str, doctor_id: str) -> Appointment:
+        encounter = await self._appointments.get_encounter(encounter_id)
+        if encounter is None:
+            raise NotFoundError("lần khám")
+        if encounter.doctor_id != doctor_id:
+            raise ForbiddenError("Lần khám này do bác sĩ khác phụ trách.")
+        appointment = await self._appointments.get(encounter.appointment_id)
+        if appointment is None:
+            raise NotFoundError("lịch hẹn của lần khám")
+        return appointment
 
     # ---------------------------------------------------------------- tiện ích
 
@@ -375,6 +549,12 @@ class FinalizeReportService:
                 )
                 for f in snap.clinical_facts
             ],
+            removed_facts=[
+                SnapshotClinicalFactOutput(
+                    **f.model_dump(exclude={"provenances"}), provenances=self._provenances_output(f.provenances)
+                )
+                for f in snap.removed_facts
+            ],
         )
 
     def _report_output(
@@ -408,6 +588,8 @@ class FinalizeReportService:
             created_at=report.created_at.isoformat(),
             consultation_session_id=session_id,
             conversation_id=conv_ids.get(session_id) if session_id else None,
+            encounter_id=report.encounter_id,
+            diagnosis_code=report.diagnosis_code,
             snapshot=self._snapshot_output(report.snapshot),
             images=image_outputs,
         )

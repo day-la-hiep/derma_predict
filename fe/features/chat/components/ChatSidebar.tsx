@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -47,7 +48,7 @@ import {
 import { useChatStore } from "../store";
 import { cn, formatRelativeTime } from "@/lib/utils";
 
-type MainView = "chat" | "profile";
+type MainView = "chat" | "profile" | "appointments";
 
 // style dòng chọn dùng chung cho mọi mục của sidebar (tác vụ phía trên, hội thoại phía dưới)
 const selectedRow = "bg-brand/10 text-brand font-medium border border-brand/25 shadow-xs";
@@ -59,6 +60,7 @@ function SidebarInner({
   onClose,
   onToggleCollapse,
   onOpenProfile,
+  onOpenAppointments,
   onNewChat,
   onSelectConversation,
   onSwitchProfile,
@@ -69,6 +71,7 @@ function SidebarInner({
   onClose: () => void;
   onToggleCollapse: () => void;
   onOpenProfile: () => void;
+  onOpenAppointments: () => void;
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
   onSwitchProfile: (profileId: string) => void;
@@ -202,6 +205,19 @@ function SidebarInner({
             <UserRound className="size-4 shrink-0" />
             {!collapsed && <span className="whitespace-nowrap truncate text-xs">Hồ sơ</span>}
           </SidebarMenuButton>
+          <SidebarMenuButton
+            size="lg"
+            onClick={onOpenAppointments}
+            tooltip="Lịch khám"
+            className={cn(
+              "rounded-xl transition-colors cursor-pointer",
+              activeView === "appointments" ? selectedRow : unselectedRow,
+              collapsed ? "size-9 p-0 justify-center" : "w-full justify-start gap-2.5 px-3 py-2"
+            )}
+          >
+            <CalendarDays className="size-4 shrink-0" />
+            {!collapsed && <span className="whitespace-nowrap truncate text-xs">Lịch khám</span>}
+          </SidebarMenuButton>
         </div>
       </SidebarGroup>
 
@@ -328,6 +344,7 @@ export function ChatSidebar({
   onClose,
   onToggleCollapse,
   onOpenProfile,
+  onOpenAppointments,
   onNewChat,
   onSelectConversation,
   onSwitchProfile,
@@ -338,6 +355,7 @@ export function ChatSidebar({
   onClose: () => void;
   onToggleCollapse: () => void;
   onOpenProfile: () => void;
+  onOpenAppointments: () => void;
   onNewChat: () => void;
   onSelectConversation: (id: string) => void;
   onSwitchProfile: (profileId: string) => void;
@@ -361,6 +379,7 @@ export function ChatSidebar({
             onClose={onClose}
             onToggleCollapse={onToggleCollapse}
             onOpenProfile={onOpenProfile}
+            onOpenAppointments={onOpenAppointments}
             onNewChat={onNewChat}
             onSelectConversation={onSelectConversation}
             onSwitchProfile={onSwitchProfile}
@@ -382,6 +401,7 @@ export function ChatSidebar({
           onClose={onClose}
           onToggleCollapse={onToggleCollapse}
           onOpenProfile={onOpenProfile}
+          onOpenAppointments={onOpenAppointments}
           onNewChat={onNewChat}
           onSelectConversation={onSelectConversation}
             onSwitchProfile={onSwitchProfile}

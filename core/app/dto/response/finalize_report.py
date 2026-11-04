@@ -6,6 +6,7 @@ from app.common.constant import ClinicalFactType, FactOrigin
 from app.dto.base import FinalizeReportSnapshot, PatientImage, SnapshotClinicalFact, SnapshotMessage
 from app.dto.common import FileDto
 from app.dto.consultation import PatientProfileDto
+from app.dto.response.appointment import DoctorEpisodeOutput, ImagePredictionOutput
 
 
 # Snapshot lưu storage_key; trên wire thay file bằng `FileDto` có URL tạm để FE hiển thị ảnh
@@ -23,6 +24,7 @@ class SnapshotClinicalFactOutput(SnapshotClinicalFact):
 
 class FinalizeReportSnapshotOutput(FinalizeReportSnapshot):
     clinical_facts: list[SnapshotClinicalFactOutput] = []
+    removed_facts: list[SnapshotClinicalFactOutput] = []
 
 
 class PatientImageOutput(BaseModel):
@@ -43,6 +45,8 @@ class FinalizeReportOutput(BaseModel):
     created_at: str
     consultation_session_id: str | None = None
     conversation_id: str | None = None
+    encounter_id: str | None = None
+    diagnosis_code: str | None = None
     snapshot: FinalizeReportSnapshotOutput | None = None
     images: list[PatientImageOutput] = []
 
@@ -76,3 +80,18 @@ class FinalizeDraftOutput(BaseModel):
     patient: PatientProfileDto
     facts: list[DraftFactOutput]
     suggestions: GraphSuggestionOutput
+
+
+class DiagnosisOptionOutput(BaseModel):
+    code: str
+    label: str
+
+
+class EncounterDraftOutput(FinalizeDraftOutput):
+    """Form chốt của một lần khám: kèm đợt bệnh (giả thuyết đã khoá) và ảnh có thể gắn vào kết luận."""
+
+    encounter_id: str
+    appointment_id: str
+    episode: DoctorEpisodeOutput
+    images: list[ImagePredictionOutput] = []
+    diagnosis_options: list[DiagnosisOptionOutput] = []

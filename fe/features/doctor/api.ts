@@ -56,7 +56,7 @@ async function unwrap<T>(p: Promise<{ data: { data?: T } } | { data: T }>): Prom
 
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK === "true";
 
-function adaptPatient(raw: any): PatientProfile {
+export function adaptPatient(raw: any): PatientProfile {
   return {
     id: raw?.id ?? "",
     fullName: raw?.fullName ?? raw?.full_name ?? "Bệnh nhân",
@@ -162,7 +162,7 @@ function adaptSnapshot(raw: any): FinalizeReportSnapshot | null {
   };
 }
 
-function adaptFinalizeReport(raw: any): FinalizeReport {
+export function adaptFinalizeReport(raw: any): FinalizeReport {
   return {
     id: raw.id ?? "",
     diagnosis: raw.diagnosis ?? "",
@@ -193,7 +193,7 @@ function adaptFinalizeReportItem(raw: any): FinalizeReportItem {
   return { ...adaptFinalizeReport(raw), patient: adaptPatient(raw.patient) };
 }
 
-function adaptDraft(raw: any): FinalizeDraft {
+export function adaptDraft(raw: any): FinalizeDraft {
   return {
     patient: adaptPatient(raw.patient),
     suggestions: {
@@ -218,7 +218,7 @@ function adaptDraft(raw: any): FinalizeDraft {
   };
 }
 
-function toFinalizeBody(body: FinalizeInput) {
+export function toFinalizeBody(body: FinalizeInput) {
   return {
     diagnosis: body.diagnosis.trim(),
     notes: body.notes.trim(),
