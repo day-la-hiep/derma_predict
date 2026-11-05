@@ -83,6 +83,30 @@ class PipelineTest(unittest.TestCase):
         r = run(run_hybrid("q", **stubs([], [], {}, entities=[])))
         self.assertEqual((r.candidates, r.ranked, r.reranked), ([], [], False))
 
+    def test_graph_leg_adds_chunks_and_flags_them(self) -> None:
+        ents = [ExtractedEntity(text="psoriasis", vi="vảy nến", type="disease")]
+
+        async def graph_fn(entities: list[ExtractedEntity], limit: int):
+            return [chunk("G"), chunk("A")]
+
+        r = run(run_hybrid("q", graph_fn=graph_fn, **stubs(["A"], ["B"], {"A": 0.5, "B": 0.4, "G": 0.9}, ents)))
+        self.assertEqual([c["_id"] for c in r.ranked], ["G", "A", "B"])
+        self.assertEqual({c["_id"] for c in r.ranked if c.get("via_graph")}, {"G", "A"})
+
+    def test_graph_error_keeps_other_legs(self) -> None:
+        ents = [ExtractedEntity(text="psoriasis", type="disease")]
+
+        async def graph_fn(entities: list[ExtractedEntity], limit: int):
+            raise RuntimeError("neo4j down")
+
+        r = run(run_hybrid("q", graph_fn=graph_fn, **stubs(["A"], ["B"], {"A": 0.5, "B": 0.4}, ents)))
+        self.assertEqual({c["_id"] for c in r.ranked}, {"A", "B"})
+        self.assertTrue(any("graph" in n for n in r.notes))
+
+    def test_graph_leg_default_is_empty_without_entities(self) -> None:
+        r = run(run_hybrid("q", **stubs(["A"], [], {"A": 0.5}, [])))
+        self.assertEqual((r.graph, r.notes), ([], []))
+
 
 if __name__ == "__main__":
     unittest.main()

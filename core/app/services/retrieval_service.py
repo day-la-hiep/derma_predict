@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -88,3 +89,16 @@ class RetrievalService:
             for group in found:
                 points += group
         return sorted(points, key=lambda p: p.score, reverse=True)[:limit]
+
+    async def fetch(self, corpus: RetrievalCorpus, ids: list[str]) -> list[dict[str, Any]]:
+        """Payload theo `corpus.id_key` (point id = uuid5 của id, như lúc index), giữ thứ tự `ids`; id không thấy thì bỏ."""
+        point_ids = {i: str(uuid.uuid5(uuid.NAMESPACE_URL, i)) for i in ids}
+        found: dict[str, dict[str, Any]] = {}
+        for name in corpus.collections():
+            for payload in await self._qdrant.retrieve_payloads(name, list(point_ids.values())):
+                found[str(payload.get(corpus.id_key))] = payload
+        missing = [i for i in ids if i not in found]
+        if missing:
+            logger.warning("[retrieval:%s] %d/%d chunk của graph không có trong Qdrant (chunk lại / index lại sau graph?): %s",
+                           corpus.name, len(missing), len(ids), missing[:5])
+        return [found[i] for i in ids if i in found]
