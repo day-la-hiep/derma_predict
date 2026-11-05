@@ -18,7 +18,8 @@ from app.infra.qdrant_client import QdrantVectorClient
 from app.services.document_service import DocumentService
 from app.infra.llm_client import LLMClient, LLMError
 from app.exception.errors import PipelineError
-from app.services.document_service import temp_root
+from app.models.document_stage import get_blocking_deps
+from app.services.document_service import get_temp_root
 from app.repositories.document_repository import DocumentRepository
 from app.services.file_store_service import FileStoreService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
@@ -149,7 +150,7 @@ class Base(unittest.TestCase):
         self.repo = DocumentRepository(FileStoreService(self.minio, "books-test"), sessionmaker(bind=engine, expire_on_commit=False))  # type: ignore[arg-type]
         self.vectors = DocumentService(self.repo, self.qdrant, "document_chunks_test")  # type: ignore[arg-type]
         self.runner = DocumentIngestPipelineService(self.vectors, self.repo, embedding=FakeEmbedding())  # type: ignore[arg-type]
-        self.addCleanup(lambda: shutil.rmtree(temp_root() / "tbook", ignore_errors=True))
+        self.addCleanup(lambda: shutil.rmtree(get_temp_root() / "tbook", ignore_errors=True))
         self.document_id = "tbook"
         self.files = self.repo.files_for("tbook")
         self.repo.create("Test", {}, default_profile("tbook"), {}, document_id="tbook")
@@ -222,7 +223,8 @@ class TocStageTest(Base):
         self.assertTrue(bad["suspect"])
         self.assertEqual(out["suspect"], 1)
         self.repo.overrides.update(self.document_id, "toc", {bad["id"]: {"printed_page": 7}})
-        self.assertEqual(self.runner.reapply("tbook", "toc")["suspect"], 0)
+        self.runner.reapply("tbook", "toc")
+        self.assertEqual(self.repo.status("tbook")["stages"]["toc"]["summary"]["suspect"], 0)
         fixed = next(
             x
             for x in self.files.read_json("toc.json")["entries"]
@@ -422,7 +424,7 @@ class ChunksTest(Base):
     def test_max_tokens_splits_inside_an_entry_only(self) -> None:
         prof = default_profile("tbook")
         prof.chunking.max_tokens = 50
-        DocumentService.save_profile(self.repo, self.document_id, prof)
+        self.repo.update_meta(self.document_id, profile=prof.model_dump(mode="json"))
         long = [
             {
                 **r,
@@ -493,9 +495,9 @@ class RunnerGateTest(Base):
         with self.assertRaises(PipelineError):
             self.runner.run_stage("tbook", "chunks", {})
         self.assertEqual(
-            DocumentService.blocking_deps(self.repo, self.document_id, "chunks"), ["ingest", "toc"]
+            get_blocking_deps("chunks", self.repo.status(self.document_id)["stages"]), ["ingest", "toc"]
         )
-        self.assertEqual(DocumentService.blocking_deps(self.repo, self.document_id, "toc"), [])
+        self.assertEqual(get_blocking_deps("toc", self.repo.status(self.document_id)["stages"]), [])
 
     def test_rerunning_toc_makes_chunks_stale(self) -> None:
         self.run_toc({"pages": "2-3"})

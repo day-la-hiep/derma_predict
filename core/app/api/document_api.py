@@ -140,7 +140,7 @@ async def cancel_stage(
 async def approve_stage(
     document_id: str, stage_id: str, svc: Service
 ) -> ApiResponse[DocumentOutput]:
-    return ApiResponse(data=await _call(svc.approve_stage, document_id, stage_id))
+    return ApiResponse(data=await _call(svc.approve, document_id, stage_id))
 
 
 @router.post(
@@ -151,7 +151,7 @@ async def approve_stage(
 async def reapply_stage(
     document_id: str, stage_id: str, svc: Service
 ) -> ApiResponse[DocumentOutput]:
-    return ApiResponse(data=await _call(svc.reapply_stage, document_id, stage_id))
+    return ApiResponse(data=await _call(svc.reapply, document_id, stage_id))
 
 
 @router.get(

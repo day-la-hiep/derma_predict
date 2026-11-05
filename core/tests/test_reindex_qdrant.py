@@ -69,7 +69,7 @@ class ReindexDocumentsTest(Base):
 
     def test_embedding_error_keeps_old_points_and_other_documents_still_run(self) -> None:
         expected = self.points()
-        self.runner._embedding = BrokenEmbedding()  # type: ignore[attr-defined]
+        self.runner.runner._embedding = BrokenEmbedding()  # type: ignore[attr-defined]
         r = self.service.reindex_documents(["missing", "tbook"])
         self.assertEqual(sorted(r.failed), ["missing", "tbook"])
         self.assertIn("ConnectionError", r.failed["tbook"])

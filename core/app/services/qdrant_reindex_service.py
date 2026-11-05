@@ -94,7 +94,7 @@ class QdrantReindexService:
             report.ok.append(document_id)
             self._log(f"[dry-run] {document_id}: sẽ nạp lại {len(chunks)} đoạn")
             return
-        summary = self._pipeline.index_document_chunks(document_id)  # không ghi trạng thái stage: tránh đè "xong" admin đã duyệt
+        summary = self._pipeline.runner.index_document_chunks(document_id)  # không ghi trạng thái stage: tránh đè "xong" admin đã duyệt
         report.ok.append(document_id)
         self._log(f"đã nạp {document_id}: {summary['points']} đoạn → {summary['collection']}")
 

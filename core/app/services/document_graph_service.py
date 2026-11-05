@@ -73,7 +73,7 @@ class DocumentGraphService:
             raise InvalidError("Chưa cấu hình đồ thị tri thức (Neo4j).")
         return self._neo4j
 
-    # ---- GraphStore (dùng bởi bước graph / graph_index) ----
+    # ---- truy cập Neo4j cho bước graph / graph_index ----
     def doc_entities(self) -> list[dict[str, Any]]:
         return self.neo4j.run_sync(
             "MATCH (n) WHERE (n:Entity OR n:DermoTerm) AND n.source = 'DOC' "

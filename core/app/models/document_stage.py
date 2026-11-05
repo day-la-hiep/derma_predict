@@ -5,19 +5,23 @@ from typing import Any
 # `toc` không phụ thuộc `ingest`: đọc mục lục chỉ cần vài chục trang (OCR riêng các trang đó), nên người dùng thử được
 # ngay mà không đợi OCR cả tài liệu. Độ lệch + neo cần chữ thân tài liệu nên được tính lại khi có `pages.jsonl` (xem mapping.py).
 STAGES: list[dict[str, Any]] = [
-    {"id": "ingest", "module": "step1_ingest", "title": "Đọc nội dung", "deps": [], "llm": False, "outputs": ["pages.jsonl", "figures.json", "figures/"]},
-    {"id": "toc", "module": "step2_toc", "title": "Mục lục", "deps": [], "llm": True, "outputs": ["toc.auto.json", "toc.json"]},
-    {"id": "chunks", "module": "step3_chunks", "title": "Chia đoạn", "deps": ["ingest", "toc"], "llm": False, "outputs": ["chunks.jsonl"]},
-    {"id": "index", "module": "step4_index", "title": "Lưu vào kho tri thức", "deps": ["chunks"], "llm": False, "outputs": ["index.json"]},
+    {"id": "ingest", "title": "Đọc nội dung", "deps": [], "llm": False, "outputs": ["pages.jsonl", "figures.json", "figures/"]},
+    {"id": "toc", "title": "Mục lục", "deps": [], "llm": True, "outputs": ["toc.auto.json", "toc.json"]},
+    {"id": "chunks", "title": "Chia đoạn", "deps": ["ingest", "toc"], "llm": False, "outputs": ["chunks.jsonl"]},
+    {"id": "index", "title": "Lưu vào kho tri thức", "deps": ["chunks"], "llm": False, "outputs": ["index.json"]},
     # Nhánh graph chạy song song với `index`: cùng đọc `chunks.jsonl`, không phụ thuộc nhau.
-    {"id": "graph", "module": "step5_graph", "title": "Trích quan hệ", "deps": ["chunks"], "llm": True, "outputs": ["graph/topics.json", "triples.auto.jsonl", "triples.jsonl"]},
-    {"id": "graph_index", "module": "step6_graph_index", "title": "Lưu vào đồ thị tri thức", "deps": ["graph"], "llm": False, "outputs": ["graph_index.json"]},
+    {"id": "graph", "title": "Trích quan hệ", "deps": ["chunks"], "llm": True, "outputs": ["graph/topics.json", "triples.auto.jsonl", "triples.jsonl"]},
+    {"id": "graph_index", "title": "Lưu vào đồ thị tri thức", "deps": ["graph"], "llm": False, "outputs": ["graph_index.json"]},
 ]
 # Trạng thái: not_started -> running -> pending_review -> approved ; failed/cancelled khi lỗi ; stale khi bước thượng nguồn
 # chạy lại sau khi bước này đã có kết quả.
 STAGE_IDS = [s["id"] for s in STAGES]
 STAGE_BY_ID = {s["id"]: s for s in STAGES}
 
+
+def get_blocking_deps(stage_id: str, stage_states: dict[str, Any]) -> list[str]:
+    """Các bước phụ thuộc CHƯA approved (rỗng = được phép chạy). `stage_states` = `repo.status(...)["stages"]`."""
+    return [d for d in STAGE_BY_ID[stage_id]["deps"] if stage_states[d].get("state") != "approved"]
 
 
 def downstream(stage_id: str) -> list[str]:

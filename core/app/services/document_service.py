@@ -31,7 +31,7 @@ from app.exception.errors import ConflictError, InvalidError, NotFoundError
 from app.infra.bm25 import SPARSE_NAME, encode_document
 from app.infra.qdrant_client import QdrantVectorClient, eq_filter
 from app.models.document_profile import Profile
-from app.models.document_stage import STAGE_BY_ID, STAGES
+from app.models.document_stage import STAGE_BY_ID, STAGES, get_blocking_deps
 from app.repositories.document_repository import DocumentRepository, now_iso
 from app.services.document_graph_service import DocumentGraphService
 from pipeline.document_ingest.profile import ProfileError, default_profile
@@ -54,11 +54,40 @@ def _paginate(
     return rows[start : start + page_size]
 
 
-def temp_root() -> Path:
-    """Thư mục tạm cho `local_pdf()` (bản sao PDF để pdftotext/Docling/pdftoppm đọc, dùng xuyên suốt 1 lần chạy bước)."""
+def read_profile(repo: DocumentRepository, document_id: str) -> Profile:
+    """Đọc cài đặt của tài liệu (`documents.profile`); thiếu hoặc sai thì báo lỗi hiển thị cho người dùng."""
+    try:
+        profile = repo.get_profile(document_id)
+    except ValidationError as exc:
+        raise InvalidError(f"Cài đặt của tài liệu bị lỗi: {exc}") from exc
+    if profile is None:
+        raise InvalidError("Cài đặt của tài liệu bị lỗi: tài liệu chưa có cài đặt")
+    return profile
+
+
+def get_temp_root() -> Path:
+    """Thư mục tạm cho `get_local_pdf()` (bản sao PDF để pdftotext/Docling/pdftoppm đọc, dùng xuyên suốt 1 lần chạy bước)."""
     p = Path(tempfile.gettempdir()) / "document_ingest_tmp"
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def get_local_pdf(repo: DocumentRepository, document_id: str) -> Path:
+    """Bản sao tạm của `source.pdf` trên đĩa, dùng lại khi cùng kích thước"""
+    try:
+        return repo.files_for(document_id).local_copy("source.pdf", get_temp_root() / document_id / "source.pdf")
+    except FileNotFoundError as exc:
+        raise FileNotFoundError("Không tìm thấy file PDF của tài liệu.") from exc
+
+
+@contextlib.contextmanager
+def copy_temp_pdf(repo: DocumentRepository, document_id: str) -> Generator[Path]:
+    """Bản sao `source.pdf` dùng cho một lần gọi rồi xoá ngay"""
+    with tempfile.TemporaryDirectory(prefix="toc_pdf_") as tmp:
+        try:
+            yield repo.files_for(document_id).local_copy("source.pdf", Path(tmp) / "source.pdf")
+        except FileNotFoundError as exc:
+            raise FileNotFoundError("Không tìm thấy file PDF của tài liệu.") from exc
 
 
 class DocumentService:
@@ -69,46 +98,6 @@ class DocumentService:
         self._qdrant, self.collection = qdrant, collection
         self.graph = graph
         self.files.ensure_bucket()
-
-    # ---- tiện ích trên repository ----
-    @staticmethod
-    def read_profile(repo: DocumentRepository, document_id: str) -> Profile:
-        """Đọc cài đặt của tài liệu (`documents.profile`); thiếu hoặc sai thì báo lỗi hiển thị cho người dùng."""
-        try:
-            profile = repo.get_profile(document_id)
-        except ValidationError as exc:
-            raise InvalidError(f"Cài đặt của tài liệu bị lỗi: {exc}") from exc
-        if profile is None:
-            raise InvalidError("Cài đặt của tài liệu bị lỗi: tài liệu chưa có cài đặt")
-        return profile
-
-    @staticmethod
-    def save_profile(repo: DocumentRepository, document_id: str, profile: Profile) -> None:
-        repo.set_profile(document_id, profile)
-
-    @staticmethod
-    def blocking_deps(repo: DocumentRepository, document_id: str, stage_id: str, stages: dict[str, Any] | None = None) -> list[str]:
-        """Các bước phụ thuộc CHƯA approved (rỗng = được phép chạy). Truyền `stages` (từ `repo.status()`) để khỏi đọc lại."""
-        st = stages if stages is not None else repo.status(document_id)["stages"]
-        return [d for d in STAGE_BY_ID[stage_id]["deps"] if st[d].get("state") != "approved"]
-
-    @staticmethod
-    def local_pdf(repo: DocumentRepository, document_id: str) -> Path:
-        """Bản sao tạm của `source.pdf` trên đĩa, dùng lại khi cùng kích thước"""
-        try:
-            return repo.files_for(document_id).local_copy("source.pdf", temp_root() / document_id / "source.pdf")
-        except FileNotFoundError as exc:
-            raise FileNotFoundError("Không tìm thấy file PDF của tài liệu.") from exc
-
-    @staticmethod
-    @contextlib.contextmanager
-    def temp_pdf_copy(repo: DocumentRepository, document_id: str) -> Generator[Path]:
-        """Bản sao `source.pdf` dùng cho một lần gọi rồi xoá ngay"""
-        with tempfile.TemporaryDirectory(prefix="toc_pdf_") as tmp:
-            try:
-                yield repo.files_for(document_id).local_copy("source.pdf", Path(tmp) / "source.pdf")
-            except FileNotFoundError as exc:
-                raise FileNotFoundError("Không tìm thấy file PDF của tài liệu.") from exc
 
     # ---- tài liệu ----
     def ensure_idle(self, document_id: str, action: str) -> None:
@@ -168,7 +157,7 @@ class DocumentService:
                     summary=st.get("summary") or None,
                     error=st.get("error"),
                     options=st.get("options") or {},
-                    blocked_by=self.blocking_deps(self._repo, document_id, s["id"], status),
+                    blocked_by=get_blocking_deps(s["id"], status),
                 )
             )
         return out
@@ -217,7 +206,7 @@ class DocumentService:
         if cached:
             return int(cached)
         try:
-            with self.temp_pdf_copy(self._repo, document_id) as pdf:
+            with copy_temp_pdf(self._repo, document_id) as pdf:
                 n = self._count_pages(pdf)
         except FileNotFoundError:
             return None
@@ -318,7 +307,7 @@ class DocumentService:
         with tempfile.TemporaryDirectory(prefix="toc_page_") as tmp_dir:
             out = Path(tmp_dir) / "page"
             try:
-                with self.temp_pdf_copy(self._repo, document_id) as pdf:
+                with copy_temp_pdf(self._repo, document_id) as pdf:
                     subprocess.run(
                         [
                             "pdftoppm",
@@ -515,11 +504,11 @@ class DocumentService:
         if self.graph is not None:
             self.graph.delete_document(document_id)
         self._repo.delete(document_id)
-        shutil.rmtree(temp_root() / document_id, ignore_errors=True)
+        shutil.rmtree(get_temp_root() / document_id, ignore_errors=True)
 
     # ---- cài đặt, nhật ký, trang nguồn, xuất chunk ----
     def get_settings(self, document_id: str) -> DocumentSettings:
-        p = self.read_profile(self._repo, document_id)
+        p = read_profile(self._repo, document_id)
         return DocumentSettings(
             title=self._repo.meta(document_id).get("title", document_id),
             engine=p.extraction.engine,
@@ -539,7 +528,7 @@ class DocumentService:
 
     def update_settings(self, document_id: str, body: DocumentSettings) -> DocumentSettings:
         self.ensure_idle(document_id, "đổi cài đặt")
-        p = self.read_profile(self._repo, document_id)
+        p = read_profile(self._repo, document_id)
         title = body.title.strip()
         p.extraction.engine = body.engine
         p.extraction.docling_force_ocr = body.docling_force_ocr
@@ -558,7 +547,7 @@ class DocumentService:
         )
         p.indexing.text_language = body.text_language
         p.graph.allow_new_entities, p.graph.chunks_per_call = body.graph_allow_new_entities, body.graph_chunks_per_call
-        self.save_profile(self._repo, document_id, p)
+        self._repo.update_meta(document_id, profile=p.model_dump(mode="json"))
         self._repo.update_meta(document_id, title=title)
         return self.get_settings(document_id)
 
