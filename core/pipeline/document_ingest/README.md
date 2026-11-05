@@ -10,12 +10,12 @@ PDF → ingest (chữ từng trang) → toc (LLM đọc mục lục, người du
 
 | Bước | Module | Ra (trong MinIO `document/<document>/`) | LLM |
 |---|---|---|---|
-| ingest | `stages/ingest.py` | `pages.jsonl` | không |
-| toc | `stages/toc.py` + `mapping.py` | `toc.auto.json` (máy), `toc.json` (đã áp override + độ lệch + neo) | đọc vài chục trang mục lục |
-| chunks | `stages/chunks.py` | `chunks.jsonl`, `review/chunks.json` | không |
-| index | `stages/index.py` (+ `DocumentService`) | `index.json` + các point trong Qdrant | không (embedding qua OpenRouter) |
-| graph | `stages/graph.py` + `graph_schema.py` + `graph_link.py` | `graph/topics.json`, `graph/unmapped.json`, `triples.auto.jsonl` (máy), `triples.jsonl` (đã áp override) | phân loại mục, trích theo ô, chọn nút khớp |
-| graph_index | `stages/graph_index.py` (+ `DocumentGraphService`) | `graph_index.json` + cạnh `source='DOC'` trong Neo4j | không |
+| ingest | `stages/step1_ingest.py` | `pages.jsonl` | không |
+| toc | `stages/step2_toc.py` + `mapping.py` | `toc.auto.json` (máy), `toc.json` (đã áp override + độ lệch + neo) | đọc vài chục trang mục lục |
+| chunks | `stages/step3_chunks.py` | `chunks.jsonl`, `review/chunks.json` | không |
+| index | `stages/step4_index.py` (+ `DocumentService`) | `index.json` + các point trong Qdrant | không (embedding qua OpenRouter) |
+| graph | `stages/step5_graph.py` + `graph_schema.py` + `graph_link.py` | `graph/topics.json`, `graph/unmapped.json`, `triples.auto.jsonl` (máy), `triples.jsonl` (đã áp override) | phân loại mục, trích theo ô, chọn nút khớp |
+| graph_index | `stages/step6_graph_index.py` (+ `DocumentGraphService`) | `graph_index.json` + cạnh `source='DOC'` trong Neo4j | không |
 
 - `graph` chỉ trích quan hệ có trong PrimeKG/DermO (registry `graph_schema.py`, cộng loại / quan hệ bác sĩ định nghĩa trong bảng `graph_entity_types`, `graph_relations`),
   khớp tên vào từ điển PrimeKG đầy đủ + DermO. Luồng và giới hạn: `docs/module/knowledge-graph-flow.md`, `docs/module/knowledge-graph.md`.
@@ -55,7 +55,7 @@ nằm ở `app/` theo quy ước của Core:
 Runner nhận client qua constructor và truyền cho từng bước qua `StageContext` (`ctx.llm`, `ctx.docling`, `ctx.embedding`, `ctx.vectors`); bước chỉ
 biến đổi dữ liệu, không tự tạo client. Test dựng runner bằng `MemoryMinio` + SQLite file tạm (thay Postgres) + `QdrantClient(":memory:")` + embedding giả (không cần dịch vụ nào chạy).
 
-Trong `pipeline/document_ingest/`: `stages/` (ingest, toc, chunks, index, graph, graph_index — mỗi bước đọc đầu vào, biến đổi, ghi đầu ra qua `ctx.store`),
+Trong `pipeline/document_ingest/`: `stages/` (step1_ingest, step2_toc, step3_chunks, step4_index, step5_graph, step6_graph_index — mỗi bước đọc đầu vào, biến đổi, ghi đầu ra qua `ctx.store`),
 `mapping.py` (độ lệch + neo, hàm thuần `build_toc`), `hierarchy.py`, `graph_schema.py` (loại thực thể + quan hệ), `graph_link.py` (khớp tên vào từ điển PrimeKG + DermO), `textutil.py`, `profile.py` (parse/dump cấu hình sách).
 
 ## Lưu trữ (không còn workspace trên đĩa)

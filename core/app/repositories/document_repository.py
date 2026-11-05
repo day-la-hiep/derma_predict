@@ -148,9 +148,6 @@ class DocumentRepository:
                 return None
             return Profile.model_validate({**b.profile, "document_id": document_id})
 
-    def set_profile(self, document_id: str, profile: Profile) -> None:
-        self.update_meta(document_id, profile=profile.model_dump(mode="json"))
-
     def create(
         self,
         title: str,

@@ -12,7 +12,7 @@ from app.repositories.graph_schema_repository import GraphSchemaRepository
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
 from app.services.graph_schema_service import GraphSchemaService
 
-from pipeline.document_ingest.stages.graph import EXTRACT_PROMPT
+from pipeline.document_ingest.stages.step5_graph import EXTRACT_PROMPT
 from pipeline.document_ingest.tests.test_document_pipeline import FakeEmbedding
 from pipeline.document_ingest.tests.test_graph import CHUNKS, GraphBase, graph_llm
 

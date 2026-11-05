@@ -4,7 +4,7 @@ python -m unittest pipeline.document_ingest.tests.test_storage_index -v"""
 
 import unittest
 
-from app.services.document_service import DocumentService
+from app.services.document_service import get_local_pdf, read_profile
 
 from app.infra.qdrant_client import eq_filter
 from app.exception.errors import PipelineError
@@ -23,7 +23,7 @@ class StorageTest(Base):
             self.assertNotIn(f"document/tbook/{name}", keys)
         self.assertEqual(self.repo.list_ids(), ["tbook"])
         self.assertEqual(self.repo.status(self.document_id)["stages"]["toc"]["state"], "pending_review")
-        self.assertEqual(DocumentService.read_profile(self.repo, self.document_id).document_id, "tbook")
+        self.assertEqual(read_profile(self.repo, self.document_id).document_id, "tbook")
 
     def test_log_is_written_then_reset_on_rerun(self) -> None:
         self.repo.reset_log(self.document_id, "toc")
@@ -41,10 +41,10 @@ class StorageTest(Base):
         self,
     ) -> None:
         self.files.put_bytes("source.pdf", b"%PDF-one")
-        p = DocumentService.local_pdf(self.repo, self.document_id)
+        p = get_local_pdf(self.repo, self.document_id)
         self.assertEqual(p.read_bytes(), b"%PDF-one")
         self.files.put_bytes("source.pdf", b"%PDF-changed")
-        self.assertEqual(DocumentService.local_pdf(self.repo, self.document_id).read_bytes(), b"%PDF-changed")
+        self.assertEqual(get_local_pdf(self.repo, self.document_id).read_bytes(), b"%PDF-changed")
         self.runner.documentService.delete_document("tbook")
         self.assertFalse(p.exists())
 

@@ -19,6 +19,10 @@ STAGE_IDS = [s["id"] for s in STAGES]
 STAGE_BY_ID = {s["id"]: s for s in STAGES}
 
 
+def get_blocking_deps(stage_id: str, stage_states: dict[str, Any]) -> list[str]:
+    """Các bước phụ thuộc CHƯA approved (rỗng = được phép chạy). `stage_states` = `repo.status(...)["stages"]`."""
+    return [d for d in STAGE_BY_ID[stage_id]["deps"] if stage_states[d].get("state") != "approved"]
+
 
 def downstream(stage_id: str) -> list[str]:
     """Mọi bước (gián tiếp) phụ thuộc `stage_id`."""

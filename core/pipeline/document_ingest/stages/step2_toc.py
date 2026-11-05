@@ -1,12 +1,22 @@
 import json
-import subprocess
+import logging
 from collections import Counter
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
+from app.infra.docling_client import DoclingClient
+from app.infra.llm_client import LLMClient, LLMError
+from app.models.document_profile import ExtractionConfig
+
 from .. import mapping
-from app.infra.llm_client import LLMError
-from ..textutil import parse_page_ranges
-from . import StageContext, StageError, refresh_toc
+from ..textutil import BODY_LABELS, parse_page_ranges, pdftotext_pages
+from . import StageError
+
+logger = logging.getLogger(__name__)
+
+OnProgress = Callable[[int, int, str], None]
+OnLog = Callable[[str], None]
 
 DIGEST_HEAD_PAGES = 60
 DIGEST_TAIL_PAGES = 15
@@ -33,42 +43,46 @@ Trả về DUY NHẤT JSON hợp lệ: {"entries": [{"level": 1, "title": "...",
 
 
 # ---------------------------------------------------------------- đọc chữ các trang
-def _total_pages(ctx: StageContext) -> int:
-    rows = ctx.files.read_jsonl("pages.jsonl")
+def count_pages(rows: list[dict[str, Any]], pdf: Callable[[], Path]) -> int:
     if rows:
         return max(r["page"] for r in rows)
     try:
         from pypdf import PdfReader
 
-        return len(PdfReader(str(ctx.local_pdf())).pages)
+        return len(PdfReader(str(pdf())).pages)
+    except StageError:
+        raise
     except Exception as e:
+        logger.warning("pypdf không đọc được PDF: %s", e)
         raise StageError(f"Không đọc được PDF: {e}") from e
 
 
-def _pdftotext_pages(ctx: StageContext, first: int, last: int) -> dict[int, str]:
+def read_pdftotext_pages(pdf: Path, first: int, last: int) -> dict[int, str]:
     try:
-        out = subprocess.run(["pdftotext", "-f", str(first), "-l", str(last), "-layout", str(ctx.local_pdf()), "-"],
-                             check=True, capture_output=True, text=True).stdout
-    except (OSError, subprocess.CalledProcessError) as e:
-        raise StageError(f"pdftotext lỗi: {e}") from e
-    return {first + i: t for i, t in enumerate(out.split("\f")[: last - first + 1])}
+        out = pdftotext_pages(pdf, True, first, last)
+    except RuntimeError as e:
+        logger.warning("pdftotext thất bại với %s: %s", pdf, e)
+        raise StageError(str(e)) from e
+    return {first + i: t for i, t in enumerate(out[: last - first + 1])}
 
 
-def _digests(ctx: StageContext) -> list[dict[str, Any]]:
-    total = _total_pages(ctx)
+def build_digests(rows: list[dict[str, Any]], total: int, pdf: Callable[[], Path]) -> list[dict[str, Any]]:
     wanted = sorted(set(range(1, min(total, DIGEST_HEAD_PAGES) + 1)) | set(range(max(1, total - DIGEST_TAIL_PAGES + 1), total + 1)))
-    rows = {r["page"]: r["text"] for r in ctx.files.read_jsonl("pages.jsonl")}
-    if not rows:
-        rows = _pdftotext_pages(ctx, 1, total)  # chưa ingest: lớp text ẩn của PDF (có thể kém) đủ để nhận ra trang mục lục
-    return [{"page": n, "chars": len(rows.get(n, "")), "head": " ".join(rows.get(n, "").split())[:220]} for n in wanted]
+    texts = {r["page"]: r["text"] for r in rows}
+    if not texts:
+        texts = read_pdftotext_pages(pdf(), 1, total)  # chưa ingest: lớp text ẩn của PDF (có thể kém) đủ để nhận ra trang mục lục
+    return [{"page": n, "chars": len(texts.get(n, "")), "head": " ".join(texts.get(n, "").split())[:220]} for n in wanted]
 
 
-def page_texts(ctx: StageContext, pages: list[int]) -> dict[int, str]:
-    """Chữ các trang mục lục"""
-    have = {r["page"]: r["text"] for r in ctx.files.read_jsonl("pages.jsonl")}
+def get_page_texts(pages: list[int], rows: list[dict[str, Any]], ext: ExtractionConfig, pdf: Callable[[], Path],
+               docling: DoclingClient | None, on_progress: OnProgress) -> dict[int, str]:
+    """Chữ các trang mục lục: lấy từ `pages.jsonl` nếu có, không thì đọc thẳng từ PDF."""
+    have = {r["page"]: r["text"] for r in rows}
     if all(p in have for p in pages):
         return {p: have[p] for p in pages}
-    if ctx.profile.extraction.engine == "docling":
+    if ext.engine == "docling":
+        if docling is None:
+            raise StageError("Chưa cấu hình công cụ nhận dạng chữ (Docling).")
         out: dict[int, str] = {}
         runs: list[list[int]] = []
         for p in sorted(pages):
@@ -77,24 +91,22 @@ def page_texts(ctx: StageContext, pages: list[int]) -> dict[int, str]:
             else:
                 runs.append([p])
         for run in runs:
-            ctx.progress(0, 1, f"Docling OCR trang mục lục {run[0]}-{run[-1]}")
-            blocks = ctx.require_docling().convert_pages(ctx.local_pdf(), run[0], run[-1], ocr=True,
-                                   force_ocr=ctx.profile.extraction.docling_force_ocr, tables=True)
+            on_progress(0, 1, f"Docling OCR trang mục lục {run[0]}-{run[-1]}")
+            blocks = docling.convert_pages(pdf(), run[0], run[-1], ocr=True, force_ocr=ext.docling_force_ocr, tables=True)
             for b in blocks:
-                if b["label"] in {"heading", "text", "list", "caption", "table", "toc"}:
+                if b["label"] in BODY_LABELS:
                     out[b["page"]] = (out.get(b["page"], "") + "\n" + " ".join(b["text"].split())).strip("\n")
         return {p: out.get(p, "") for p in pages}
-    got = _pdftotext_pages(ctx, min(pages), max(pages))
+    got = read_pdftotext_pages(pdf(), min(pages), max(pages))
     return {p: got.get(p, "") for p in pages}
 
 
 # ---------------------------------------------------------------- LLM
-def find_toc_pages(ctx: StageContext) -> tuple[list[int], str]:
-    llm = ctx.require_llm()
-    digests = _digests(ctx)
+def find_toc_pages(llm: LLMClient, digests: list[dict[str, Any]]) -> tuple[list[int], str]:
     try:
         data = llm.complete_json(FIND_PROMPT, "Các trang (JSON):\n" + json.dumps(digests, ensure_ascii=False), name="toc_find")
     except LLMError as e:
+        logger.warning("LLM không xác định được trang mục lục: %s", e)
         raise StageError(f"AI không xác định được trang mục lục: {e}") from e
     raw = data.get("toc_pages") if isinstance(data, dict) else None
     pages = sorted({int(p) for p in raw if str(p).isdigit()}) if isinstance(raw, list) else []
@@ -118,9 +130,9 @@ def _clean_entry(it: Any) -> dict[str, Any] | None:
     return {"level": level, "kind": mapping.KINDS[level], "title": title, "printed_page": page}
 
 
-def parse_entries(ctx: StageContext, texts: dict[int, str]) -> tuple[list[dict[str, Any]], list[str]]:
+def parse_entries(llm: LLMClient, texts: dict[int, str], on_progress: OnProgress,
+                  on_log: OnLog) -> tuple[list[dict[str, Any]], list[str]]:
     """LLM đọc các trang mục lục theo nhóm, tuần tự (nhóm sau cần part/section cuối của nhóm trước)."""
-    llm = ctx.require_llm()
     warnings: list[str] = []
     groups: list[list[int]] = []
     size = 0
@@ -142,9 +154,10 @@ def parse_entries(ctx: StageContext, texts: dict[int, str]) -> tuple[list[dict[s
             data = llm.complete_json(PARSE_PROMPT, "Dữ liệu (JSON):\n" + json.dumps(payload, ensure_ascii=False), name="toc_parse")
         except LLMError as e:
             if len(pages) == 1:
+                logger.warning("LLM không đọc được trang mục lục %s: %s", pages[0], e)
                 warnings.append(f"AI không đọc được trang mục lục {pages[0]}: {str(e)[:100]}")
                 return []
-            ctx.log(f"nhóm trang {pages} lỗi -> đọc từng trang")
+            on_log(f"nhóm trang {pages} lỗi -> đọc từng trang")
             return [x for p in pages for x in ask([p])]
         items = data.get("entries") if isinstance(data, dict) else data
         out = []
@@ -156,7 +169,7 @@ def parse_entries(ctx: StageContext, texts: dict[int, str]) -> tuple[list[dict[s
         return out
 
     for i, g in enumerate(groups, 1):
-        ctx.progress(i - 1, len(groups), f"LLM đọc mục lục: trang {g[0]}-{g[-1]}")
+        on_progress(i - 1, len(groups), f"LLM đọc mục lục: trang {g[0]}-{g[-1]}")
         got = ask(g)
         for e in got:
             if e["level"] == 0:
@@ -195,40 +208,46 @@ def flag_suspects(entries: list[dict[str, Any]]) -> int:
     return flagged
 
 
-# ---------------------------------------------------------------- chạy / hiệu lực
-def run(ctx: StageContext) -> dict:
-    explicit = str(ctx.options.get("pages", "")).strip()
-    total = _total_pages(ctx)
-    ctx.progress(0, 3, "xác định trang mục lục")
+# ---------------------------------------------------------------- chạy / tổng kết
+def _locate_toc_pages(llm: LLMClient, rows: list[dict[str, Any]], total: int, pages_opt: object,
+                      pdf: Callable[[], Path]) -> tuple[list[int], str, str]:
+    explicit = str(pages_opt or "").strip()
     if explicit:
         pages = sorted(parse_page_ranges([x for x in explicit.split(",")], total))
         if not pages:
             raise StageError(f"Số trang mục lục không hợp lệ: {explicit!r} (ví dụ đúng: 8-22)")
-        source, reason = "user", "do bạn nhập"
-    else:
-        pages, reason = find_toc_pages(ctx)
-        source = "llm"
-    ctx.log(f"trang mục lục ({source}): {pages[0]}-{pages[-1]} ({len(pages)} trang) — {reason}")
-    ctx.progress(1, 3, "đọc chữ các trang mục lục")
-    texts = page_texts(ctx, pages)
+        return pages, "user", "do bạn nhập"
+    pages, reason = find_toc_pages(llm, build_digests(rows, total, pdf))
+    return pages, "llm", reason
+
+
+def read_toc(pdf: Callable[[], Path], rows: list[dict[str, Any]], ext: ExtractionConfig, llm: LLMClient,
+             docling: DoclingClient | None, pages_opt: object = None, on_progress: OnProgress = lambda *_: None,
+             on_log: OnLog = lambda _msg: None) -> dict[str, Any]:
+    """Trang mục lục + chữ trang -> kết quả máy `toc.auto.json` (chưa áp override/độ lệch)."""
+    total = count_pages(rows, pdf)
+    # Bước 1: xác định trang mục lục (người dùng nhập hoặc LLM tìm)
+    on_progress(0, 3, "xác định trang mục lục")
+    pages, source, reason = _locate_toc_pages(llm, rows, total, pages_opt, pdf)
+    on_log(f"trang mục lục ({source}): {pages[0]}-{pages[-1]} ({len(pages)} trang) — {reason}")
+    # Bước 2: lấy chữ các trang mục lục
+    on_progress(1, 3, "đọc chữ các trang mục lục")
+    texts = get_page_texts(pages, rows, ext, pdf, docling, on_progress)
     if not any(t.strip() for t in texts.values()):
         raise StageError("Các trang mục lục không có chữ — hãy kiểm tra lại số trang, hoặc chọn cách đọc “nhận dạng chữ từ ảnh” trong Cài đặt.")
-    entries, warnings = parse_entries(ctx, texts)
+    # Bước 3: LLM chuyển chữ thành cây mục
+    entries, warnings = parse_entries(llm, texts, on_progress, on_log)
     if not entries:
         raise StageError("AI không đọc ra mục nào từ các trang mục lục.")
+    # Bước 4: đánh dấu mục có số trang đáng ngờ
     flagged = flag_suspects(entries)
     if flagged:
         warnings.append(f"{flagged} mục có số trang không tăng dần theo thứ tự mục lục (thường do đọc sai chữ số) — vui lòng kiểm tra các mục được tô vàng.")
-    ctx.files.write_json("toc.auto.json", {"toc_pages": pages, "pages_source": source, "entries": entries,
-                                           "meta": {"warnings": warnings, "reason": reason}})
-    return reapply(ctx)
+    return {"toc_pages": pages, "pages_source": source, "entries": entries, "meta": {"warnings": warnings, "reason": reason}}
 
 
-def reapply(ctx: StageContext) -> dict:
-    """Áp override + tính lại độ lệch/neo (không LLM). Gọi sau mỗi lần người duyệt sửa."""
-    has_text = ctx.files.exists("source.pdf") or ctx.files.exists("pages.jsonl")
-    refresh_toc(ctx, _total_pages(ctx) if has_text else 0)
-    doc = ctx.files.read_json("toc.json")
+def summarize_toc(doc: dict[str, Any]) -> dict[str, Any]:
+    """Summary hiển thị cho người duyệt, tính từ nội dung `toc.json`."""
     ents = doc["entries"]
     by_level = Counter(e["level"] for e in ents)
     summary: dict[str, Any] = {
@@ -238,6 +257,4 @@ def reapply(ctx: StageContext) -> dict:
     }
     if doc["warnings"]:
         summary["warnings"] = doc["warnings"]
-    if ctx.llm is not None:
-        summary["llm"] = ctx.llm.stats
     return summary

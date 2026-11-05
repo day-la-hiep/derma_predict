@@ -89,8 +89,8 @@ tải gốc (data/raw) --build--> data/build/{primekg,dermo} --load--> Neo4j --v
 
 ### 2.2 Cạnh từ sách (pipeline, mỗi tài liệu)
 
-- Bước **`graph`** (`stages/graph.py`): LLM đọc từng mục sách theo "ô" (slot) trong `GraphSchema`, ra triple; thực thể được khớp vào nút PrimeKG / DermO / nút `doc_*` → `triples.jsonl`, người duyệt sửa qua override.
-- Bước **`graph_index`** (`stages/graph_index.py` → `DocumentGraphService.replace_document`): chỉ lưu triple `status == "ok"` đã duyệt.
+- Bước **`graph`** (`stages/step5_graph.py`): LLM đọc từng mục sách theo "ô" (slot) trong `GraphSchema`, ra triple; thực thể được khớp vào nút PrimeKG / DermO / nút `doc_*` → `triples.jsonl`, người duyệt sửa qua override.
+- Bước **`graph_index`** (`stages/step6_graph_index.py` → `DocumentGraphService.replace_document`): chỉ lưu triple `status == "ok"` đã duyệt.
   - Đầu `dermo`: coi như có sẵn. Đầu `primekg`: `existing_nodes` hỏi Neo4j theo cặp `(loại, id)` (label loại + `id`); cặp đã có thì dùng, chưa có thì lấy từ lexicon rồi tạo nút,
     không có ở cả hai thì bỏ triple. Id trùng ở loại khác không còn chặn nhau (đồ thị mới có 8.822 id dùng chung nhiều loại).
   - Nút và cạnh luôn `MERGE` / `MATCH` theo `(label loại, id)`; nút mới thêm `:Entity`; nút DermO mới có `is_obsolete=false`, `synonyms/xrefs/alt_ids=[]` (thiếu `is_obsolete` thì `lookup_dermo_term` bỏ sót).

@@ -1,11 +1,14 @@
 """Chunk theo khung mục lục"""
 import re
 from bisect import bisect_right
+from collections.abc import Callable
 from typing import Any
 
-from .. import hierarchy, mapping
+from .. import mapping
 from app.models.document_profile import ChunkingConfig
-from . import StageContext, StageError, refresh_toc
+from . import StageError
+
+OnProgress = Callable[[int, int, str], None]
 
 _SENT = re.compile(r"(?<=[.!?])\s+")
 
@@ -41,7 +44,7 @@ def split_unit(text: str, max_tokens: int) -> list[str]:
     return out
 
 
-def toc_nodes(doc: dict[str, Any], max_page: int) -> list[dict[str, Any]]:
+def build_toc_nodes(doc: dict[str, Any], max_page: int) -> list[dict[str, Any]]:
     """Cây mục lục -> các nút có điểm bắt đầu"""
     nodes: list[dict[str, Any]] = []
     prev = (0, -1)
@@ -56,14 +59,14 @@ def toc_nodes(doc: dict[str, Any], max_page: int) -> list[dict[str, Any]]:
         nodes.append({"id": e["id"], "title": e["title"], "level": e["level"], "kind": e["kind"], "page": start[0],
                       "line": start[1] if anchored else -1, "anchored": anchored, "printed_page": e.get("printed_page"),
                       "suspect": bool(e.get("suspect"))})
-    hierarchy.build_tree(nodes)  # cha/đường dẫn tính lại trên các mục còn lại
+    mapping.build_tree(nodes)  # cha/đường dẫn tính lại trên các mục còn lại
     for i, n in enumerate(nodes):  # khoảng trang theo mục lục: tới trang của mục kế cùng cấp trở lên
         nxt = next((m["page"] for m in nodes[i + 1:] if m["level"] <= n["level"]), max_page)
         n["page_hint"] = [n["page"], max(n["page"], nxt)]
     return nodes
 
 
-def _common_prefix(paths: list[list[str]]) -> list[str]:
+def get_common_prefix(paths: list[list[str]]) -> list[str]:
     out: list[str] = []
     for col in zip(*paths):
         if len(set(col)) != 1:
@@ -72,7 +75,7 @@ def _common_prefix(paths: list[list[str]]) -> list[str]:
     return out
 
 
-def _items(nodes: list[dict], units: list[tuple[int, int, str]], boundary_level: int) -> tuple[list[list[dict]], int]:
+def split_into_regions(nodes: list[dict], units: list[tuple[int, int, str]], boundary_level: int) -> tuple[list[list[dict]], int]:
     """Chia chữ cho mục chứa nó rồi gom thành các vùng"""
     by_id = {n["id"]: n for n in nodes}
     starts = [(n["page"], n["line"]) for n in nodes]
@@ -104,7 +107,7 @@ def _items(nodes: list[dict], units: list[tuple[int, int, str]], boundary_level:
     return regions, outside
 
 
-def _pack(region: list[dict], cfg: ChunkingConfig) -> list[list[dict]]:
+def pack_units(region: list[dict], cfg: ChunkingConfig) -> list[list[dict]]:
     """Cắt một vùng thành các nhóm item vừa `max_tokens` (item quá dài được cắt theo câu)."""
     flat: list[dict] = []
     for it in region:
@@ -131,10 +134,10 @@ def _pack(region: list[dict], cfg: ChunkingConfig) -> list[list[dict]]:
 def build_chunks(nodes: list[dict], units: list[tuple[int, int, str]], cfg: ChunkingConfig, *, document_id: str, document_title: str,
                  printed_offset: int, figures: list[dict] | None = None) -> tuple[list[dict], int]:
     by_id = {n["id"]: n for n in nodes}
-    regions, outside = _items(nodes, units, cfg.boundary_level)
+    regions, outside = split_into_regions(nodes, units, cfg.boundary_level)
     chunks: list[dict] = []
     for region in regions:
-        for group in _pack(region, cfg):
+        for group in pack_units(region, cfg):
             members = list(dict.fromkeys(it["node"]["id"] for it in group))
             first = by_id[members[0]]
             chain: list[dict] = []
@@ -144,7 +147,7 @@ def build_chunks(nodes: list[dict], units: list[tuple[int, int, str]], cfg: Chun
                 cur = by_id.get(cur["parent_id"]) if cur.get("parent_id") else None
             pick = lambda f: next((n["title"] for n in chain if f(n)), "")  # noqa: E731
             paths = [by_id[m]["path"] for m in members]
-            path = _common_prefix(paths) if len(paths) > 1 else paths[0]
+            path = get_common_prefix(paths) if len(paths) > 1 else paths[0]
             text = "\n".join(it["text"] for it in group)
             pages = [it["page"] for it in group]
             pa, pb = min(pages), max(pages)
@@ -168,7 +171,7 @@ def build_chunks(nodes: list[dict], units: list[tuple[int, int, str]], cfg: Chun
     return chunks, outside
 
 
-def _review(chunks: list[dict], cfg: ChunkingConfig) -> list[dict]:
+def build_review(chunks: list[dict], cfg: ChunkingConfig) -> list[dict]:
     out = []
     for c in chunks:
         why = []
@@ -185,39 +188,11 @@ def _review(chunks: list[dict], cfg: ChunkingConfig) -> list[dict]:
     return out
 
 
-def run(ctx: StageContext) -> dict:
-    files, cfg = ctx.files, ctx.profile.chunking
-    rows = [r for r in files.iter_jsonl("pages.jsonl") if not r.get("noise")]
-    if not rows:
-        raise StageError("Chưa đọc nội dung sách — hãy làm bước Đọc nội dung trước.")
-    if not files.exists("toc.auto.json"):
-        raise StageError("Chưa có mục lục — hãy làm bước Mục lục trước.")
-    ctx.progress(0, 2, "tính lại độ lệch + neo")
-    max_page = max(r["page"] for r in rows)
-    refresh_toc(ctx, max_page)  # dữ liệu trang có thể mới hơn lần duyệt mục lục
-    doc = files.read_json("toc.json")
-    off = doc["offset"]
-    if off is None:
-        raise StageError("Chưa xác định được độ chênh lệch số trang — hãy nhập tay ở bước Mục lục rồi làm lại.")
-    skip = set(doc["toc_pages"])
-    nodes = toc_nodes(doc, max_page)
-    if not nodes:
-        raise StageError("Không mục nào của mục lục nằm trong các trang đã đọc — hãy kiểm tra độ chênh lệch số trang.")
-    units = [(r["page"], i, ln) for r in rows if r["page"] not in skip for i, ln in enumerate(r["text"].split("\n"))]
-    ctx.progress(1, 2, "cắt chunk")
-    document_title = ctx.meta().get("title", "")
-    figures = files.read_json("figures.json", []) or []
-    chunks, outside = build_chunks(nodes, units, cfg, document_id=ctx.document_id, document_title=document_title, printed_offset=off,
-                                   figures=figures)
-    if not chunks:
-        raise StageError("Không tạo được đoạn nào (nội dung sách có thể đang trống).")
-    files.write_jsonl("chunks.jsonl", chunks)
-    review = _review(chunks, cfg)
-    files.write_json("review/chunks.json", review)
+def _summarize(chunks: list[dict], nodes: list[dict], doc: dict[str, Any], outside: int, cfg: ChunkingConfig) -> dict[str, Any]:
     toks = sorted(c["tokens"] for c in chunks)
     summary: dict[str, Any] = {
         "chunks": len(chunks), "tokens": {"min": toks[0], "median": toks[len(toks) // 2], "max": toks[-1]},
-        "toc_entries_used": len(nodes), "toc_entries_total": len(doc["entries"]), "offset": off,
+        "toc_entries_used": len(nodes), "toc_entries_total": len(doc["entries"]), "offset": doc["offset"],
         "boundary_chunks": sum(1 for c in chunks if c["boundary"]), "suspect_chunks": sum(1 for c in chunks if c["suspect"]),
         "too_short": sum(1 for c in chunks if c["tokens"] < cfg.min_tokens),
         "too_long": sum(1 for c in chunks if c["tokens"] > cfg.max_tokens * 1.1),
@@ -231,3 +206,23 @@ def run(ctx: StageContext) -> dict:
     if warnings:
         summary["warnings"] = warnings
     return summary
+
+
+def cut_chunks(doc: dict[str, Any], rows: list[dict[str, Any]], cfg: ChunkingConfig, *, document_id: str, document_title: str,
+               figures: list[dict[str, Any]], on_progress: OnProgress) -> tuple[list[dict], list[dict], dict[str, Any]]:
+    """`toc.json` + các trang (đã bỏ trang nhiễu) -> (chunks, danh sách chunk cần soát, summary)."""
+    if doc["offset"] is None:
+        raise StageError("Chưa xác định được độ chênh lệch số trang — hãy nhập tay ở bước Mục lục rồi làm lại.")
+    # Bước 1: mục lục -> các nút có điểm bắt đầu; thân sách -> các dòng chữ (bỏ trang mục lục)
+    nodes = build_toc_nodes(doc, max(r["page"] for r in rows))
+    if not nodes:
+        raise StageError("Không mục nào của mục lục nằm trong các trang đã đọc — hãy kiểm tra độ chênh lệch số trang.")
+    skip = set(doc["toc_pages"])
+    units = [(r["page"], i, ln) for r in rows if r["page"] not in skip for i, ln in enumerate(r["text"].split("\n"))]
+    # Bước 2: cắt chunk theo khung mục lục
+    on_progress(1, 2, "cắt chunk")
+    chunks, outside = build_chunks(nodes, units, cfg, document_id=document_id, document_title=document_title,
+                                   printed_offset=doc["offset"], figures=figures)
+    if not chunks:
+        raise StageError("Không tạo được đoạn nào (nội dung sách có thể đang trống).")
+    return chunks, build_review(chunks, cfg), _summarize(chunks, nodes, doc, outside, cfg)

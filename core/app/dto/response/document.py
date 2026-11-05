@@ -78,7 +78,7 @@ class TocOutput(BaseModel):
 
 
 class ChunkOutput(BaseModel):
-    """Một chunk — nguồn: `pipeline/document_ingest/stages/chunks.py::build_chunks` (`chunks.jsonl`)."""
+    """Một chunk — nguồn: `pipeline/document_ingest/stages/step3_chunks.py::build_chunks` (`chunks.jsonl`)."""
 
     chunk_id: str
     seq: int
@@ -105,7 +105,7 @@ class ChunkOutput(BaseModel):
 
 
 class SourcePageOutput(BaseModel):
-    """Một trang nguồn — nguồn: `pipeline/document_ingest/stages/ingest.py::_row` (`pages.jsonl`)."""
+    """Một trang nguồn — nguồn: `pipeline/document_ingest/stages/step1_ingest.py::_row` (`pages.jsonl`)."""
 
     page: int
     page_printed: int
@@ -117,7 +117,7 @@ class SourcePageOutput(BaseModel):
 
 
 class FigureOutput(BaseModel):
-    """Một ảnh trong sách — nguồn: `pipeline/document_ingest/stages/ingest.py::_figure_rows` (`figures.json`)."""
+    """Một ảnh trong sách — nguồn: `pipeline/document_ingest/stages/step1_ingest.py::_figure_rows` (`figures.json`)."""
 
     figure_id: str
     document_id: str
@@ -148,7 +148,7 @@ class GraphNodeRefOutput(BaseModel):
 
 
 class TripleOutput(BaseModel):
-    """Một quan hệ trích từ sách — nguồn: `pipeline/document_ingest/stages/graph.py` (`triples.jsonl`)."""
+    """Một quan hệ trích từ sách — nguồn: `pipeline/document_ingest/stages/step5_graph.py` (`triples.jsonl`)."""
 
     triple_id: str
     slot: str

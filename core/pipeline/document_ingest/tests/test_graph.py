@@ -11,10 +11,11 @@ from app.dto.request.document import TripleRelink, TripleUpdate
 from app.infra.llm_client import LLMClient
 from app.services.document_graph_service import DocumentGraphService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
+from app.services.document_service import read_profile
 
 from pipeline.document_ingest.graph_link import EntityLexicon, LexEntry
 from pipeline.document_ingest.stages import StageError
-from pipeline.document_ingest.stages.graph import EXTRACT_PROMPT, PICK_PROMPT, TOPIC_PROMPT
+from pipeline.document_ingest.stages.step5_graph import EXTRACT_PROMPT, PICK_PROMPT, TOPIC_PROMPT
 from pipeline.document_ingest.tests.test_document_pipeline import Base, FakeEmbedding
 
 IMPETIGO = ("Chốc là bệnh nhiễm khuẩn nông của da. Tổn thương ban đầu là bọng nước nông, dễ vỡ, để lại vảy tiết màu vàng mật ong. "
@@ -78,7 +79,7 @@ def graph_llm(system: str, user: str) -> str:
 
 
 class FakeGraph(DocumentGraphService):
-    """Neo4j giả: giữ nút/cạnh trong bộ nhớ, cùng hợp đồng `GraphStore`."""
+    """Neo4j giả: giữ nút/cạnh trong bộ nhớ, cùng các method `DocumentGraphService` mà bước graph dùng."""
 
     def __init__(self, repo: Any) -> None:
         super().__init__(repo, None, Path("/nonexistent"))
@@ -157,9 +158,9 @@ class GraphStageTest(GraphBase):
         self.assertEqual(comp["subject"]["node_id"], "DERMO:0000001")
 
     def test_new_entity_is_proposed_but_needs_acceptance(self) -> None:
-        p = self.vectors.read_profile(self.repo, "tbook")
+        p = read_profile(self.repo, "tbook")
         p.graph.allow_new_entities = True
-        self.repo.set_profile("tbook", p)
+        self.repo.update_meta("tbook", profile=p.model_dump(mode="json"))
         self.run_graph()
         comp = self.triples()[("RESULTS_IN", "viêm cầu thận cấp")]
         self.assertEqual((comp["object"]["kg"], comp["object"]["link_method"], comp["status"]), ("doc", "new", "unlinked"))

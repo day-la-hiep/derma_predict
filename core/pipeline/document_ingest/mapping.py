@@ -3,10 +3,9 @@ from collections import Counter, defaultdict
 from difflib import SequenceMatcher
 from typing import Any
 
-from . import hierarchy
 from .textutil import norm, upper_ratio
 
-PREFIX_SCORE = 0.95  # độ giống quy ước cho dòng mở đầu bằng đúng tiêu đề (xem `_prefix_hit`)
+PREFIX_SCORE = 0.95  # độ giống quy ước cho dòng mở đầu bằng đúng tiêu đề (xem `is_prefix_hit`)
 MAX_PREFIX_LINE = 600  # dòng dài hơn thế không còn là "tiêu đề dính liền đoạn văn"
 ANCHOR_CUTOFF = 0.82  # độ giống tối thiểu để coi một dòng là tiêu đề của mục
 OFFSET_CUTOFF = 0.88  # chặt hơn: dùng để bỏ phiếu độ lệch, một lần khớp sai làm lệch cả sách
@@ -15,7 +14,7 @@ MIN_VOTES = 3
 Line = tuple[int, int, str]  # (trang, chỉ số dòng, chữ chuẩn hoá)
 
 
-def heading_lines(rows: list[dict[str, Any]], skip: set[int]) -> list[Line]:
+def get_heading_lines(rows: list[dict[str, Any]], skip: set[int]) -> list[Line]:
     """Các dòng ngắn của thân sách (bỏ trang mục lục và trang nhiễu): ứng viên để khớp tên mục."""
     out: list[Line] = []
     for r in rows:
@@ -30,7 +29,7 @@ def heading_lines(rows: list[dict[str, Any]], skip: set[int]) -> list[Line]:
     return out
 
 
-def prefix_lines(rows: list[dict[str, Any]], skip: set[int]) -> dict[int, list[tuple[int, str]]]:
+def get_prefix_lines(rows: list[dict[str, Any]], skip: set[int]) -> dict[int, list[tuple[int, str]]]:
     """Mọi dòng của thân sách theo trang"""
     out: dict[int, list[tuple[int, str]]] = defaultdict(list)
     for r in rows:
@@ -43,7 +42,7 @@ def prefix_lines(rows: list[dict[str, Any]], skip: set[int]) -> dict[int, list[t
     return out
 
 
-def _prefix_hit(title: str, tn: str, raw: str) -> bool:
+def is_prefix_hit(title: str, tn: str, raw: str) -> bool:
     """Dòng mở đầu bằng đúng tiêu đề VIẾT HOA"""
     if len(tn) < 6:
         return False
@@ -51,7 +50,7 @@ def _prefix_hit(title: str, tn: str, raw: str) -> bool:
     return head.startswith(tn) and (len(head) == len(tn) or head[len(tn)] == " ") and upper_ratio(raw[: len(title)]) >= 0.8
 
 
-def _index(lines: list[Line]) -> dict[str, list[int]]:
+def build_token_index(lines: list[Line]) -> dict[str, list[int]]:
     idx: dict[str, list[int]] = defaultdict(list)
     for k, (_, _, n) in enumerate(lines):
         for tok in set(n.split()):
@@ -60,17 +59,17 @@ def _index(lines: list[Line]) -> dict[str, list[int]]:
     return idx
 
 
-def _close_len(a: str, b: str) -> bool:
+def is_close_len(a: str, b: str) -> bool:
     return abs(len(a) - len(b)) <= max(6, len(a) * 0.4)
 
 
-def _matches(title_norm: str, lines: list[Line], idx: dict[str, list[int]], cutoff: float) -> list[tuple[int, int, float]]:
+def find_matches(title_norm: str, lines: list[Line], idx: dict[str, list[int]], cutoff: float) -> list[tuple[int, int, float]]:
     """(trang, dòng, độ giống) các dòng giống tên mục; chỉ so với dòng chứa một từ dài của tên (khỏi so mọi dòng)."""
     toks = sorted({t for t in title_norm.split() if len(t) >= 5}, key=len, reverse=True)[:2]
     out = []
     for k in {k for t in toks for k in idx.get(t, [])}:
         page, line, n = lines[k]
-        if _close_len(title_norm, n):
+        if is_close_len(title_norm, n):
             r = SequenceMatcher(None, title_norm, n).ratio()
             if r >= cutoff:
                 out.append((page, line, r))
@@ -79,10 +78,10 @@ def _matches(title_norm: str, lines: list[Line], idx: dict[str, list[int]], cuto
 
 def estimate_offset(rows: list[dict[str, Any]], entries: list[dict[str, Any]], skip: set[int]) -> tuple[int | None, dict[str, Any]]:
     """Bỏ phiếu độ lệch. Trả (độ lệch | None, thông tin để hiển thị cho người duyệt)."""
-    lines = heading_lines(rows, skip)
+    lines = get_heading_lines(rows, skip)
     if not lines:
         return None, {"matched": 0}
-    idx = _index(lines)
+    idx = build_token_index(lines)
     votes: Counter[int] = Counter()
     matched = 0
     for e in entries:
@@ -91,7 +90,7 @@ def estimate_offset(rows: list[dict[str, Any]], entries: list[dict[str, Any]], s
         tn = norm(e["title"])
         if len(tn) < 8:
             continue
-        hits = _matches(tn, lines, idx, OFFSET_CUTOFF)
+        hits = find_matches(tn, lines, idx, OFFSET_CUTOFF)
         if hits and len({p for p, _, _ in hits}) <= 3:  # tên lặp ở nhiều trang (vd nhãn) không đủ tin
             matched += 1
             for p, _, _ in hits:
@@ -106,7 +105,7 @@ def estimate_offset(rows: list[dict[str, Any]], entries: list[dict[str, Any]], s
     return int(off), info
 
 
-def _best_line(title: str, by_page: dict[int, list[tuple[int, str]]], longs: dict[int, list[tuple[int, str]]],
+def find_best_line(title: str, by_page: dict[int, list[tuple[int, str]]], longs: dict[int, list[tuple[int, str]]],
                pages: list[int]) -> tuple[float, int | None, int | None]:
     """Dòng giống tên mục nhất trong các `pages` (trang đầu danh sách được ưu tiên nhẹ)."""
     tn = norm(title)
@@ -114,22 +113,22 @@ def _best_line(title: str, by_page: dict[int, list[tuple[int, str]]], longs: dic
     for rank, p in enumerate(pages):
         pen = 0.02 if rank else 0
         for ln, n in by_page.get(p, []):
-            if _close_len(tn, n):
+            if is_close_len(tn, n):
                 r = SequenceMatcher(None, tn, n).ratio() - pen
                 if r > best[0]:
                     best = (r, p, ln)
         for ln, raw in longs.get(p, []):
-            if PREFIX_SCORE - pen > best[0] and _prefix_hit(title, tn, raw):
+            if PREFIX_SCORE - pen > best[0] and is_prefix_hit(title, tn, raw):
                 best = (PREFIX_SCORE - pen, p, ln)
     return best
 
 
-def anchor(entries: list[dict[str, Any]], rows: list[dict[str, Any]], offset: int, skip: set[int], total: int) -> int:
+def anchor_entries(entries: list[dict[str, Any]], rows: list[dict[str, Any]], offset: int, skip: set[int], total: int) -> int:
     """Gán `pdf_page`, `anchor_line`, `anchored`, `out_of_range` cho từng mục (sửa tại chỗ). Trả số mục đã neo."""
     by_page: dict[int, list[tuple[int, str]]] = defaultdict(list)
-    for p, ln, n in heading_lines(rows, skip):
+    for p, ln, n in get_heading_lines(rows, skip):
         by_page[p].append((ln, n))
-    longs = prefix_lines(rows, skip)
+    longs = get_prefix_lines(rows, skip)
     anchored = 0
     prev_page = 1
     for e in entries:
@@ -141,7 +140,7 @@ def anchor(entries: list[dict[str, Any]], rows: list[dict[str, Any]], offset: in
         if total and exp > total:  # PDF chỉ là một phần của sách: mục này nằm ngoài các trang đang có
             e["out_of_range"], e["pdf_page"] = True, exp
             continue
-        r, p, ln = _best_line(e["title"], by_page, longs, [exp, exp - 1, exp + 1])
+        r, p, ln = find_best_line(e["title"], by_page, longs, [exp, exp - 1, exp + 1])
         if r >= ANCHOR_CUTOFF and p is not None:
             e["pdf_page"], e["anchor_line"], e["anchored"] = p, ln, True
             anchored += 1
@@ -158,7 +157,7 @@ def anchor(entries: list[dict[str, Any]], rows: list[dict[str, Any]], offset: in
             nxt = e["pdf_page"]
         elif e.get("printed_page") is None and nxt is not None:
             e["pdf_page"] = nxt
-            r, p, ln = _best_line(e["title"], by_page, longs, [nxt, nxt - 1])
+            r, p, ln = find_best_line(e["title"], by_page, longs, [nxt, nxt - 1])
             if r >= ANCHOR_CUTOFF and p is not None:
                 e["pdf_page"], e["anchor_line"], e["anchored"] = p, ln, True
                 anchored += 1
@@ -166,6 +165,17 @@ def anchor(entries: list[dict[str, Any]], rows: list[dict[str, Any]], offset: in
 
 
 KINDS = {0: "part", 1: "section", 2: "topic", 3: "sub"}
+
+
+def build_tree(nodes: list[dict[str, Any]]) -> None:
+    """Cha = mục có cấp thấp hơn gần nhất phía trên. Gán `parent_id`, `path`; sửa tại chỗ."""
+    stack: list[dict[str, Any]] = []
+    for n in nodes:
+        while stack and stack[-1]["level"] >= n["level"]:
+            stack.pop()
+        n["parent_id"] = stack[-1]["id"] if stack else None
+        n["path"] = [x["title"] for x in stack] + [n["title"]]
+        stack.append(n)
 
 
 def apply_overrides(entries: list[dict[str, Any]], ov: dict[str, Any]) -> list[dict[str, Any]]:
@@ -204,8 +214,8 @@ def build_toc(auto: dict[str, Any], overrides: dict[str, Any], rows: list[dict[s
     else:
         off, info = estimate_offset(rows, entries, skip)
         info["source"] = "auto"
-    hierarchy.build_tree(entries)
-    anchored = anchor(entries, rows, off, skip, total_pages) if off is not None else 0
+    build_tree(entries)
+    anchored = anchor_entries(entries, rows, off, skip, total_pages) if off is not None else 0
     warnings = list(auto.get("meta", {}).get("warnings", []))
     if off is None:
         warnings.append("Chưa xác định được độ chênh lệch giữa số trang in và số trang trong file PDF: hãy nhập tay, "

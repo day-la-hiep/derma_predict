@@ -85,6 +85,14 @@ class QdrantVectorClient:
         result = await self.client.query_points(name, query=vector, using=using, query_filter=query_filter, limit=limit)
         return result.points
 
+    async def retrieve_payloads(self, name: str, point_ids: list[str]) -> list[dict[str, Any]]:
+        """Payload của các point theo id (không cần vector); id không có thì bị bỏ, collection chưa có -> rỗng."""
+        if not point_ids or not await self.client.collection_exists(name):
+            return []
+        records = await self.client.retrieve(name, ids=point_ids, with_payload=True, with_vectors=False)
+        by_id = {str(r.id): r.payload for r in records if r.payload}
+        return [by_id[i] for i in point_ids if i in by_id]
+
     async def has_sparse_vector(self, name: str, vector_name: str) -> bool:
         """Collection có sparse vector tên này không"""
         if not await self.client.collection_exists(name):

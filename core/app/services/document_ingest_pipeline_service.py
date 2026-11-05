@@ -1,11 +1,10 @@
 """Điều khiển pipeline `document_ingest`"""
 
 import asyncio
-import importlib
 import json
 import threading
 import traceback
-from types import ModuleType
+from collections.abc import Callable
 from typing import Any
 
 from app.config.constants import (
@@ -26,28 +25,13 @@ from app.infra.embedding_client import EmbeddingClient
 from app.infra.llm_client import LLMClient
 from app.infra.rabbitmq_client import RabbitMQClient
 from app.infra.redis_client import RedisClient
-from app.models.document_stage import STAGE_BY_ID
+from app.models.document_stage import STAGE_BY_ID, get_blocking_deps
 from app.repositories.document_repository import DocumentRepository, now_iso
 from app.services.document_graph_service import DocumentGraphService
+from app.services.document_service import DocumentService, read_profile
+from app.services.document_stage_runner import DocumentStageRunner, StageRunState
 from app.services.graph_schema_service import GraphSchemaService
-from app.services.document_service import DocumentService
-from pipeline.document_ingest.graph_schema import CORE_SCHEMA
-from pipeline.document_ingest.stages import (
-    StageCancelled,
-    StageContext,
-    StageError,
-)
-
-
-_GRAPH_STAGES = {"graph", "graph_index"}
-
-
-def _module(stage_id: str) -> ModuleType:
-    if stage_id not in STAGE_BY_ID:
-        raise NotFoundError(stage_id)
-    return importlib.import_module(
-        f"pipeline.document_ingest.stages.{stage_id}"
-    )
+from pipeline.document_ingest.stages import StageCancelled, StageError
 
 
 class DocumentIngestPipelineService:
@@ -68,46 +52,15 @@ class DocumentIngestPipelineService:
         """`rabbitmq`/`redis` chỉ Core cần (đẩy yêu cầu chạy + Dừng); ingest worker chỉ gọi `execute` nên để trống."""
         self.documentService, self._repo = documentService, repository
         self._rabbitmq, self._redis = rabbitmq, redis
-        self._docling, self._embedding = docling, embedding
-        self._graph, self._graph_schema = graph, graph_schema
-
-    def make_ctx(
-        self,
-        document_id: str,
-        stage_id: str,
-        options: dict[str, Any],
-        llm: LLMClient | None = None,
-        cancel: threading.Event | None = None,
-    ) -> StageContext:
-        profile = DocumentService.read_profile(self._repo, document_id)
-        use_llm = STAGE_BY_ID[stage_id]["llm"] and profile.llm.enabled
-        if use_llm and llm is None:
-            llm = LLMClient(
-                profile.llm.model,
-                cache=self.documentService.files.scoped("_cache/llm/"),
-            )
-        return StageContext(
-            document_id=document_id,
-            files=self._repo.files_for(document_id),
-            profile=profile,
-            stage_id=stage_id,
-            meta=lambda: self._repo.meta(document_id),
-            overrides=lambda stage: self._repo.overrides.get(document_id, stage),
-            _append_log=lambda stage, message: self._repo.append_log(document_id, stage, message),
-            _update_stage=lambda stage, **fields: self._repo.update_stage(document_id, stage, **fields),
-            llm=llm if use_llm else None,
-            options=options,
-            docling=self._docling,
-            embedding=self._embedding,
-            vectors=self.documentService,
-            # từ điển ~70k thực thể: chỉ nạp khi bước cần (lần đầu mất vài giây)
-            lexicon=self._graph.lexicon() if self._graph is not None and stage_id in _GRAPH_STAGES else None,
-            graph=self._graph if self._graph is not None and self._graph.configured else None,
-            # bước graph chỉ trích quan hệ đang bật; graph_index vẫn lưu triple đã duyệt của quan hệ vừa bị tắt
-            schema=self._graph_schema.schema(include_disabled=stage_id != "graph") if self._graph_schema is not None else CORE_SCHEMA,
-            pdf=lambda: DocumentService.local_pdf(self._repo, document_id),
-            cancel=cancel or threading.Event(),
-        )
+        self._graph = graph
+        self.runner = DocumentStageRunner(documentService, repository, docling=docling, embedding=embedding, graph=graph, graph_schema=graph_schema)
+        run = self.runner
+        self._runners: dict[str, Callable[[StageRunState], dict[str, Any]]] = {
+            "ingest": run.run_ingest, "toc": run.run_toc, "chunks": run.run_chunks,
+            "index": lambda state: run.index_document_chunks(state.document_id, state.progress),
+            "graph": run.run_graph, "graph_index": run.run_graph_index,
+        }
+        self._reappliers: dict[str, Callable[[StageRunState], dict[str, Any]]] = {"toc": run.reapply_toc, "graph": run.reapply_graph}
 
     # ---- chạy bước: check_runnable -> begin -> execute ----
     def check_runnable(
@@ -127,7 +80,7 @@ class DocumentIngestPipelineService:
         block = (
             []
             if force
-            else DocumentService.blocking_deps(self._repo, document_id, stage_id, status)
+            else get_blocking_deps(stage_id, status)
         )
         if block:
             raise PipelineError(
@@ -135,7 +88,7 @@ class DocumentIngestPipelineService:
                 + ", ".join(STAGE_BY_ID[b]["title"] for b in block)
                 + "."
             )
-        DocumentService.read_profile(self._repo, document_id)
+        read_profile(self._repo, document_id)
 
     def begin(
         self, document_id: str, stage_id: str, options: dict[str, Any]
@@ -167,9 +120,9 @@ class DocumentIngestPipelineService:
     ) -> dict[str, Any]:
         """Chạy bước đã `begin`, ghi kết quả `pending_review` / `failed` / `cancelled` cùng nhật ký."""
         try:
-            ctx = self.make_ctx(document_id, stage_id, options, llm, cancel)
-            ctx.log(f"bắt đầu bước {stage_id} options={options}")
-            summary = _module(stage_id).run(ctx)
+            run = self.runner.make_state(document_id, stage_id, options, llm, cancel)
+            run.log(f"bắt đầu bước {stage_id} options={options}")
+            summary = self._runners[stage_id](run)
         except StageCancelled:
             self._repo.append_log(document_id, stage_id, "đã huỷ")
             self._repo.update_stage(
@@ -202,7 +155,7 @@ class DocumentIngestPipelineService:
         )
         if stage_id == "ingest":  # kết quả bước ingest là `Document.ingested_file` -> ghi thành dòng `files`
             self._repo.set_ingested_file(document_id, "pages.jsonl", "application/x-ndjson")
-        ctx.log(f"xong: {summary}")
+        run.log(f"xong: {summary}")
         return summary
 
     def run_stage(
@@ -216,11 +169,8 @@ class DocumentIngestPipelineService:
         cancel: threading.Event | None = None,
     ) -> dict[str, Any]:
         """Kiểm tra + chạy trọn một bước trong thread hiện tại."""
-        if not self._repo.exists(document_id):
-            raise NotFoundError(document_id)
         options = options or {}
-        self.check_runnable(document_id, stage_id, force=force)
-        self.begin(document_id, stage_id, options)
+        self._prepare(document_id, stage_id, options, force)
         return self.execute(document_id, stage_id, options, llm=llm, cancel=cancel)
 
     # ---- API admin: chạy nền / dừng / duyệt / áp lại, trả về trạng thái tài liệu ----
@@ -273,64 +223,45 @@ class DocumentIngestPipelineService:
         await self._redis.publish(DOCUMENT_INGEST_CANCEL_CHANNEL, json.dumps({"document_id": document_id, "stage_id": stage_id}))
         return await asyncio.to_thread(self.documentService.get_document, document_id)
 
-    def approve_stage(
-        self, document_id: str, stage_id: str
-    ) -> DocumentOutput:
-        self.approve(document_id, stage_id)
-        return self.documentService.get_document(document_id)
-
-    def reapply_stage(
-        self, document_id: str, stage_id: str
-    ) -> DocumentOutput:
-        self.reapply(document_id, stage_id)
-        return self.documentService.get_document(document_id)
-
     def update_triples(self, document_id: str, body: TripleUpdate) -> DocumentOutput:
         """Lưu duyệt quan hệ rồi áp lại bước `graph` (bước quay về chờ duyệt, `graph_index` thành stale)."""
         if self._graph is None:
             raise PipelineError("Chưa cấu hình đồ thị tri thức.")
         self._graph.update_triples(document_id, body)
-        return self.reapply_stage(document_id, "graph")
+        return self.reapply(document_id, "graph")
 
     def update_toc(
         self, document_id: str, body: TocUpdate
     ) -> DocumentOutput:
         """Lưu chỉnh sửa mục lục rồi áp lại bước `toc` (bước quay về chờ duyệt, các bước sau thành stale)."""
         self.documentService.update_toc(document_id, body)
-        return self.reapply_stage(document_id, "toc")
+        return self.reapply(document_id, "toc")
 
     # ---- duyệt / áp override ----
-    def approve(self, document_id: str, stage_id: str) -> dict[str, Any]:
+    def approve(self, document_id: str, stage_id: str) -> DocumentOutput:
         if not self._repo.exists(document_id):
             raise NotFoundError(document_id)
         st = self._repo.status(document_id)["stages"].get(stage_id)
         if st is None:
             raise NotFoundError(stage_id)
         if st.get("state") != "pending_review":
-            raise PipelineError(
-                "Chỉ xác nhận được bước đang ở trạng thái chờ xác nhận."
-            )
-        return self._repo.update_stage(
-            document_id, stage_id, state="approved", approved_at=now_iso()
-        )
+            raise PipelineError("Chỉ xác nhận được bước đang ở trạng thái chờ xác nhận.")
+        self._repo.update_stage(document_id, stage_id, state="approved", approved_at=now_iso())
+        return self.documentService.get_document(document_id)
 
-    def reapply(self, document_id: str, stage_id: str) -> dict[str, Any]:
+    def reapply(self, document_id: str, stage_id: str) -> DocumentOutput:
         """Áp lại override của người duyệt (nhanh, không LLM). Dữ liệu bước đổi nên bước quay về chờ duyệt và các bước hạ nguồn thành stale."""
         if not self._repo.exists(document_id):
             raise NotFoundError(document_id)
-        mod = _module(stage_id)
-        if not hasattr(mod, "reapply"):
+        if stage_id not in STAGE_BY_ID:
+            raise NotFoundError(stage_id)
+        reapply_fn = self._reappliers.get(stage_id)
+        if reapply_fn is None:
             raise PipelineError(f"bước {stage_id} không có override")
         st = self._repo.status(document_id)["stages"][stage_id]
         if st.get("state") in {"not_started", "running"}:
-            raise PipelineError(
-                f"bước {stage_id} chưa có kết quả để áp override (hiện: {st.get('state')})"
-            )
-        summary = mod.reapply(
-            self.make_ctx(document_id, stage_id, st.get("options") or {})
-        )
+            raise PipelineError(f"bước {stage_id} chưa có kết quả để áp override (hiện: {st.get('state')})")
+        summary = reapply_fn(self.runner.make_state(document_id, stage_id, st.get("options") or {}))
         self._repo.mark_stale(document_id, stage_id)
-        self._repo.update_stage(
-            document_id, stage_id, state="pending_review", summary=summary, approved_at=None
-        )
-        return summary
+        self._repo.update_stage(document_id, stage_id, state="pending_review", summary=summary, approved_at=None)
+        return self.documentService.get_document(document_id)

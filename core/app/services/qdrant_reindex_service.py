@@ -1,4 +1,3 @@
-import dataclasses
 import logging
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
@@ -14,7 +13,6 @@ from app.models.patient_profile import PatientProfile
 from app.repositories.document_repository import DocumentRepository
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
 from app.services.finalize_report_index_service import FinalizeReportIndexService
-from pipeline.document_ingest.stages import index as index_stage
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +94,7 @@ class QdrantReindexService:
             report.ok.append(document_id)
             self._log(f"[dry-run] {document_id}: sẽ nạp lại {len(chunks)} đoạn")
             return
-        ctx = self._pipeline.make_ctx(document_id, "index", {})
-        # không ghi tiến độ/nhật ký vào DB: sẽ đè trạng thái "xong" mà admin đã duyệt
-        ctx = dataclasses.replace(ctx, _update_stage=lambda *a, **k: {}, _append_log=lambda stage, message: None)
-        summary = index_stage.run(ctx)
+        summary = self._pipeline.runner.index_document_chunks(document_id)  # không ghi trạng thái stage: tránh đè "xong" admin đã duyệt
         report.ok.append(document_id)
         self._log(f"đã nạp {document_id}: {summary['points']} đoạn → {summary['collection']}")
 

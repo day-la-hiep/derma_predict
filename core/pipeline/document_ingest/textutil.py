@@ -1,7 +1,28 @@
 """Tiện ích văn bản chịu OCR nhiễu, dùng chung mọi bước."""
 import hashlib
 import re
+import subprocess
 import unicodedata
+from pathlib import Path
+
+BODY_LABELS = {"heading", "text", "list", "caption", "table", "toc"}  # nhãn khối Docling được coi là chữ thân trang
+
+
+def pdftotext_pages(pdf: Path, layout: bool, first: int | None = None, last: int | None = None) -> list[str]:
+    """Chữ từng trang (pdftotext). Ném RuntimeError với thông báo đọc được nếu thiếu công cụ hoặc lệnh lỗi."""
+    cmd = ["pdftotext"] + (["-layout"] if layout else [])
+    if first is not None and last is not None:
+        cmd += ["-f", str(first), "-l", str(last)]
+    try:
+        proc = subprocess.run(cmd + [str(pdf), "-"], capture_output=True, check=False)
+    except OSError as e:
+        raise RuntimeError(f"Không đọc được file PDF (máy chủ thiếu công cụ poppler-utils): {e}") from e
+    if proc.returncode != 0:
+        raise RuntimeError(f"pdftotext lỗi: {proc.stderr.decode('utf-8', 'replace')[:300]}")
+    pages = proc.stdout.decode("utf-8", "replace").split("\f")
+    if pages and not pages[-1].strip():
+        pages.pop()
+    return pages
 
 
 def norm(s: str) -> str:

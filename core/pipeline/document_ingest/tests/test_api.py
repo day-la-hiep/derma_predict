@@ -295,13 +295,13 @@ class ApiTest(Base):
         )
 
     def test_cancel_stops_a_running_stage(self) -> None:
-        def slow(ctx):  # noqa: ANN001, ANN202
+        def slow(run):  # noqa: ANN001, ANN202
             for i in range(2000):
-                ctx.progress(i, 2000, "đang làm")
+                run.progress(i, 2000, "đang làm")
                 time.sleep(0.01)
             return {}
 
-        with patch("pipeline.document_ingest.stages.ingest.run", slow):
+        with patch.dict(self.svc._runners, {"ingest": slow}):
             self.assertEqual(
                 self.c.post(
                     f"{self.base}/documents/tbook/stages/ingest/run", json={}
