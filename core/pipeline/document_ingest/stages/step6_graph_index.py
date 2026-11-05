@@ -1,37 +1,30 @@
-"""Lưu quan hệ đã duyệt vào đồ thị tri thức (Neo4j)"""
 from collections import Counter
-from datetime import UTC, datetime
 from typing import Any
 
 from app.dto.base.document import DocumentTriple, GraphNodeRef
 
-from . import StageContext, StageError
+from ..graph_link import EntityLexicon
+from ..graph_schema import GraphSchema
 from .step5_graph import relation_of
 
 
-def _pages_label(pages: list[int]) -> str:
+def build_pages_label(pages: list[int]) -> str:
     return ", ".join(str(p) for p in pages[:5]) + ("…" if len(pages) > 5 else "")
 
 
-def run(ctx: StageContext) -> dict:
-    graph, lexicon = ctx.require_graph(), ctx.require_lexicon()
-    # Bước 1: đọc triple đã duyệt (status ok) + trang in của chunk để ghi nguồn
-    triples = [DocumentTriple.model_validate(x) for x in ctx.files.read_jsonl("triples.jsonl")]
-    ok = [t for t in triples if t.status == "ok"]
-    if not ok:
-        raise StageError("Chưa có quan hệ nào đã khớp đủ hai đầu để lưu — hãy duyệt bước Trích quan hệ trước.")
-    printed = {c["chunk_id"]: c["page_printed_start"] for c in ctx.files.read_jsonl("chunks.jsonl")}
-    title = ctx.meta().get("title", ctx.document_id)
-    ctx.progress(0, 3, "kiểm tra nút trong đồ thị")
+def get_primekg_pairs(triples: list[DocumentTriple]) -> list[tuple[str, str]]:
+    """Nút PrimeKG: id chỉ duy nhất trong từng loại (HPO 972 và NCBI 972 là hai nút), nên nút được nhận diện bằng cặp (loại, id)."""
+    return sorted({(s.type, s.node_id) for t in triples for s in (t.subject, t.object) if s.kg == "primekg" and s.node_id})
 
-    # Bước 2: chọn nút cần nạp. Nút PrimeKG: id chỉ duy nhất trong từng loại (HPO 972 và NCBI 972 là hai nút), nên nút được nhận diện bằng cặp (loại, id)
-    primekg_nodes = sorted({(s.type, s.node_id) for t in ok for s in (t.subject, t.object) if s.kg == "primekg" and s.node_id})
-    existing = graph.existing_nodes(primekg_nodes)
+
+def build_graph_payload(ok: list[DocumentTriple], printed: dict[str, int], title: str, schema: GraphSchema, lexicon: EntityLexicon,
+                        existing: set[tuple[str, str]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], Counter[str], int]:
+    """Triple đã duyệt -> (nút cần nạp, cạnh, lý do bỏ qua, số quan hệ đã gộp). `existing` = nút PrimeKG đang có trong Neo4j."""
     nodes: dict[tuple[str, str], dict[str, Any]] = {}
     edges: list[dict[str, Any]] = []
     skipped: Counter[str] = Counter()
 
-    def node_ok(s: GraphNodeRef) -> bool:
+    def is_node_ok(s: GraphNodeRef) -> bool:
         assert s.node_id is not None
         if s.kg == "dermo":
             return True  # DermO đã nạp đủ cả ontology
@@ -46,20 +39,20 @@ def run(ctx: StageContext) -> dict:
         nodes[(s.type, s.node_id)] = {"id": s.node_id, "name": s.name or s.en or s.text, "type": s.type, "source": "DOC"}
         return True
 
-    # Bước 3: dựng cạnh. Neo4j gộp cạnh theo (loại quan hệ, hai đầu, tài liệu): hai quan hệ cùng cặp nút (nhắc ở hai chunk) chỉ ra một cạnh, nên gộp
+    # Neo4j gộp cạnh theo (loại quan hệ, hai đầu, tài liệu): hai quan hệ cùng cặp nút (nhắc ở hai chunk) chỉ ra một cạnh, nên gộp
     # ở đây để số cạnh cần lưu khớp với số đếm lại và không mất trích dẫn của quan hệ ghi trước.
     by_key: dict[tuple[str, str, str | None, str, str | None], dict[str, Any]] = {}
     pages_of: dict[tuple[str, str, str | None, str, str | None], set[int]] = {}
     merged = 0
     for t in ok:
-        rel = relation_of(t, ctx.schema)
+        rel = relation_of(t, schema)
         if rel is None:
             skipped["quan hệ đã bị xoá khỏi danh mục"] += 1
             continue
         if t.subject.node_id == t.object.node_id and t.subject.type == t.object.type:
             skipped["hai đầu trùng nút (tự trỏ về chính nó)"] += 1
             continue
-        if not (node_ok(t.subject) and node_ok(t.object)):
+        if not (is_node_ok(t.subject) and is_node_ok(t.object)):
             skipped["thực thể không có trong đồ thị lẫn từ điển"] += 1
             continue
         key = (t.relation, t.subject.type, t.subject.node_id, t.object.type, t.object.node_id)
@@ -80,26 +73,20 @@ def run(ctx: StageContext) -> dict:
             "evidence": t.evidence, "chunk_ids": list(t.chunk_ids), "pages": list(t.pages), "source_ref": "",
         }
         edges.append(by_key[key])
-    # Bước 4: ghi nguồn trích dẫn (tên sách + trang in) cho từng cạnh
+    # ghi nguồn trích dẫn (tên sách + trang in) cho từng cạnh
     for key, e in by_key.items():
         pages = sorted(pages_of[key])
-        e["source_ref"] = f"{title}, tr. {_pages_label(pages)}" if pages else title
-    # Bước 5: thay toàn bộ nút/cạnh của tài liệu trong Neo4j
-    ctx.progress(1, 3, "ghi vào Neo4j")
-    graph.replace_document(ctx.document_id, list(nodes.values()), edges)
-    # Bước 6: đếm lại để chắc đã lưu đủ rồi ghi `graph_index.json`
-    ctx.progress(2, 3, "đếm lại cạnh đã lưu")
-    stored = graph.count_edges(ctx.document_id)
-    if stored != len(edges):
-        raise StageError(f"Số quan hệ đã lưu ({stored}) khác số cần lưu ({len(edges)}) — kiểm tra nút DermO/PrimeKG có trong Neo4j "
-                         "(thiếu nút thì cạnh không được tạo).")
-    info = {
+        e["source_ref"] = f"{title}, tr. {build_pages_label(pages)}" if pages else title
+    return list(nodes.values()), edges, skipped, merged
+
+
+def summarize_graph_payload(nodes: list[dict[str, Any]], edges: list[dict[str, Any]], skipped: Counter[str], merged: int,
+                            stored: int) -> dict[str, Any]:
+    """Summary cho người duyệt (và nội dung `graph_index.json`, chưa có `indexed_at`)."""
+    summary: dict[str, Any] = {
         "edges": stored, "nodes_added": len(nodes), "by_relation": dict(Counter(e["relation"] for e in edges)),
-        "new_entities": sum(1 for n in nodes.values() if n["source"] == "DOC"),
-        "indexed_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "new_entities": sum(1 for n in nodes if n["source"] == "DOC"),
     }
-    ctx.files.write_json("graph_index.json", info)
-    summary: dict[str, Any] = {k: v for k, v in info.items() if k != "indexed_at"}
     warnings = [f"Bỏ qua {n} quan hệ: {why}." for why, n in skipped.items()]
     if skipped:
         summary["skipped"] = dict(skipped)

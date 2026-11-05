@@ -11,7 +11,6 @@ from app.infra.embedding_client import EmbeddingClient
 from app.infra.llm_client import LLMClient
 from app.models.document_profile import Profile
 
-from .. import mapping
 from ..graph_link import EntityLexicon
 from ..graph_schema import CORE_SCHEMA, GraphSchema
 
@@ -128,10 +127,3 @@ class StageContext:
             raise StageError("Chưa cấu hình đồ thị tri thức (Neo4j).")
         return self.graph
 
-
-def refresh_toc(ctx: StageContext, total_pages: int) -> None:
-    """Đọc kết quả AI + override + chữ các trang, tính lại cây/độ lệch/neo và ghi `toc.json` (dùng bởi bước Mục lục và Chia đoạn)."""
-    auto = ctx.files.read_json("toc.auto.json", None)
-    if auto is None:
-        raise StageError("Chưa đọc mục lục — hãy làm bước Mục lục trước.")
-    ctx.files.write_json("toc.json", mapping.build_toc(auto, ctx.overrides("toc"), ctx.files.read_jsonl("pages.jsonl"), total_pages))

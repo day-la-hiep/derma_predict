@@ -25,12 +25,12 @@ PDF → ingest (text/page)  → toc (LLM reads TOC, human reviews) → mapping (
 
 | Stage | Module | Output (in MinIO `document/<document_id>/`) | LLM |
 |---|---|---|---|
-| `ingest` | `stages/ingest.py` | `pages.jsonl` | no |
-| `toc` | `stages/toc.py` + `mapping.py` | `toc.auto.json` (machine), `toc.json` (+ overrides + offset + anchor) | reads a few dozen TOC pages |
-| `chunks` | `stages/chunks.py` | `chunks.jsonl`, `review/chunks.json` | no |
-| `index` | `stages/index.py` (+ `DocumentService`) | `index.json` + points in Qdrant | no (embedding via OpenRouter) |
-| `graph` | `stages/graph.py` + `graph_schema.py` + `graph_link.py` | `graph/topics.json`, `graph/unmapped.json`, `triples.auto.jsonl` (machine), `triples.jsonl` (+ overrides) | classify TOC topics, slot-filling, pick among match candidates |
-| `graph_index` | `stages/graph_index.py` (+ `DocumentGraphService`) | `graph_index.json` + edges `source='DOC'` in Neo4j | no |
+| `ingest` | `stages/step1_ingest.py` | `pages.jsonl` | no |
+| `toc` | `stages/step2_toc.py` + `mapping.py` | `toc.auto.json` (machine), `toc.json` (+ overrides + offset + anchor) | reads a few dozen TOC pages |
+| `chunks` | `stages/step3_chunks.py` | `chunks.jsonl`, `review/chunks.json` | no |
+| `index` | `stages/step4_index.py` (+ `DocumentService`) | `index.json` + points in Qdrant | no (embedding via OpenRouter) |
+| `graph` | `stages/step5_graph.py` + `graph_schema.py` + `graph_link.py` | `graph/topics.json`, `graph/unmapped.json`, `triples.auto.jsonl` (machine), `triples.jsonl` (+ overrides) | classify TOC topics, slot-filling, pick among match candidates |
+| `graph_index` | `stages/step6_graph_index.py` (+ `DocumentGraphService`) | `graph_index.json` + edges `source='DOC'` in Neo4j | no |
 
 `graph`/`graph_index` run parallel to `index` (both depend on `chunks`). Core relation types are PrimeKG/DermO; admins add their own via `/admin/graph-schema` (`GraphSchemaService`, tables
 `graph_relations`/`graph_entity_types`, `kg="doc"`) — the stage reads the merged `ctx.schema` (`GraphSchema`, CORE_SCHEMA by default;
@@ -122,11 +122,11 @@ transformation (parsing, chunking rule, mapping logic). If it needs a new extern
 first, thread it through `StageContext` (add the field in `stages/__init__.py`, wire it in
 `DocumentIngestPipelineService.make_ctx()`), then use `ctx.require_x()` in the stage.
 
-**Add a stage** — add an entry to `STAGES` in `app/models/document_stage.py` (id, title, `deps`,
+**Add a stage** — add an entry to `STAGES` in `app/models/document_stage.py` (id, `module`, title, `deps`,
 `llm`, `outputs`) — this is what drives dependency gating and the UI stepper. Add
-`pipeline/document_ingest/stages/<id>.py` with `run(ctx)` (+ `reapply(ctx)` if applicable). No
+`pipeline/document_ingest/stages/step<N>_<id>.py` with `run(ctx)` (+ `reapply(ctx)` if applicable). No
 other registration needed — `DocumentIngestPipelineService` resolves the module by `importlib`
-from the stage id.
+from the `module` field of `STAGES`.
 
 **Add a document setting** — field in `Profile` (`app/models/document_profile.py`, Pydantic), read
 it via `ctx.profile.<section>.<field>` in the stage; surface it in the settings UI
@@ -156,9 +156,9 @@ are embedded via OpenRouter (qwen/qwen3-embedding-8b, 4096-dim) and upserted int
 `index` replaces all of a document's points.
 
 **No embedded-figure extraction**: `ingest`'s docling branch keeps only
-`{heading, text, list, caption, table, toc}` labelled blocks (`stages/ingest.py`'s
+`{heading, text, list, caption, table, toc}` labelled blocks (`stages/step1_ingest.py`'s
 `_BODY_LABELS`) — any `picture`/`figure` block Docling detects is dropped. If asked to add image
-extraction, that's new work in `stages/ingest.py`'s docling branch (keep `picture` blocks, crop
+extraction, that's new work in `stages/step1_ingest.py`'s docling branch (keep `picture` blocks, crop
 and write to MinIO, e.g. `document/<document_id>/figures/`), not something already wired up.
 
 ## Concurrency & control flow

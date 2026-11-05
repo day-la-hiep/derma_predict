@@ -1,16 +1,22 @@
-"""Trích quan hệ (triple) từ các đoạn sách theo schema PrimeKG + DermO"""
 import json
+import logging
 from collections import Counter
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from app.dto.base.document import DocumentTriple, GraphNodeRef
-from app.infra.llm_client import LLMError
+from app.infra.llm_client import LLMClient, LLMError
 
 from ..graph_link import EntityLexicon, LexEntry, norm, new_node_id
 from ..graph_schema import CORE_SCHEMA, TOPIC_ENTITY_TYPES, TOPIC_TYPES, UNMAPPED_KINDS, GraphSchema, Relation
 from ..textutil import sha
-from . import StageContext, StageError
+from . import StageError
+
+logger = logging.getLogger(__name__)
+
+OnProgress = Callable[[int, int, str], None]
+OnLog = Callable[[str], None]
 
 TOPIC_BATCH = 60
 PICK_BATCH = 25
@@ -46,7 +52,7 @@ Trả về JSON: {"choices": [{"key": "<key>", "id": "<id hoặc null>"}]}"""
 
 
 # ---------------------------------------------------------------- chủ đề của mục
-def _topic_key(c: dict[str, Any]) -> list[str]:
+def get_topic_key(c: dict[str, Any]) -> list[str]:
     path = list(c.get("toc_path") or [])
     t = c.get("topic") or ""
     if t and t in path:
@@ -57,7 +63,7 @@ def _topic_key(c: dict[str, Any]) -> list[str]:
 def collect_topics(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_key: dict[tuple[str, ...], dict[str, Any]] = {}
     for c in chunks:
-        key = tuple(_topic_key(c))
+        key = tuple(get_topic_key(c))
         if not key:
             continue
         t = by_key.setdefault(key, {"id": "tp" + sha(*key)[:10], "title": key[-1], "path": list(key[:-1]), "chunk_ids": []})
@@ -65,17 +71,17 @@ def collect_topics(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(by_key.values())
 
 
-def classify_topics(ctx: StageContext, topics: list[dict[str, Any]], by_id: dict[str, dict[str, Any]]) -> None:
-    llm = ctx.require_llm()
+def classify_topics(llm: LLMClient, topics: list[dict[str, Any]], by_id: dict[str, dict[str, Any]], on_progress: OnProgress) -> None:
     for i in range(0, len(topics), TOPIC_BATCH):
         part = topics[i : i + TOPIC_BATCH]
-        ctx.progress(i, len(topics), "AI phân loại mục: bệnh / thuốc / khác")
+        on_progress(i, len(topics), "AI phân loại mục: bệnh / thuốc / khác")
         # chỉ tiêu đề thì LLM dễ dịch nhầm (vd "Nhọt" -> herpes labialis); vài câu đầu của bài giúp xác định đúng bệnh
         payload = [{"id": t["id"], "title": t["title"], "path": " > ".join(t["path"]),
                     "excerpt": " ".join(by_id[t["chunk_ids"][0]]["text"].split())[:300]} for t in part]
         try:
             data = llm.complete_json(TOPIC_PROMPT, "Các mục (JSON):\n" + json.dumps(payload, ensure_ascii=False), name="graph_topics")
         except LLMError as e:
+            logger.warning("LLM không phân loại được các mục: %s", e)
             raise StageError(f"AI không phân loại được các mục: {e}") from e
         got = {str(x.get("id")): x for x in (data.get("topics") if isinstance(data, dict) else None) or [] if isinstance(x, dict)}
         for t in part:
@@ -118,18 +124,19 @@ class Linker:
     def _linked(type_: str, text: str, en: str, e: LexEntry, method: str) -> GraphNodeRef:
         return GraphNodeRef(kg=e.kg, type=type_, text=text, en=en, node_id=e.id, name=e.name, link_method=method)  # pyright: ignore[reportArgumentType]
 
-    def resolve_pending(self, ctx: StageContext) -> None:
+    def resolve_pending(self, llm: LLMClient | None, on_progress: OnProgress, on_log: OnLog) -> None:
         items = list(self.pending.items())
-        if items and ctx.llm is not None:
+        if items and llm is not None:
             for i in range(0, len(items), PICK_BATCH):
                 part = items[i : i + PICK_BATCH]
-                ctx.progress(i, len(items), "AI chọn nút khớp cho thuật ngữ chưa khớp chính xác")
+                on_progress(i, len(items), "AI chọn nút khớp cho thuật ngữ chưa khớp chính xác")
                 payload = [{"key": str(n), "type": self.schema.entity_types[k[0]].title, "text": self.refs[k].text, "en": self.refs[k].en,
                             "candidates": [{"id": e.id, "name": e.name} for e in cands]} for n, (k, cands) in enumerate(part)]
                 try:
-                    data = ctx.llm.complete_json(PICK_PROMPT, "Các mục (JSON):\n" + json.dumps(payload, ensure_ascii=False), name="graph_pick")
+                    data = llm.complete_json(PICK_PROMPT, "Các mục (JSON):\n" + json.dumps(payload, ensure_ascii=False), name="graph_pick")
                 except LLMError as e:
-                    ctx.log(f"AI không chọn được nút cho lô {i}: {str(e)[:120]}")
+                    logger.warning("LLM không chọn được nút cho lô %s: %s", i, e)
+                    on_log(f"AI không chọn được nút cho lô {i}: {str(e)[:120]}")
                     continue
                 choices = {str(c.get("key")): c.get("id") for c in (data.get("choices") if isinstance(data, dict) else None) or [] if isinstance(c, dict)}
                 for n, (k, cands) in enumerate(part):
@@ -148,11 +155,11 @@ class Linker:
 
 
 # ---------------------------------------------------------------- trích
-def _norm_text(s: str) -> str:
+def normalize_text(s: str) -> str:
     return " ".join(s.lower().replace("“", '"').replace("”", '"').replace("’", "'").split())
 
 
-def _slot_payload(schema: GraphSchema, kind: str) -> list[dict[str, str]]:
+def build_slot_payload(schema: GraphSchema, kind: str) -> list[dict[str, str]]:
     out = []
     for s in schema.slots_for(kind):
         obj = s.relations[0].object_type
@@ -160,24 +167,24 @@ def _slot_payload(schema: GraphSchema, kind: str) -> list[dict[str, str]]:
     return out
 
 
-def _batches(topic: dict[str, Any], size: int) -> list[list[str]]:
+def split_batches(topic: dict[str, Any], size: int) -> list[list[str]]:
     ids = topic["chunk_ids"]
     return [ids[i : i + size] for i in range(0, len(ids), size)]
 
 
-def extract(ctx: StageContext, topic: dict[str, Any], chunk_ids: list[str], by_id: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    llm = ctx.require_llm()
+def extract(llm: LLMClient, schema: GraphSchema, topic: dict[str, Any], chunk_ids: list[str], by_id: dict[str, dict[str, Any]]) -> dict[str, Any]:
     payload = {
         "topic": {"kind": topic["kind"], "title": topic["title"], "en": topic["en"], "path": " > ".join(topic["path"])},
-        "slots": _slot_payload(ctx.schema, topic["kind"]),
+        "slots": build_slot_payload(schema, topic["kind"]),
         "chunks": [{"chunk_id": i, "text": by_id[i]["text"]} for i in chunk_ids],
     }
     try:
         data = llm.complete_json(EXTRACT_PROMPT, "Dữ liệu (JSON):\n" + json.dumps(payload, ensure_ascii=False), name="graph_extract")
     except LLMError as e:
+        logger.warning("LLM không trích được quan hệ cho mục %r: %s", topic["title"], e)
         return {"error": str(e)[:200], "items": [], "unmapped": []}
     slots = data.get("slots") if isinstance(data, dict) else None
-    allowed = {s.id for s in ctx.schema.slots_for(topic["kind"])}
+    allowed = {s.id for s in schema.slots_for(topic["kind"])}
     items: list[dict[str, Any]] = []
     for sid, rows in (slots or {}).items() if isinstance(slots, dict) else []:
         if sid not in allowed or not isinstance(rows, list):
@@ -191,19 +198,19 @@ def extract(ctx: StageContext, topic: dict[str, Any], chunk_ids: list[str], by_i
     return {"items": items, "unmapped": unmapped}
 
 
-def _grounded(item: dict[str, Any], chunk_ids: list[str], by_id: dict[str, dict[str, Any]]) -> str | None:
+def find_grounded_chunk(item: dict[str, Any], chunk_ids: list[str], by_id: dict[str, dict[str, Any]]) -> str | None:
     """Chunk chứa nguyên văn `evidence`; None = AI bịa / chép sai -> bỏ."""
-    ev = _norm_text(item["evidence"])
+    ev = normalize_text(item["evidence"])
     if len(ev) < 3:
         return None
     order = [item["chunk_id"]] if item["chunk_id"] in chunk_ids else []
     for cid in order + [c for c in chunk_ids if c not in order]:
-        if ev in _norm_text(by_id[cid]["text"]):
+        if ev in normalize_text(by_id[cid]["text"]):
             return cid
     return None
 
 
-def _triples(document_id: str, topic: dict[str, Any], item: dict[str, Any], cid: str, page: int,
+def build_triples(document_id: str, topic: dict[str, Any], item: dict[str, Any], cid: str, page: int,
              linker: Linker) -> list[DocumentTriple]:
     slot = linker.schema.slot(item["slot"])
     assert slot is not None
@@ -220,7 +227,7 @@ def _triples(document_id: str, topic: dict[str, Any], item: dict[str, Any], cid:
     return out
 
 
-def _merge(rows: list[DocumentTriple]) -> list[DocumentTriple]:
+def merge_triples(rows: list[DocumentTriple]) -> list[DocumentTriple]:
     by_id: dict[str, DocumentTriple] = {}
     for t in rows:
         cur = by_id.get(t.triple_id)
@@ -232,83 +239,64 @@ def _merge(rows: list[DocumentTriple]) -> list[DocumentTriple]:
     return list(by_id.values())
 
 
-def _load_lexicon(ctx: StageContext) -> EntityLexicon:
-    lexicon = ctx.require_lexicon()
-    if ctx.graph is not None:  # thực thể mới đã nạp từ tài liệu trước cũng là từ điển để khớp
-        for n in ctx.graph.doc_entities():
-            if n.get("type") in ctx.schema.entity_types:
-                lexicon.add(LexEntry(id=n["id"], name=n["name"], type=n["type"], source="DOC", kg="doc"))
-    return lexicon
-
-
-def _extract_all(ctx: StageContext, jobs: list[tuple[dict[str, Any], list[str]]],
-                 by_id: dict[str, dict[str, Any]]) -> list[tuple[dict[str, Any], list[str], dict[str, Any]]]:
+def run_extractions(llm: LLMClient, schema: GraphSchema, jobs: list[tuple[dict[str, Any], list[str]]], by_id: dict[str, dict[str, Any]],
+                    on_progress: OnProgress) -> list[tuple[dict[str, Any], list[str], dict[str, Any]]]:
     results: list[tuple[dict[str, Any], list[str], dict[str, Any]]] = []
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        futs = {pool.submit(extract, ctx, t, ids, by_id): (t, ids) for t, ids in jobs}
+        futs = {pool.submit(extract, llm, schema, t, ids, by_id): (t, ids) for t, ids in jobs}
         for n, f in enumerate(as_completed(futs), 1):
             t, ids = futs[f]
             results.append((t, ids, f.result()))
-            ctx.progress(n, len(jobs), f"AI trích quan hệ: {t['title']}")
+            on_progress(n, len(jobs), f"AI trích quan hệ: {t['title']}")
     return results
 
 
-def run(ctx: StageContext) -> dict:
-    # Bước 1: đọc chunks + nạp từ điển thực thể
-    ctx.require_lexicon()
-    chunks = ctx.files.read_jsonl("chunks.jsonl")
-    if not chunks:
-        raise StageError("Chưa có đoạn nội dung nào — hãy làm bước Chia đoạn trước.")
-    lexicon = _load_lexicon(ctx)
+def extract_triples(chunks: list[dict[str, Any]], llm: LLMClient, lexicon: EntityLexicon, schema: GraphSchema, *, document_id: str,
+                    allow_new: bool, chunks_per_call: int, limit_topics: int, on_progress: OnProgress,
+                    on_log: OnLog) -> tuple[list[DocumentTriple], list[dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
+    """Chunks -> (triple máy trích, chủ đề, thông tin chưa xếp vào ô, thống kê); chưa áp override."""
     by_id = {c["chunk_id"]: c for c in chunks}
-    # Bước 2: gom chunk theo mục, LLM phân loại mục là bệnh / thuốc / khác
+    # Bước 1: gom chunk theo mục, LLM phân loại mục là bệnh / thuốc / khác
     topics = collect_topics(chunks)
-    classify_topics(ctx, topics, by_id)
-    limit = int(ctx.options.get("limit_topics") or 0)  # thử trên vài mục trước khi chạy cả sách
-    used = [t for t in topics if t["kind"] in TOPIC_TYPES][: limit or None]
-    ctx.log(f"{len(topics)} mục, {len(used)} mục bệnh/thuốc được trích")
-    # Bước 3: khớp chính xác tên chủ đề vào từ điển
-    linker = Linker(lexicon, ctx.profile.graph.allow_new_entities, ctx.schema)
+    classify_topics(llm, topics, by_id, on_progress)
+    used = [t for t in topics if t["kind"] in TOPIC_TYPES][: limit_topics or None]  # limit_topics: thử vài mục trước khi chạy cả sách
+    on_log(f"{len(topics)} mục, {len(used)} mục bệnh/thuốc được trích")
+    # Bước 2: khớp chính xác tên chủ đề vào từ điển
+    linker = Linker(lexicon, allow_new, schema)
     for t in used:
         for et in TOPIC_ENTITY_TYPES[t["kind"]]:
             linker.ref(et, t["title"], t["en"], t.get("alt"))
-    # Bước 4: LLM điền ô (slot) quan hệ cho từng mục, theo lô chunk, chạy song song
-    jobs = [(t, ids) for t in used for ids in _batches(t, ctx.profile.graph.chunks_per_call)]
-    results = _extract_all(ctx, jobs, by_id)
-    # Bước 5: giữ mục có evidence nguyên văn trong chunk; khớp thực thể đầu kia
+    # Bước 3: LLM điền ô (slot) quan hệ cho từng mục, theo lô chunk, chạy song song
+    jobs = [(t, ids) for t in used for ids in split_batches(t, chunks_per_call)]
+    results = run_extractions(llm, schema, jobs, by_id, on_progress)
+    # Bước 4: giữ mục có evidence nguyên văn trong chunk; khớp thực thể đầu kia
     stats: Counter[str] = Counter()
     unmapped: list[dict[str, Any]] = []
     grounded: list[tuple[dict[str, Any], dict[str, Any], str]] = []
     for t, ids, res in results:
         if res.get("error"):
             stats["llm_failed_calls"] += 1
-            ctx.log(f"lỗi trích mục {t['title']!r} ({ids[0]}...): {res['error']}")
+            on_log(f"lỗi trích mục {t['title']!r} ({ids[0]}...): {res['error']}")
         unmapped += [{**u, "topic": t["title"], "chunk_id": ids[0]} for u in res["unmapped"]]
         for it in res["items"]:
-            cid = _grounded(it, ids, by_id)
+            cid = find_grounded_chunk(it, ids, by_id)
             if cid is None:
                 stats["evidence_dropped"] += 1
                 continue
             grounded.append((t, it, cid))
-            slot = ctx.schema.slot(it["slot"])
+            slot = schema.slot(it["slot"])
             assert slot is not None  # `extract` chỉ giữ ô có trong schema
             for rel in slot.relations:
                 linker.ref(rel.object_type, it["text"], it["en"])
-    # Bước 6: LLM chọn nút cho thuật ngữ chưa khớp chính xác
-    linker.resolve_pending(ctx)
-    # Bước 7: dựng triple (gộp trùng)
-    triples = _merge([tr for t, it, cid in grounded
-                      for tr in _triples(ctx.document_id, t, it, cid, by_id[cid]["page_start"], linker)])
+    # Bước 5: LLM chọn nút cho thuật ngữ chưa khớp chính xác
+    linker.resolve_pending(llm, on_progress, on_log)
+    # Bước 6: dựng triple (gộp trùng)
+    triples = merge_triples([tr for t, it, cid in grounded
+                             for tr in build_triples(document_id, t, it, cid, by_id[cid]["page_start"], linker)])
     for t in topics:
         t["links"] = {et: linker.final(et, t["title"], t["en"]).model_dump()
                       for et in TOPIC_ENTITY_TYPES.get(t["kind"], ()) if linker.key(et, t["title"], t["en"]) in linker.refs}
-    # Bước 8: ghi kết quả máy
-    ctx.files.write_json("graph/topics.json", topics)
-    ctx.files.write_json("graph/unmapped.json", unmapped)
-    ctx.files.write_json("graph/stats.json", {**stats, "llm": ctx.llm.stats if ctx.llm else {}})
-    ctx.files.write_jsonl("triples.auto.jsonl", [x.model_dump() for x in triples])
-    # Bước 9: áp override của người duyệt -> `triples.jsonl`
-    return reapply(ctx)
+    return triples, topics, unmapped, dict(stats)
 
 
 # ---------------------------------------------------------------- override của người duyệt
@@ -324,30 +312,19 @@ def apply_overrides(triples: list[DocumentTriple], ov: dict[str, Any], schema: G
                 setattr(t, side, GraphNodeRef.model_validate(ref))
         sides = (t.subject, t.object)
         # nút mới của loại do bác sĩ định nghĩa tự được chấp nhận (không có từ điển chuẩn để đối chiếu)
-        linked = all(s.node_id and (s.link_method != "new" or s.node_id in accepted or _is_doc_type(schema, s.type)) for s in sides)
+        linked = all(s.node_id and (s.link_method != "new" or s.node_id in accepted or is_doc_type(schema, s.type)) for s in sides)
         t.status = "rejected" if t.triple_id in rejected else "ok" if linked else "unlinked"
         out.append(t)
     return out
 
 
-def _is_doc_type(schema: GraphSchema, type_: str) -> bool:
+def is_doc_type(schema: GraphSchema, type_: str) -> bool:
     e = schema.entity_types.get(type_)
     return e is not None and e.kg == "doc"
 
 
-def reapply(ctx: StageContext) -> dict:
-    auto = [DocumentTriple.model_validate(x) for x in ctx.files.read_jsonl("triples.auto.jsonl")]
-    if not auto and not ctx.files.exists("triples.auto.jsonl"):
-        raise StageError("Chưa trích quan hệ — hãy chạy bước Trích quan hệ trước.")
-    triples = apply_overrides(auto, ctx.overrides("graph"), ctx.schema)
-    ctx.files.write_jsonl("triples.jsonl", [t.model_dump() for t in triples])
-    return summarize(ctx, triples)
-
-
-def summarize(ctx: StageContext, triples: list[DocumentTriple]) -> dict[str, Any]:
-    topics = ctx.files.read_json("graph/topics.json", []) or []
-    unmapped = ctx.files.read_json("graph/unmapped.json", []) or []
-    stats = ctx.files.read_json("graph/stats.json", {}) or {}
+def summarize_triples(triples: list[DocumentTriple], topics: list[dict[str, Any]], unmapped: list[dict[str, Any]],
+                      stats: dict[str, Any], schema: GraphSchema) -> dict[str, Any]:
     status = Counter(t.status for t in triples)
     refs = {(s.type, s.text, s.en): s for t in triples for s in (t.subject, t.object)}
     link: dict[str, list[int]] = {}
@@ -360,7 +337,7 @@ def summarize(ctx: StageContext, triples: list[DocumentTriple]) -> dict[str, Any
         "topics_used": dict(Counter(t.get("kind", "other") for t in topics)),
         "triples": len(triples), "ok": status["ok"], "unlinked": status["unlinked"], "rejected": status["rejected"],
         "by_relation": dict(Counter(t.relation for t in triples if t.status == "ok")),
-        "linked": {ctx.schema.entity_types[k].title if k in ctx.schema.entity_types else k: f"{a}/{b}" for k, (a, b) in link.items()},
+        "linked": {schema.entity_types[k].title if k in schema.entity_types else k: f"{a}/{b}" for k, (a, b) in link.items()},
         "new_entities": len({s.node_id for t in triples for s in (t.subject, t.object) if s.link_method == "new"}),
         "unmapped": dict(Counter(u["kind"] for u in unmapped)),
         "evidence_dropped": stats.get("evidence_dropped", 0),

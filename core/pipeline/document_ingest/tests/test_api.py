@@ -15,6 +15,7 @@ from app.exception.exception_handler import register_exception_handlers
 from fastapi.testclient import TestClient
 from pypdf import PdfWriter
 from app.api.document_api import router
+from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
 from app.api.deps import get_document_service, get_document_ingest_pipeline_service, require_admin
 
 from pipeline.document_ingest.tests.test_document_pipeline import Base
@@ -301,7 +302,7 @@ class ApiTest(Base):
                 time.sleep(0.01)
             return {}
 
-        with patch("pipeline.document_ingest.stages.step1_ingest.run", slow):
+        with patch.object(DocumentIngestPipelineService, "_run_ingest", lambda _self, ctx: slow(ctx)):
             self.assertEqual(
                 self.c.post(
                     f"{self.base}/documents/tbook/stages/ingest/run", json={}

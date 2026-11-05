@@ -5,6 +5,9 @@ import importlib
 import json
 import threading
 import traceback
+from collections import Counter
+from datetime import UTC, datetime
+from collections.abc import Callable
 from types import ModuleType
 from typing import Any
 
@@ -13,6 +16,7 @@ from app.config.constants import (
     DOCUMENT_INGEST_CANCEL_CHANNEL,
     DOCUMENT_INGEST_QUEUE,
 )
+from app.dto.base.document import DocumentTriple
 from app.dto.request.document import TocUpdate, TripleUpdate
 from app.dto.response.document import DocumentOutput
 from app.exception.errors import (
@@ -31,23 +35,44 @@ from app.repositories.document_repository import DocumentRepository, now_iso
 from app.services.document_graph_service import DocumentGraphService
 from app.services.graph_schema_service import GraphSchemaService
 from app.services.document_service import DocumentService
+from pipeline.document_ingest import mapping
+from pipeline.document_ingest.graph_link import EntityLexicon, LexEntry
 from pipeline.document_ingest.graph_schema import CORE_SCHEMA
 from pipeline.document_ingest.stages import (
     StageCancelled,
     StageContext,
     StageError,
+    step1_ingest,
+    step2_toc,
+    step3_chunks,
+    step4_index,
+    step5_graph,
+    step6_graph_index,
 )
 
 
 _GRAPH_STAGES = {"graph", "graph_index"}
 
 
-def _module(stage_id: str) -> ModuleType:
+def get_stage_module(stage_id: str) -> ModuleType:
     if stage_id not in STAGE_BY_ID:
         raise NotFoundError(stage_id)
     return importlib.import_module(
         f"pipeline.document_ingest.stages.{STAGE_BY_ID[stage_id]['module']}"
     )
+
+
+def _save_figures(files: Any, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Ghi ảnh hình minh hoạ ra `figures/` rồi thay bytes bằng `image_key` để part JSON vẫn serialize được."""
+    per_page: Counter[int] = Counter()
+    for blk in blocks:
+        png = blk.pop("image_png", None)
+        if blk["label"] != "figure" or png is None:
+            continue
+        per_page[blk["page"]] += 1
+        blk["image_key"] = f"figures/p{blk['page']:05d}_{per_page[blk['page']]:02d}.png"
+        files.put_bytes(blk["image_key"], png, "image/png")
+    return blocks
 
 
 class DocumentIngestPipelineService:
@@ -109,6 +134,199 @@ class DocumentIngestPipelineService:
             cancel=cancel or threading.Event(),
         )
 
+    # ---- IO của bước thuần (ingest, toc): đọc/ghi file ở đây, hàm biến đổi nằm trong pipeline/ ----
+    def get_runner(self, stage_id: str) -> Callable[[StageContext], dict[str, Any]]:
+        own = {"ingest": self._run_ingest, "toc": self._run_toc, "chunks": self._run_chunks, "index": self._run_index,
+               "graph": self._run_graph, "graph_index": self._run_graph_index}
+        return own.get(stage_id) or get_stage_module(stage_id).run
+
+    def get_reapplier(self, stage_id: str) -> Callable[[StageContext], dict[str, Any]]:
+        own = {"toc": self._reapply_toc, "graph": self._reapply_graph}
+        fn = own.get(stage_id) or getattr(get_stage_module(stage_id), "reapply", None)
+        if fn is None:
+            raise PipelineError(f"bước {stage_id} không có override")
+        return fn
+
+    @staticmethod
+    def _docling_convert(ctx: StageContext) -> step1_ingest.Convert:
+        files, ext = ctx.files, ctx.profile.extraction
+        docling, pdf = ctx.require_docling(), ctx.local_pdf()
+        key = f"force_ocr={ext.docling_force_ocr};tables={ext.docling_tables}"
+        if files.get_text("docling_parts/key.txt") not in (None, key):
+            files.delete_prefix("docling_parts/")  # cấu hình đổi: kết quả cũ không dùng lại được
+            files.delete_prefix("figures/")
+        files.put_text("docling_parts/key.txt", key)
+
+        def convert(first: int, last: int) -> list[dict[str, Any]]:
+            part = f"docling_parts/part_{first:05d}_{last:05d}.json"
+            if files.exists(part):  # đã đọc ở lần chạy trước (dừng/làm lại không mất)
+                return files.read_json(part, [])
+            blocks = docling.convert_pages(pdf, first, last, force_ocr=ext.docling_force_ocr, tables=ext.docling_tables)
+            files.write_json(part, _save_figures(files, blocks))
+            return blocks
+
+        return convert
+
+    def _run_ingest(self, ctx: StageContext) -> dict[str, Any]:
+        files, ext = ctx.files, ctx.profile.extraction
+        if not files.exists("source.pdf"):
+            raise StageError("Không tìm thấy file PDF của sách.")
+        convert = self._docling_convert(ctx) if ext.engine == "docling" else None
+        if convert is None:
+            files.delete_prefix("figures/")  # pdftotext không trích ảnh; xoá ảnh của lần chạy docling trước (nếu có)
+        rows, figures, summary = step1_ingest.extract_pages(
+            ctx.local_pdf(), ext, document_id=ctx.document_id, pages_opt=ctx.options.get("pages"),
+            convert=convert, on_progress=ctx.progress, on_log=ctx.log,
+        )
+        files.write_jsonl("pages.jsonl", rows)
+        for f in figures:
+            key = f.pop("image_key")
+            f["image_file"] = {"file_name": key.split("/")[-1], "storage_key": files.key(key), "content_type": "image/png"}
+        files.write_json("figures.json", figures)
+        return summary
+
+    def _run_toc(self, ctx: StageContext) -> dict[str, Any]:
+        llm = ctx.require_llm()
+        auto = step2_toc.read_toc(
+            ctx.local_pdf, ctx.files.read_jsonl("pages.jsonl"), ctx.profile.extraction, llm, ctx.docling,
+            ctx.options.get("pages"), ctx.progress, ctx.log,
+        )
+        ctx.files.write_json("toc.auto.json", auto)
+        return self._reapply_toc(ctx)
+
+    def _build_toc_file(self, ctx: StageContext, rows: list[dict[str, Any]], total: int) -> dict[str, Any]:
+        """Áp override + tính độ lệch/neo từ `toc.auto.json`, ghi `toc.json` (dùng cho bước Mục lục và Chia đoạn)."""
+        auto = ctx.files.read_json("toc.auto.json", None)
+        if auto is None:
+            raise StageError("Chưa đọc mục lục — hãy làm bước Mục lục trước.")
+        doc = mapping.build_toc(auto, ctx.overrides("toc"), rows, total)
+        ctx.files.write_json("toc.json", doc)
+        return doc
+
+    def _reapply_toc(self, ctx: StageContext) -> dict[str, Any]:
+        rows = ctx.files.read_jsonl("pages.jsonl")
+        has_text = bool(rows) or ctx.files.exists("source.pdf")
+        doc = self._build_toc_file(ctx, rows, step2_toc.count_pages(rows, ctx.local_pdf) if has_text else 0)
+        summary = step2_toc.summarize_toc(doc)
+        if ctx.llm is not None:
+            summary["llm"] = ctx.llm.stats
+        return summary
+
+    def _run_chunks(self, ctx: StageContext) -> dict[str, Any]:
+        files = ctx.files
+        all_rows = files.read_jsonl("pages.jsonl")
+        rows = [r for r in all_rows if not r.get("noise")]
+        if not rows:
+            raise StageError("Chưa đọc nội dung sách — hãy làm bước Đọc nội dung trước.")
+        if not files.exists("toc.auto.json"):
+            raise StageError("Chưa có mục lục — hãy làm bước Mục lục trước.")
+        ctx.progress(0, 2, "tính lại độ lệch + neo")
+        doc = self._build_toc_file(ctx, all_rows, max(r["page"] for r in rows))  # dữ liệu trang có thể mới hơn lần duyệt mục lục
+        chunks, review, summary = step3_chunks.cut_chunks(
+            doc, rows, ctx.profile.chunking, document_id=ctx.document_id, document_title=ctx.meta().get("title", ""),
+            figures=files.read_json("figures.json", []) or [], on_progress=ctx.progress,
+        )
+        files.write_jsonl("chunks.jsonl", chunks)
+        files.write_json("review/chunks.json", review)
+        return summary
+
+    def _run_index(self, ctx: StageContext) -> dict[str, Any]:
+        return self.index_document_chunks(ctx.document_id, ctx.progress)
+
+    def index_document_chunks(self, document_id: str, on_progress: Callable[[int, int, str], None] = lambda *_: None) -> dict[str, Any]:
+        """Embedding + nạp Qdrant từ `chunks.jsonl`; không ghi trạng thái stage nên reindex dùng lại được."""
+        files = self._repo.files_for(document_id)
+        chunks = files.read_jsonl("chunks.jsonl")
+        if not chunks:
+            raise StageError("Chưa có đoạn nội dung nào — hãy làm bước Chia đoạn trước.")
+        if self._embedding is None:
+            raise StageError("Chưa cấu hình công cụ tạo vector (embedding).")
+        vectors, total = self.documentService, len(chunks) * 2
+        extra: dict[str, Any] = {
+            "document_title": self._repo.meta(document_id).get("title", document_id),
+            "source_bucket": files.bucket,
+            "source_pdf": files.key("source.pdf"),
+        }
+        on_progress(0, len(chunks), "chuẩn bị kho tri thức")
+        embeddings, dim, model = step4_index.embed_chunks(chunks, self._embedding, lambda done, _t, msg: on_progress(done, total, msg))
+        vectors.ensure_collection(dim)
+        vectors.delete_chunks(document_id)  # bỏ các đoạn cũ của tài liệu (đã đổi hoặc không còn)
+        language = DocumentService.read_profile(self._repo, document_id).indexing.text_language
+        batch = step4_index.BATCH
+        for i in range(0, len(chunks), batch):
+            vectors.upsert_chunks(document_id, chunks[i : i + batch], embeddings[i : i + batch], extra, language=language)
+            on_progress(len(chunks) + min(i + batch, len(chunks)), total, "lưu vào Qdrant")
+        stored = vectors.count_chunks(document_id)
+        if stored != len(chunks):
+            raise StageError(f"Số đoạn đã lưu ({stored}) khác số đoạn cần lưu ({len(chunks)}).")
+        info = {"collection": vectors.collection, "points": stored, "embedding_model": model, "dimension": dim,
+                "indexed_at": datetime.now(UTC).isoformat(timespec="seconds")}
+        files.write_json("index.json", info)
+        return {"points": stored, "collection": info["collection"], "embedding_model": model, "dimension": dim}
+
+    @staticmethod
+    def _load_lexicon(ctx: StageContext) -> EntityLexicon:
+        lexicon = ctx.require_lexicon()
+        if ctx.graph is not None:  # thực thể mới đã nạp từ tài liệu trước cũng là từ điển để khớp
+            for n in ctx.graph.doc_entities():
+                if n.get("type") in ctx.schema.entity_types:
+                    lexicon.add(LexEntry(id=n["id"], name=n["name"], type=n["type"], source="DOC", kg="doc"))
+        return lexicon
+
+    def _run_graph(self, ctx: StageContext) -> dict[str, Any]:
+        files = ctx.files
+        llm = ctx.require_llm()
+        ctx.require_lexicon()
+        chunks = files.read_jsonl("chunks.jsonl")
+        if not chunks:
+            raise StageError("Chưa có đoạn nội dung nào — hãy làm bước Chia đoạn trước.")
+        triples, topics, unmapped, stats = step5_graph.extract_triples(
+            chunks, llm, self._load_lexicon(ctx), ctx.schema, document_id=ctx.document_id,
+            allow_new=ctx.profile.graph.allow_new_entities, chunks_per_call=ctx.profile.graph.chunks_per_call,
+            limit_topics=int(ctx.options.get("limit_topics") or 0), on_progress=ctx.progress, on_log=ctx.log,
+        )
+        files.write_json("graph/topics.json", topics)
+        files.write_json("graph/unmapped.json", unmapped)
+        files.write_json("graph/stats.json", {**stats, "llm": llm.stats})
+        files.write_jsonl("triples.auto.jsonl", [x.model_dump() for x in triples])
+        return self._reapply_graph(ctx)
+
+    def _reapply_graph(self, ctx: StageContext) -> dict[str, Any]:
+        files = ctx.files
+        auto = [DocumentTriple.model_validate(x) for x in files.read_jsonl("triples.auto.jsonl")]
+        if not auto and not files.exists("triples.auto.jsonl"):
+            raise StageError("Chưa trích quan hệ — hãy chạy bước Trích quan hệ trước.")
+        triples = step5_graph.apply_overrides(auto, ctx.overrides("graph"), ctx.schema)
+        files.write_jsonl("triples.jsonl", [t.model_dump() for t in triples])
+        return step5_graph.summarize_triples(
+            triples, files.read_json("graph/topics.json", []) or [], files.read_json("graph/unmapped.json", []) or [],
+            files.read_json("graph/stats.json", {}) or {}, ctx.schema,
+        )
+
+    def _run_graph_index(self, ctx: StageContext) -> dict[str, Any]:
+        files, graph, lexicon = ctx.files, ctx.require_graph(), ctx.require_lexicon()
+        # triple đã duyệt (status ok) + trang in của chunk để ghi nguồn
+        ok = [t for t in (DocumentTriple.model_validate(x) for x in files.read_jsonl("triples.jsonl")) if t.status == "ok"]
+        if not ok:
+            raise StageError("Chưa có quan hệ nào đã khớp đủ hai đầu để lưu — hãy duyệt bước Trích quan hệ trước.")
+        printed = {c["chunk_id"]: c["page_printed_start"] for c in files.read_jsonl("chunks.jsonl")}
+        ctx.progress(0, 3, "kiểm tra nút trong đồ thị")
+        existing = graph.existing_nodes(step6_graph_index.get_primekg_pairs(ok))
+        nodes, edges, skipped, merged = step6_graph_index.build_graph_payload(
+            ok, printed, ctx.meta().get("title", ctx.document_id), ctx.schema, lexicon, existing,
+        )
+        ctx.progress(1, 3, "ghi vào Neo4j")
+        graph.replace_document(ctx.document_id, nodes, edges)
+        ctx.progress(2, 3, "đếm lại cạnh đã lưu")
+        stored = graph.count_edges(ctx.document_id)
+        if stored != len(edges):
+            raise StageError(f"Số quan hệ đã lưu ({stored}) khác số cần lưu ({len(edges)}) — kiểm tra nút DermO/PrimeKG có trong Neo4j "
+                             "(thiếu nút thì cạnh không được tạo).")
+        summary = step6_graph_index.summarize_graph_payload(nodes, edges, skipped, merged, stored)
+        info = {k: summary[k] for k in ("edges", "nodes_added", "by_relation", "new_entities")}
+        files.write_json("graph_index.json", {**info, "indexed_at": datetime.now(UTC).isoformat(timespec="seconds")})
+        return summary
+
     # ---- chạy bước: check_runnable -> begin -> execute ----
     def check_runnable(
         self, document_id: str, stage_id: str, *, force: bool = False
@@ -169,7 +387,7 @@ class DocumentIngestPipelineService:
         try:
             ctx = self.make_ctx(document_id, stage_id, options, llm, cancel)
             ctx.log(f"bắt đầu bước {stage_id} options={options}")
-            summary = _module(stage_id).run(ctx)
+            summary = self.get_runner(stage_id)(ctx)
         except StageCancelled:
             self._repo.append_log(document_id, stage_id, "đã huỷ")
             self._repo.update_stage(
@@ -318,15 +536,13 @@ class DocumentIngestPipelineService:
         """Áp lại override của người duyệt (nhanh, không LLM). Dữ liệu bước đổi nên bước quay về chờ duyệt và các bước hạ nguồn thành stale."""
         if not self._repo.exists(document_id):
             raise NotFoundError(document_id)
-        mod = _module(stage_id)
-        if not hasattr(mod, "reapply"):
-            raise PipelineError(f"bước {stage_id} không có override")
+        reapply_fn = self.get_reapplier(stage_id)
         st = self._repo.status(document_id)["stages"][stage_id]
         if st.get("state") in {"not_started", "running"}:
             raise PipelineError(
                 f"bước {stage_id} chưa có kết quả để áp override (hiện: {st.get('state')})"
             )
-        summary = mod.reapply(
+        summary = reapply_fn(
             self.make_ctx(document_id, stage_id, st.get("options") or {})
         )
         self._repo.mark_stale(document_id, stage_id)

@@ -26,7 +26,7 @@ from app.services.document_ingest_pipeline_service import DocumentIngestPipeline
 from pipeline.document_ingest.profile import default_profile
 from pipeline.document_ingest.stages import StageError
 from pipeline.document_ingest.stages import step2_toc as T
-from pipeline.document_ingest.stages.step3_chunks import build_chunks, est_tokens, toc_nodes
+from pipeline.document_ingest.stages.step3_chunks import build_chunks, est_tokens, build_toc_nodes
 from pipeline.document_ingest.tests.memory_infra import MemoryMinio
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
@@ -455,7 +455,7 @@ class ChunksTest(Base):
             for i, ln in enumerate(r["text"].split("\n"))
         ]
         chunks, _ = build_chunks(
-            toc_nodes(doc, 11),
+            build_toc_nodes(doc, 11),
             units,
             prof.chunking,
             document_id="tbook",
