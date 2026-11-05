@@ -14,7 +14,7 @@ from app.services.document_ingest_pipeline_service import DocumentIngestPipeline
 
 from pipeline.document_ingest.graph_link import EntityLexicon, LexEntry
 from pipeline.document_ingest.stages import StageError
-from pipeline.document_ingest.stages.graph import EXTRACT_PROMPT, PICK_PROMPT, TOPIC_PROMPT
+from pipeline.document_ingest.stages.step5_graph import EXTRACT_PROMPT, PICK_PROMPT, TOPIC_PROMPT
 from pipeline.document_ingest.tests.test_document_pipeline import Base, FakeEmbedding
 
 IMPETIGO = ("Chốc là bệnh nhiễm khuẩn nông của da. Tổn thương ban đầu là bọng nước nông, dễ vỡ, để lại vảy tiết màu vàng mật ong. "

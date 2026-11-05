@@ -232,28 +232,17 @@ def _merge(rows: list[DocumentTriple]) -> list[DocumentTriple]:
     return list(by_id.values())
 
 
-def run(ctx: StageContext) -> dict:
+def _load_lexicon(ctx: StageContext) -> EntityLexicon:
     lexicon = ctx.require_lexicon()
-    chunks = ctx.files.read_jsonl("chunks.jsonl")
-    if not chunks:
-        raise StageError("Chưa có đoạn nội dung nào — hãy làm bước Chia đoạn trước.")
     if ctx.graph is not None:  # thực thể mới đã nạp từ tài liệu trước cũng là từ điển để khớp
         for n in ctx.graph.doc_entities():
             if n.get("type") in ctx.schema.entity_types:
                 lexicon.add(LexEntry(id=n["id"], name=n["name"], type=n["type"], source="DOC", kg="doc"))
-    by_id = {c["chunk_id"]: c for c in chunks}
-    topics = collect_topics(chunks)
-    classify_topics(ctx, topics, by_id)
-    limit = int(ctx.options.get("limit_topics") or 0)  # thử trên vài mục trước khi chạy cả sách
-    used = [t for t in topics if t["kind"] in TOPIC_TYPES][: limit or None]
-    ctx.log(f"{len(topics)} mục, {len(used)} mục bệnh/thuốc được trích")
+    return lexicon
 
-    linker = Linker(lexicon, ctx.profile.graph.allow_new_entities, ctx.schema)
-    for t in used:
-        for et in TOPIC_ENTITY_TYPES[t["kind"]]:
-            linker.ref(et, t["title"], t["en"], t.get("alt"))
 
-    jobs = [(t, ids) for t in used for ids in _batches(t, ctx.profile.graph.chunks_per_call)]
+def _extract_all(ctx: StageContext, jobs: list[tuple[dict[str, Any], list[str]]],
+                 by_id: dict[str, dict[str, Any]]) -> list[tuple[dict[str, Any], list[str], dict[str, Any]]]:
     results: list[tuple[dict[str, Any], list[str], dict[str, Any]]] = []
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         futs = {pool.submit(extract, ctx, t, ids, by_id): (t, ids) for t, ids in jobs}
@@ -261,7 +250,32 @@ def run(ctx: StageContext) -> dict:
             t, ids = futs[f]
             results.append((t, ids, f.result()))
             ctx.progress(n, len(jobs), f"AI trích quan hệ: {t['title']}")
+    return results
 
+
+def run(ctx: StageContext) -> dict:
+    # Bước 1: đọc chunks + nạp từ điển thực thể
+    ctx.require_lexicon()
+    chunks = ctx.files.read_jsonl("chunks.jsonl")
+    if not chunks:
+        raise StageError("Chưa có đoạn nội dung nào — hãy làm bước Chia đoạn trước.")
+    lexicon = _load_lexicon(ctx)
+    by_id = {c["chunk_id"]: c for c in chunks}
+    # Bước 2: gom chunk theo mục, LLM phân loại mục là bệnh / thuốc / khác
+    topics = collect_topics(chunks)
+    classify_topics(ctx, topics, by_id)
+    limit = int(ctx.options.get("limit_topics") or 0)  # thử trên vài mục trước khi chạy cả sách
+    used = [t for t in topics if t["kind"] in TOPIC_TYPES][: limit or None]
+    ctx.log(f"{len(topics)} mục, {len(used)} mục bệnh/thuốc được trích")
+    # Bước 3: khớp chính xác tên chủ đề vào từ điển
+    linker = Linker(lexicon, ctx.profile.graph.allow_new_entities, ctx.schema)
+    for t in used:
+        for et in TOPIC_ENTITY_TYPES[t["kind"]]:
+            linker.ref(et, t["title"], t["en"], t.get("alt"))
+    # Bước 4: LLM điền ô (slot) quan hệ cho từng mục, theo lô chunk, chạy song song
+    jobs = [(t, ids) for t in used for ids in _batches(t, ctx.profile.graph.chunks_per_call)]
+    results = _extract_all(ctx, jobs, by_id)
+    # Bước 5: giữ mục có evidence nguyên văn trong chunk; khớp thực thể đầu kia
     stats: Counter[str] = Counter()
     unmapped: list[dict[str, Any]] = []
     grounded: list[tuple[dict[str, Any], dict[str, Any], str]] = []
@@ -280,17 +294,20 @@ def run(ctx: StageContext) -> dict:
             assert slot is not None  # `extract` chỉ giữ ô có trong schema
             for rel in slot.relations:
                 linker.ref(rel.object_type, it["text"], it["en"])
+    # Bước 6: LLM chọn nút cho thuật ngữ chưa khớp chính xác
     linker.resolve_pending(ctx)
-
+    # Bước 7: dựng triple (gộp trùng)
     triples = _merge([tr for t, it, cid in grounded
                       for tr in _triples(ctx.document_id, t, it, cid, by_id[cid]["page_start"], linker)])
     for t in topics:
         t["links"] = {et: linker.final(et, t["title"], t["en"]).model_dump()
                       for et in TOPIC_ENTITY_TYPES.get(t["kind"], ()) if linker.key(et, t["title"], t["en"]) in linker.refs}
+    # Bước 8: ghi kết quả máy
     ctx.files.write_json("graph/topics.json", topics)
     ctx.files.write_json("graph/unmapped.json", unmapped)
     ctx.files.write_json("graph/stats.json", {**stats, "llm": ctx.llm.stats if ctx.llm else {}})
     ctx.files.write_jsonl("triples.auto.jsonl", [x.model_dump() for x in triples])
+    # Bước 9: áp override của người duyệt -> `triples.jsonl`
     return reapply(ctx)
 
 

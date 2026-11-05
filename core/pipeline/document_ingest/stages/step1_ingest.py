@@ -1,6 +1,7 @@
 import re
 import subprocess
 from collections import Counter
+from pathlib import Path
 from typing import Any
 
 from ..textutil import noise_score, parse_page_ranges, upper_ratio
@@ -47,13 +48,8 @@ def _save_figures(files: Any, blocks: list[dict[str, Any]]) -> list[dict[str, An
     return blocks
 
 
-def _run_docling(ctx: StageContext) -> dict:
-    from pypdf import PdfReader
-
+def _ocr_parts(ctx: StageContext, pdf: Path, first: int, last: int) -> None:
     files, ext = ctx.files, ctx.profile.extraction
-    pdf = ctx.local_pdf()
-    total = len(PdfReader(str(pdf)).pages)
-    first, last = _page_range(ctx.options.get("pages"), total)
     key = f"force_ocr={ext.docling_force_ocr};tables={ext.docling_tables}"
     if files.get_text("docling_parts/key.txt") not in (None, key):
         files.delete_prefix("docling_parts/")  # cấu hình đổi: kết quả cũ không dùng lại được
@@ -72,12 +68,17 @@ def _run_docling(ctx: StageContext) -> dict:
         ctx.log(f"trang {a}-{b}: {len(blocks)} khối")
     ctx.progress(len(spans), len(spans), "dựng pages.jsonl")
 
+
+def _blocks_by_page(files: Any, first: int, last: int) -> dict[int, list[dict]]:
     by_page: dict[int, list[dict]] = {}
     for name in sorted(n for n in files.list_names("docling_parts/part_") if n.endswith(".json")):
         for blk in files.read_json(name, []):
             if first <= blk["page"] <= last:
                 by_page.setdefault(blk["page"], []).append(blk)
+    return by_page
 
+
+def _docling_rows(by_page: dict[int, list[dict]], first: int, last: int, total: int, ext: Any) -> list[dict[str, Any]]:
     noise_set = parse_page_ranges(ext.noise_pages, total)
     rows = []
     for n in range(first, last + 1):
@@ -87,7 +88,24 @@ def _run_docling(ctx: StageContext) -> dict:
         # bảng/mục lục là Markdown nhiều dòng: gộp một dòng để chỉ số dòng ổn định
         lines = [("• " if b["label"] == "list" else "") + " ".join(b["text"].split()) for b in blocks if b["label"] in _BODY_LABELS]
         rows.append(_row(n, header, printed, "\n".join(lines), noise_set, ext.page_offset))
+    return rows
+
+
+def _run_docling(ctx: StageContext) -> dict:
+    from pypdf import PdfReader
+
+    files, ext = ctx.files, ctx.profile.extraction
+    # Bước 1: xác định khoảng trang cần đọc
+    pdf = ctx.local_pdf()
+    total = len(PdfReader(str(pdf)).pages)
+    first, last = _page_range(ctx.options.get("pages"), total)
+    # Bước 2: Docling nhận dạng chữ theo từng đoạn trang, lưu checkpoint `docling_parts/`
+    _ocr_parts(ctx, pdf, first, last)
+    # Bước 3: gom khối theo trang rồi dựng `pages.jsonl`
+    by_page = _blocks_by_page(files, first, last)
+    rows = _docling_rows(by_page, first, last, total, ext)
     files.write_jsonl("pages.jsonl", rows)
+    # Bước 4: danh sách hình minh hoạ -> `figures.json`
     figures = _figure_rows(ctx.document_id, files, by_page, first, last)
     files.write_json("figures.json", figures)
     summary = _summary("docling", rows, first, last)
@@ -112,11 +130,12 @@ def _figure_rows(document_id: str, files: Any, by_page: dict[int, list[dict]], f
     return out
 
 
-def _run_pdftotext(ctx: StageContext) -> dict:
-    files, ext = ctx.files, ctx.profile.extraction
-    files.delete_prefix("figures/")  # pdftotext không trích ảnh; xoá ảnh của lần chạy docling trước (nếu có)
-    files.write_json("figures.json", [])
-    cmd = ["pdftotext"] + (["-layout"] if ext.layout else []) + [str(ctx.local_pdf()), "-"]
+def _first_idx(lines: list[str]) -> int | None:
+    return next((i for i, ln in enumerate(lines) if ln.strip()), None)
+
+
+def _pdftotext_raw_pages(ctx: StageContext, layout: bool) -> list[list[str]]:
+    cmd = ["pdftotext"] + (["-layout"] if layout else []) + [str(ctx.local_pdf()), "-"]
     ctx.log("chạy: " + " ".join(cmd))
     try:
         proc = subprocess.run(cmd, capture_output=True, check=False)
@@ -127,31 +146,31 @@ def _run_pdftotext(ctx: StageContext) -> dict:
     raw_pages = proc.stdout.decode("utf-8", "replace").split("\f")
     if raw_pages and not raw_pages[-1].strip():
         raw_pages.pop()
-    total = len(raw_pages)
-    if total == 0:
+    if not raw_pages:
         raise StageError("PDF không có văn bản — với sách scan, hãy chọn “nhận dạng chữ từ ảnh” trong Cài đặt.")
-    lines_by_page = [p.split("\n") for p in raw_pages]
+    return [p.split("\n") for p in raw_pages]
 
-    def first_idx(lines: list[str]) -> int | None:
-        return next((i for i, ln in enumerate(lines) if ln.strip()), None)
 
-    header_keys: set[str] = set()
-    if ext.strip_running_headers:
-        cnt: Counter[str] = Counter()
-        for lines in lines_by_page:
-            i = first_idx(lines)
-            if i is not None and 4 <= len(lines[i].strip()) <= 110 and upper_ratio(lines[i].strip()) >= 0.6:
-                cnt[_head_key(lines[i].strip())] += 1
-        threshold = max(5, int(0.015 * total))
-        header_keys = {k for k, n in cnt.items() if n >= threshold and k}
-        ctx.log(f"{len(header_keys)} kiểu running header (ngưỡng ≥ {threshold} trang)")
+def _running_header_keys(ctx: StageContext, lines_by_page: list[list[str]]) -> set[str]:
+    cnt: Counter[str] = Counter()
+    for lines in lines_by_page:
+        i = _first_idx(lines)
+        if i is not None and 4 <= len(lines[i].strip()) <= 110 and upper_ratio(lines[i].strip()) >= 0.6:
+            cnt[_head_key(lines[i].strip())] += 1
+    threshold = max(5, int(0.015 * len(lines_by_page)))
+    keys = {k for k, n in cnt.items() if n >= threshold and k}
+    ctx.log(f"{len(keys)} kiểu running header (ngưỡng ≥ {threshold} trang)")
+    return keys
 
+
+def _pdftotext_rows(ctx: StageContext, lines_by_page: list[list[str]], header_keys: set[str]) -> list[dict[str, Any]]:
+    ext, total = ctx.profile.extraction, len(lines_by_page)
     noise_set = parse_page_ranges(ext.noise_pages, total)
     rows = []
     for n, lines in enumerate(lines_by_page, 1):
         ctx.progress(n, total, "đọc trang")
         header = ""
-        i = first_idx(lines)
+        i = _first_idx(lines)
         if i is not None and header_keys and _head_key(lines[i].strip()) in header_keys:
             header, lines = lines[i].strip(), lines[i + 1:]
         while lines and not lines[-1].strip():
@@ -162,8 +181,21 @@ def _run_pdftotext(ctx: StageContext) -> dict:
         while lines and not lines[0].strip():
             lines = lines[1:]
         rows.append(_row(n, header, printed, "\n".join(lines).rstrip(), noise_set, ext.page_offset))
+    return rows
+
+
+def _run_pdftotext(ctx: StageContext) -> dict:
+    files, ext = ctx.files, ctx.profile.extraction
+    files.delete_prefix("figures/")  # pdftotext không trích ảnh; xoá ảnh của lần chạy docling trước (nếu có)
+    files.write_json("figures.json", [])
+    # Bước 1: pdftotext -> chữ từng trang
+    lines_by_page = _pdftotext_raw_pages(ctx, ext.layout)
+    # Bước 2: nhận diện running header lặp lại ở đầu trang
+    header_keys = _running_header_keys(ctx, lines_by_page) if ext.strip_running_headers else set()
+    # Bước 3: tách header / số trang in / thân trang rồi dựng `pages.jsonl`
+    rows = _pdftotext_rows(ctx, lines_by_page, header_keys)
     files.write_jsonl("pages.jsonl", rows)
-    return _summary("pdftotext", rows, 1, total)
+    return _summary("pdftotext", rows, 1, len(rows))
 
 
 def _summary(engine: str, rows: list[dict], first: int, last: int) -> dict:

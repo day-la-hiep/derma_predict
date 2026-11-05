@@ -301,7 +301,7 @@ class ApiTest(Base):
                 time.sleep(0.01)
             return {}
 
-        with patch("pipeline.document_ingest.stages.ingest.run", slow):
+        with patch("pipeline.document_ingest.stages.step1_ingest.run", slow):
             self.assertEqual(
                 self.c.post(
                     f"{self.base}/documents/tbook/stages/ingest/run", json={}

@@ -14,7 +14,7 @@ from app.models.patient_profile import PatientProfile
 from app.repositories.document_repository import DocumentRepository
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
 from app.services.finalize_report_index_service import FinalizeReportIndexService
-from pipeline.document_ingest.stages import index as index_stage
+from pipeline.document_ingest.stages import step4_index as index_stage
 
 logger = logging.getLogger(__name__)
 

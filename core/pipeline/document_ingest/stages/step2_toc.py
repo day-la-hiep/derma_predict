@@ -196,31 +196,40 @@ def flag_suspects(entries: list[dict[str, Any]]) -> int:
 
 
 # ---------------------------------------------------------------- chạy / hiệu lực
-def run(ctx: StageContext) -> dict:
+def _locate_toc_pages(ctx: StageContext, total: int) -> tuple[list[int], str, str]:
     explicit = str(ctx.options.get("pages", "")).strip()
-    total = _total_pages(ctx)
-    ctx.progress(0, 3, "xác định trang mục lục")
     if explicit:
         pages = sorted(parse_page_ranges([x for x in explicit.split(",")], total))
         if not pages:
             raise StageError(f"Số trang mục lục không hợp lệ: {explicit!r} (ví dụ đúng: 8-22)")
-        source, reason = "user", "do bạn nhập"
-    else:
-        pages, reason = find_toc_pages(ctx)
-        source = "llm"
+        return pages, "user", "do bạn nhập"
+    pages, reason = find_toc_pages(ctx)
+    return pages, "llm", reason
+
+
+def run(ctx: StageContext) -> dict:
+    total = _total_pages(ctx)
+    # Bước 1: xác định trang mục lục (người dùng nhập hoặc LLM tìm)
+    ctx.progress(0, 3, "xác định trang mục lục")
+    pages, source, reason = _locate_toc_pages(ctx, total)
     ctx.log(f"trang mục lục ({source}): {pages[0]}-{pages[-1]} ({len(pages)} trang) — {reason}")
+    # Bước 2: lấy chữ các trang mục lục
     ctx.progress(1, 3, "đọc chữ các trang mục lục")
     texts = page_texts(ctx, pages)
     if not any(t.strip() for t in texts.values()):
         raise StageError("Các trang mục lục không có chữ — hãy kiểm tra lại số trang, hoặc chọn cách đọc “nhận dạng chữ từ ảnh” trong Cài đặt.")
+    # Bước 3: LLM chuyển chữ thành cây mục
     entries, warnings = parse_entries(ctx, texts)
     if not entries:
         raise StageError("AI không đọc ra mục nào từ các trang mục lục.")
+    # Bước 4: đánh dấu mục có số trang đáng ngờ
     flagged = flag_suspects(entries)
     if flagged:
         warnings.append(f"{flagged} mục có số trang không tăng dần theo thứ tự mục lục (thường do đọc sai chữ số) — vui lòng kiểm tra các mục được tô vàng.")
+    # Bước 5: ghi kết quả máy `toc.auto.json`
     ctx.files.write_json("toc.auto.json", {"toc_pages": pages, "pages_source": source, "entries": entries,
                                            "meta": {"warnings": warnings, "reason": reason}})
+    # Bước 6: áp override + tính độ lệch/neo -> `toc.json`
     return reapply(ctx)
 
 

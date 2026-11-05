@@ -6,7 +6,7 @@ from typing import Any
 from app.dto.base.document import DocumentTriple, GraphNodeRef
 
 from . import StageContext, StageError
-from .graph import relation_of
+from .step5_graph import relation_of
 
 
 def _pages_label(pages: list[int]) -> str:
@@ -15,6 +15,7 @@ def _pages_label(pages: list[int]) -> str:
 
 def run(ctx: StageContext) -> dict:
     graph, lexicon = ctx.require_graph(), ctx.require_lexicon()
+    # Bước 1: đọc triple đã duyệt (status ok) + trang in của chunk để ghi nguồn
     triples = [DocumentTriple.model_validate(x) for x in ctx.files.read_jsonl("triples.jsonl")]
     ok = [t for t in triples if t.status == "ok"]
     if not ok:
@@ -23,7 +24,7 @@ def run(ctx: StageContext) -> dict:
     title = ctx.meta().get("title", ctx.document_id)
     ctx.progress(0, 3, "kiểm tra nút trong đồ thị")
 
-    # Nút PrimeKG: id chỉ duy nhất trong từng loại (HPO 972 và NCBI 972 là hai nút), nên nút được nhận diện bằng cặp (loại, id)
+    # Bước 2: chọn nút cần nạp. Nút PrimeKG: id chỉ duy nhất trong từng loại (HPO 972 và NCBI 972 là hai nút), nên nút được nhận diện bằng cặp (loại, id)
     primekg_nodes = sorted({(s.type, s.node_id) for t in ok for s in (t.subject, t.object) if s.kg == "primekg" and s.node_id})
     existing = graph.existing_nodes(primekg_nodes)
     nodes: dict[tuple[str, str], dict[str, Any]] = {}
@@ -45,7 +46,7 @@ def run(ctx: StageContext) -> dict:
         nodes[(s.type, s.node_id)] = {"id": s.node_id, "name": s.name or s.en or s.text, "type": s.type, "source": "DOC"}
         return True
 
-    # Neo4j gộp cạnh theo (loại quan hệ, hai đầu, tài liệu): hai quan hệ cùng cặp nút (nhắc ở hai chunk) chỉ ra một cạnh, nên gộp
+    # Bước 3: dựng cạnh. Neo4j gộp cạnh theo (loại quan hệ, hai đầu, tài liệu): hai quan hệ cùng cặp nút (nhắc ở hai chunk) chỉ ra một cạnh, nên gộp
     # ở đây để số cạnh cần lưu khớp với số đếm lại và không mất trích dẫn của quan hệ ghi trước.
     by_key: dict[tuple[str, str, str | None, str, str | None], dict[str, Any]] = {}
     pages_of: dict[tuple[str, str, str | None, str, str | None], set[int]] = {}
@@ -79,11 +80,14 @@ def run(ctx: StageContext) -> dict:
             "evidence": t.evidence, "chunk_ids": list(t.chunk_ids), "pages": list(t.pages), "source_ref": "",
         }
         edges.append(by_key[key])
+    # Bước 4: ghi nguồn trích dẫn (tên sách + trang in) cho từng cạnh
     for key, e in by_key.items():
         pages = sorted(pages_of[key])
         e["source_ref"] = f"{title}, tr. {_pages_label(pages)}" if pages else title
+    # Bước 5: thay toàn bộ nút/cạnh của tài liệu trong Neo4j
     ctx.progress(1, 3, "ghi vào Neo4j")
     graph.replace_document(ctx.document_id, list(nodes.values()), edges)
+    # Bước 6: đếm lại để chắc đã lưu đủ rồi ghi `graph_index.json`
     ctx.progress(2, 3, "đếm lại cạnh đã lưu")
     stored = graph.count_edges(ctx.document_id)
     if stored != len(edges):

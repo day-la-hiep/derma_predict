@@ -11,7 +11,7 @@ from app.dto.base.shared import File
 class DocumentChunk(BaseModel):
     """Một đoạn chunk theo khung mục lục của `Document` — CHỈ tồn tại khi `Document.type ==
     "book"` (các loại khác không qua pipeline chunk). Nguồn:
-    `pipeline/document_ingest/stages/chunks.py::build_chunks` (`chunks.jsonl`)."""
+    `pipeline/document_ingest/stages/step3_chunks.py::build_chunks` (`chunks.jsonl`)."""
 
     chunk_id: str
     seq: int

@@ -46,7 +46,7 @@ def _module(stage_id: str) -> ModuleType:
     if stage_id not in STAGE_BY_ID:
         raise NotFoundError(stage_id)
     return importlib.import_module(
-        f"pipeline.document_ingest.stages.{stage_id}"
+        f"pipeline.document_ingest.stages.{STAGE_BY_ID[stage_id]['module']}"
     )
 
 

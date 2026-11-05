@@ -185,39 +185,11 @@ def _review(chunks: list[dict], cfg: ChunkingConfig) -> list[dict]:
     return out
 
 
-def run(ctx: StageContext) -> dict:
-    files, cfg = ctx.files, ctx.profile.chunking
-    rows = [r for r in files.iter_jsonl("pages.jsonl") if not r.get("noise")]
-    if not rows:
-        raise StageError("Chưa đọc nội dung sách — hãy làm bước Đọc nội dung trước.")
-    if not files.exists("toc.auto.json"):
-        raise StageError("Chưa có mục lục — hãy làm bước Mục lục trước.")
-    ctx.progress(0, 2, "tính lại độ lệch + neo")
-    max_page = max(r["page"] for r in rows)
-    refresh_toc(ctx, max_page)  # dữ liệu trang có thể mới hơn lần duyệt mục lục
-    doc = files.read_json("toc.json")
-    off = doc["offset"]
-    if off is None:
-        raise StageError("Chưa xác định được độ chênh lệch số trang — hãy nhập tay ở bước Mục lục rồi làm lại.")
-    skip = set(doc["toc_pages"])
-    nodes = toc_nodes(doc, max_page)
-    if not nodes:
-        raise StageError("Không mục nào của mục lục nằm trong các trang đã đọc — hãy kiểm tra độ chênh lệch số trang.")
-    units = [(r["page"], i, ln) for r in rows if r["page"] not in skip for i, ln in enumerate(r["text"].split("\n"))]
-    ctx.progress(1, 2, "cắt chunk")
-    document_title = ctx.meta().get("title", "")
-    figures = files.read_json("figures.json", []) or []
-    chunks, outside = build_chunks(nodes, units, cfg, document_id=ctx.document_id, document_title=document_title, printed_offset=off,
-                                   figures=figures)
-    if not chunks:
-        raise StageError("Không tạo được đoạn nào (nội dung sách có thể đang trống).")
-    files.write_jsonl("chunks.jsonl", chunks)
-    review = _review(chunks, cfg)
-    files.write_json("review/chunks.json", review)
+def _summarize(chunks: list[dict], nodes: list[dict], doc: dict[str, Any], outside: int, cfg: ChunkingConfig) -> dict[str, Any]:
     toks = sorted(c["tokens"] for c in chunks)
     summary: dict[str, Any] = {
         "chunks": len(chunks), "tokens": {"min": toks[0], "median": toks[len(toks) // 2], "max": toks[-1]},
-        "toc_entries_used": len(nodes), "toc_entries_total": len(doc["entries"]), "offset": off,
+        "toc_entries_used": len(nodes), "toc_entries_total": len(doc["entries"]), "offset": doc["offset"],
         "boundary_chunks": sum(1 for c in chunks if c["boundary"]), "suspect_chunks": sum(1 for c in chunks if c["suspect"]),
         "too_short": sum(1 for c in chunks if c["tokens"] < cfg.min_tokens),
         "too_long": sum(1 for c in chunks if c["tokens"] > cfg.max_tokens * 1.1),
@@ -231,3 +203,36 @@ def run(ctx: StageContext) -> dict:
     if warnings:
         summary["warnings"] = warnings
     return summary
+
+
+def run(ctx: StageContext) -> dict:
+    files, cfg = ctx.files, ctx.profile.chunking
+    # Bước 1: kiểm tra đầu vào (`pages.jsonl`, `toc.auto.json`)
+    rows = [r for r in files.iter_jsonl("pages.jsonl") if not r.get("noise")]
+    if not rows:
+        raise StageError("Chưa đọc nội dung sách — hãy làm bước Đọc nội dung trước.")
+    if not files.exists("toc.auto.json"):
+        raise StageError("Chưa có mục lục — hãy làm bước Mục lục trước.")
+    # Bước 2: tính lại độ lệch + neo mục lục theo chữ thân sách
+    ctx.progress(0, 2, "tính lại độ lệch + neo")
+    max_page = max(r["page"] for r in rows)
+    refresh_toc(ctx, max_page)  # dữ liệu trang có thể mới hơn lần duyệt mục lục
+    doc = files.read_json("toc.json")
+    if doc["offset"] is None:
+        raise StageError("Chưa xác định được độ chênh lệch số trang — hãy nhập tay ở bước Mục lục rồi làm lại.")
+    # Bước 3: mục lục -> các nút có điểm bắt đầu; thân sách -> các dòng chữ (bỏ trang mục lục)
+    nodes = toc_nodes(doc, max_page)
+    if not nodes:
+        raise StageError("Không mục nào của mục lục nằm trong các trang đã đọc — hãy kiểm tra độ chênh lệch số trang.")
+    skip = set(doc["toc_pages"])
+    units = [(r["page"], i, ln) for r in rows if r["page"] not in skip for i, ln in enumerate(r["text"].split("\n"))]
+    # Bước 4: cắt chunk theo khung mục lục
+    ctx.progress(1, 2, "cắt chunk")
+    chunks, outside = build_chunks(nodes, units, cfg, document_id=ctx.document_id, document_title=ctx.meta().get("title", ""),
+                                   printed_offset=doc["offset"], figures=files.read_json("figures.json", []) or [])
+    if not chunks:
+        raise StageError("Không tạo được đoạn nào (nội dung sách có thể đang trống).")
+    # Bước 5: ghi `chunks.jsonl` + danh sách chunk cần soát
+    files.write_jsonl("chunks.jsonl", chunks)
+    files.write_json("review/chunks.json", _review(chunks, cfg))
+    return _summarize(chunks, nodes, doc, outside, cfg)
