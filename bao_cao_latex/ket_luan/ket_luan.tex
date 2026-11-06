@@ -7,7 +7,7 @@
 
 Báo cáo đã trình bày việc xây dựng hệ thống hỗ trợ tiền chẩn đoán bệnh về da kết hợp ba thành phần: mạng CNN đa tỷ lệ phân loại ảnh, truy xuất tăng cường sinh văn bản (RAG) và đồ thị tri thức. Cụ thể:
 \begin{itemize}
-  \item Về xử lý ảnh, đề tài xây dựng nền tảng lý thuyết và kiến trúc AdaptiveCNN trên backbone ResNet-18, tích hợp tích chập đa kernel (AMKC) và tổng hợp đặc trưng thích nghi (Adaptive GeM) cùng bộ chỉ số đánh giá phù hợp với dữ liệu mất cân bằng lớp.
+  \item Về xử lý ảnh, đề tài xây dựng nền tảng lý thuyết và kiến trúc AdaptiveCNN trên backbone ResNet-18, tích hợp tích chập đa kernel (AMKC) cùng bộ chỉ số đánh giá phù hợp với dữ liệu mất cân bằng lớp.
   \item Về truy xuất tri thức, đề tài thiết kế luồng tìm kiếm ngữ nghĩa, từ khóa và hỗn hợp (RRF kết hợp xếp hạng lại), cùng luồng đồ thị tri thức có gắn nguồn gốc; luồng hỗn hợp đạt hit@5 = 1.00 và recall@10 = 0.94 trên bộ kiểm thử.
   \item Về phân tích thiết kế, đề tài xác định các tác nhân, usecase và thiết kế cơ sở dữ liệu cho cả chatbot, tư vấn trực tiếp với bác sĩ và quản lý cơ sở tri thức.
 \end{itemize}
