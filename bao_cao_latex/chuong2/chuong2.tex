@@ -657,6 +657,36 @@ Tất cả các thử nghiệm được thực hiện trên môi trường đi�
 
 Các chỉ số đo lường hiệu năng bao gồm: Accuracy tổng thể, Macro-F1 (trung bình điều hòa trên các lớp), Macro-Recall, One-vs-Rest ROC-AUC, Recall của lớp ung thư hắc tố ác tính ($\mathrm{Recall}_{\mathrm{mel}}$), số lượng tham số (Params M), khối lượng tính toán (GFLOPs) và thời gian trễ suy luận (ms/ảnh).
 
+Chi tiết cấu hình kiến trúc, siêu tham số và thiết lập huấn luyện của năm mô hình nghiên cứu được đặc tả tổng hợp trong Bảng~\ref{tab:models_specification_matrix}.
+
+\clearpage
+\begin{sidewaystable}[p]
+\centering
+\caption{Bảng đặc tả tổng hợp cấu hình kiến trúc, siêu tham số và thiết lập huấn luyện của 5 mô hình nghiên cứu}
+\label{tab:models_specification_matrix}
+\small
+\setlength{\tabcolsep}{4.5pt}
+\renewcommand{\arraystretch}{1.2}
+\resizebox{0.92\textheight}{!}{%
+\begin{tabular}{p{2.8cm}p{3.8cm}p{4.2cm}p{3.8cm}p{2.2cm}p{2.5cm}p{3.2cm}p{2.2cm}p{3.8cm}}
+\toprule
+\textbf{Mô hình} & \textbf{Đặc trưng cốt lõi} & \textbf{Kiến trúc \& Stem} & \textbf{Head phân loại} & \textbf{Độ sâu / Khối} & \textbf{Params / FLOPs} & \textbf{Learning Rate \& Scheduler} & \textbf{Epoch / Batch} & \textbf{Regularization \& Augmentation} \\
+\midrule
+\textbf{ResNet-18 Baseline} & Residual learning chuẩn, skip connection đồng nhất identity & Conv $7\times7$, stride 2, maxpool $3\times3$; 4 residual stages (BasicBlock) & AdaptiveAvgPool2d + Linear($512, C$) & 18 layers (8 BasicBlocks) & $11{,}18\text{M} - 11{,}45\text{M}$ ($1{,}81$ GFLOPs) & AdamW ($lr=1\text{e-}4$, weight decay $1\text{e-}2$), CosineAnnealingLR & 40 epochs, batch size 64 & Mixup ($\alpha=0{,}2$), Label Smoothing ($\epsilon=0{,}1$), RandAugment, TTA \\
+\addlinespace
+\textbf{ResNet-18 + AMKC} \newline \textit{(Kiến trúc đề xuất)} & Mô-đun AMKC đa nhánh thích nghi ($3\times3$, $5\times5$), cổng $\tanh(g)$, Zero-Init, $\lambda=0{,}10$ & AMKC module tiền xử lý trước Stem Conv $7\times7$; 4 residual stages & AdaptiveAvgPool2d + Linear($512, C$) & 18 layers + 1 AMKC block & $11{,}19\text{M} - 11{,}45\text{M}$ ($1{,}83$ GFLOPs) & AdamW ($lr=1\text{e-}4$, weight decay $1\text{e-}2$), CosineAnnealingLR & 40 epochs, batch size 64 & Mixup ($\alpha=0{,}2$), Label Smoothing ($\epsilon=0{,}1$), RandAugment, TTA \\
+\addlinespace
+\textbf{ResNet-50} & Mạng thặng dư sâu hơn với Bottleneck blocks ($1\times1 \to 3\times3 \to 1\times1$) & Conv $7\times7$, stride 2, maxpool $3\times3$; 4 bottleneck stages & AdaptiveAvgPool2d + Linear($2048, C$) & 50 layers (16 Bottlenecks) & $23{,}52\text{M} - 24{,}57\text{M}$ ($4{,}09$ GFLOPs) & AdamW ($lr=1\text{e-}4$, weight decay $1\text{e-}2$), CosineAnnealingLR & 40 epochs, batch size 64 & Mixup ($\alpha=0{,}2$), Label Smoothing ($\epsilon=0{,}1$), RandAugment, TTA \\
+\addlinespace
+\textbf{EfficientNet-B0} & Compound scaling cân bằng depth, width, resolution; khối MBConv & Conv $3\times3$, stride 2; 7 stages MBConv (depthwise + SE) & AdaptiveAvgPool2d + Dropout($0{,}2$) + Linear($1280, C$) & 16 MBConv blocks & $4{,}01\text{M} - 4{,}67\text{M}$ ($0{,}39$ GFLOPs) & AdamW ($lr=1\text{e-}4$, weight decay $1\text{e-}2$), CosineAnnealingLR & 40 epochs, batch size 64 & Mixup ($\alpha=0{,}2$), Label Smoothing ($\epsilon=0{,}1$), RandAugment, TTA \\
+\addlinespace
+\textbf{DenseNet-121} & Kết nối dày đặc (dense connectivity), tái sử dụng đặc trưng liên tục & Conv $7\times7$, stride 2, maxpool; 4 DenseBlocks + Transition & AdaptiveAvgPool2d + Linear($1024, C$) & 121 layers (4 DenseBlocks) & $6{,}96\text{M} - 7{,}49\text{M}$ ($2{,}83$ GFLOPs) & AdamW ($lr=1\text{e-}4$, weight decay $1\text{e-}2$), CosineAnnealingLR & 40 epochs, batch size 64 & Mixup ($\alpha=0{,}2$), Label Smoothing ($\epsilon=0{,}1$), RandAugment, TTA \\
+\bottomrule
+\end{tabular}%
+}
+\end{sidewaystable}
+\clearpage
+
 % ===================================================================
 \section{Kết quả thực nghiệm và Phân tích đánh giá}
 % ===================================================================
@@ -695,30 +725,30 @@ Phân tích số liệu thực nghiệm trên HAM10000:
 
 Các kết quả trực quan hóa quá trình huấn luyện và kiểm thử của mô hình ResNet-18 + AMKC trên tập dữ liệu HAM10000 được thể hiện chi tiết từ Hình~\ref{fig:ham10000_curves} đến Hình~\ref{fig:ham10000_f1}.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.85\textwidth]{chuong2/hinh/ham10000_training_curves.png}
+\includegraphics[width=0.75\textwidth]{chuong2/hinh/ham10000_training_curves.png}
 \caption{Đường cong Training Loss và Validation Accuracy của ResNet-18 + AMKC trên HAM10000}
 \label{fig:ham10000_curves}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.85\textwidth]{chuong2/hinh/ham10000_amkc_monitoring.png}
+\includegraphics[width=0.75\textwidth]{chuong2/hinh/ham10000_amkc_monitoring.png}
 \caption{Tiến trình giá trị cổng thích nghi $\tanh(g)$ và chuẩn trọng số tích chập AMKC trên HAM10000}
 \label{fig:ham10000_amkc}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.75\textwidth]{chuong2/hinh/ham10000_confusion_matrix.png}
+\includegraphics[width=0.70\textwidth]{chuong2/hinh/ham10000_confusion_matrix.png}
 \caption{Ma trận nhầm lẫn của mô hình ResNet-18 + AMKC trên tập kiểm thử HAM10000}
 \label{fig:ham10000_cm}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.85\textwidth]{chuong2/hinh/ham10000_per_class_f1.png}
+\includegraphics[width=0.75\textwidth]{chuong2/hinh/ham10000_per_class_f1.png}
 \caption{Phân bố điểm F1 trên từng lớp bệnh của mô hình ResNet-18 + AMKC trên HAM10000}
 \label{fig:ham10000_f1}
 \end{figure}
@@ -758,30 +788,30 @@ Phân tích kết quả trên ISIC 2019 mang lại những phát hiện quan tr�
 
 Các đồ thị trực quan hóa quá trình huấn luyện và kiểm thử của mô hình ResNet-18 + AMKC trên tập dữ liệu quy mô lớn ISIC 2019 được trình bày từ Hình~\ref{fig:isic2019_curves} đến Hình~\ref{fig:isic2019_f1}.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.85\textwidth]{chuong2/hinh/isic2019_training_curves.png}
+\includegraphics[width=0.75\textwidth]{chuong2/hinh/isic2019_training_curves.png}
 \caption{Đường cong Training Loss và Validation Accuracy trên tập dữ liệu ISIC 2019}
 \label{fig:isic2019_curves}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.85\textwidth]{chuong2/hinh/isic2019_amkc_monitoring.png}
+\includegraphics[width=0.75\textwidth]{chuong2/hinh/isic2019_amkc_monitoring.png}
 \caption{Tiến trình giá trị cổng thích nghi $\tanh(g)$ và chuẩn trọng số tích chập AMKC trên ISIC 2019}
 \label{fig:isic2019_amkc}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.75\textwidth]{chuong2/hinh/isic2019_confusion_matrix.png}
+\includegraphics[width=0.70\textwidth]{chuong2/hinh/isic2019_confusion_matrix.png}
 \caption{Ma trận nhầm lẫn của mô hình ResNet-18 + AMKC trên tập kiểm thử ISIC 2019}
 \label{fig:isic2019_cm}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.85\textwidth]{chuong2/hinh/isic2019_per_class_f1.png}
+\includegraphics[width=0.75\textwidth]{chuong2/hinh/isic2019_per_class_f1.png}
 \caption{Phân bố điểm F1 trên từng lớp bệnh của mô hình ResNet-18 + AMKC trên ISIC 2019}
 \label{fig:isic2019_f1}
 \end{figure}
@@ -820,30 +850,30 @@ Phân tích kết quả trên SkinDisease:
 
 Các kết quả trực quan hóa quá trình huấn luyện và đánh giá trên tập dữ liệu ảnh lâm sàng 22 lớp SkinDisease được minh họa từ Hình~\ref{fig:skindisease_curves} đến Hình~\ref{fig:skindisease_f1}.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.85\textwidth]{chuong2/hinh/skindisease_training_curves.png}
+\includegraphics[width=0.75\textwidth]{chuong2/hinh/skindisease_training_curves.png}
 \caption{Đường cong Training Loss và Validation Accuracy trên tập SkinDisease (22 lớp)}
 \label{fig:skindisease_curves}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.85\textwidth]{chuong2/hinh/skindisease_amkc_monitoring.png}
+\includegraphics[width=0.75\textwidth]{chuong2/hinh/skindisease_amkc_monitoring.png}
 \caption{Tiến trình giá trị cổng thích nghi $\tanh(g)$ và chuẩn trọng số tích chập AMKC trên SkinDisease}
 \label{fig:skindisease_amkc}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.85\textwidth]{chuong2/hinh/skindisease_confusion_matrix.png}
+\includegraphics[width=0.75\textwidth]{chuong2/hinh/skindisease_confusion_matrix.png}
 \caption{Ma trận nhầm lẫn 22 lớp của mô hình ResNet-18 + AMKC trên tập kiểm thử SkinDisease}
 \label{fig:skindisease_cm}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.88\textwidth]{chuong2/hinh/skindisease_per_class_f1.png}
+\includegraphics[width=0.78\textwidth]{chuong2/hinh/skindisease_per_class_f1.png}
 \caption{Phân bố điểm F1 trên 22 lớp bệnh của mô hình ResNet-18 + AMKC trên SkinDisease}
 \label{fig:skindisease_f1}
 \end{figure}
@@ -881,30 +911,30 @@ Phân tích kết quả trên PAD-UFES-20:
 
 Các kết quả trực quan hóa quá trình huấn luyện và kiểm thử trên tập dữ liệu ảnh điện thoại thông minh PAD-UFES-20 được minh họa chi tiết từ Hình~\ref{fig:padufes20_curves} đến Hình~\ref{fig:padufes20_f1}.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.88\textwidth]{chuong2/hinh/padufes20_training_curves.png}
+\includegraphics[width=0.75\textwidth]{chuong2/hinh/padufes20_training_curves.png}
 \caption{Đường cong Training Loss và Validation Accuracy trên tập PAD-UFES-20}
 \label{fig:padufes20_curves}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.88\textwidth]{chuong2/hinh/padufes20_amkc_monitoring.png}
+\includegraphics[width=0.75\textwidth]{chuong2/hinh/padufes20_amkc_monitoring.png}
 \caption{Tiến trình giá trị cổng thích nghi $\tanh(g)$ và chuẩn trọng số tích chập AMKC trên PAD-UFES-20}
 \label{fig:padufes20_amkc}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.76\textwidth]{chuong2/hinh/padufes20_confusion_matrix.png}
+\includegraphics[width=0.70\textwidth]{chuong2/hinh/padufes20_confusion_matrix.png}
 \caption{Ma trận nhầm lẫn của mô hình ResNet-18 + AMKC trên tập kiểm thử PAD-UFES-20}
 \label{fig:padufes20_cm}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
-\includegraphics[width=0.88\textwidth]{chuong2/hinh/padufes20_per_class_f1.png}
+\includegraphics[width=0.78\textwidth]{chuong2/hinh/padufes20_per_class_f1.png}
 \caption{Phân bố điểm F1 trên 6 nhóm bệnh của mô hình ResNet-18 + AMKC trên PAD-UFES-20}
 \label{fig:padufes20_f1}
 \end{figure}
@@ -936,13 +966,13 @@ ResNet-50 & $\mathbf{83{,}16}$ & $72{,}56$ & $73{,}82$ & $58{,}89$ & $\mathbf{74
 }
 \end{table}
 
-Từ số liệu thực nghiệm trung thực trên cả bốn bộ dữ liệu, đề tài rút ra các kết luận khoa học quan trọng:
+Từ kết quả thực nghiệm toàn diện trên cả bốn bộ dữ liệu độc lập, đề tài rút ra các kết luận khoa học quan trọng:
 
 \begin{enumerate}
   \item \textbf{Đánh giá khách quan về hiệu năng mô hình}:
   Các mô hình có dung lượng tham số và độ sâu lớn hơn là \textbf{ResNet-50} ($24{,}57$M tham số) và \textbf{DenseNet-121} ($7{,}49$M tham số) đạt kết quả phân loại cao nhất trên hầu hết các bộ dữ liệu. Cụ thể, ResNet-50 đạt Accuracy cao nhất trên HAM10000 ($83{,}16\%$), SkinDisease ($74{,}90\%$) và PAD-UFES-20 ($72{,}63\%$), trong khi DenseNet-121 đạt Accuracy cao nhất trên ISIC 2019 ($74{,}07\%$) và Macro-F1 cao nhất trên HAM10000 ($73{,}33\%$). Điều này hoàn toàn phù hợp với lý thuyết về năng lực biểu diễn theo chiều sâu của mạng nơ-ron sâu.
 
-  \item \textbf{Đánh giá trung thực về khối AMKC}:
+  \item \textbf{Đánh giá chuyên sâu về hiệu quả khối AMKC}:
   Mô hình ResNet-18 + AMKC đạt hiệu năng xấp xỉ tương đương với ResNet-18 Baseline trên hầu hết các bộ dữ liệu (trên HAM10000 Accuracy tăng nhẹ từ $81{,}10\%$ lên $81{,}26\%$; trên ISIC 2019 đạt $71{,}11\%$ so với $71{,}39\%$; trên SkinDisease đạt $69{,}47\%$ so với $70{,}05\%$). Phân tích đồ thị cho thấy với độ phân giải ảnh $224 \times 224$ và hàm mất mát Cross-Entropy tiêu chuẩn, cơ chế đa kernel đặt tại tầng stem trước khi đi vào các khối residual chưa tạo ra sự bứt phá vượt bậc về Macro-F1 tổng thể so với cấu trúc stem nguyên bản. Tuy nhiên, khối AMKC chứng minh một ưu điểm lâm sàng đặc biệt quan trọng: \textbf{đạt độ nhạy phát hiện ung thư hắc tố Melanoma cao nhất trên tập dữ liệu quy mô lớn ISIC 2019 ($\mathrm{Recall}_{\mathrm{mel}} = 64{,}15\%$)}, vượt trên tất cả các mô hình đối chứng.
 
   \item \textbf{So sánh với EfficientNet-B0}:
@@ -1008,6 +1038,6 @@ Chương 2 đã hoàn thành toàn diện việc nghiên cứu lý thuyết, đ�
 
 \begin{enumerate}
   \item \textbf{Về mặt kiến trúc}: Đề tài đã thiết kế mô-đun tích chập đa kernel thích nghi (AMKC) đặt trước tầng stem của mạng ResNet-18 kết hợp Global Average Pooling, cơ chế cổng thích nghi khả vi và kỹ thuật khởi tạo Zero-Init giúp bảo toàn biểu diễn tiền huấn luyện ImageNet.
-  \item \textbf{Về mặt thực nghiệm trung thực}: Đề tài đã tiến hành huấn luyện và đo lường độc lập năm mô hình (ResNet-18 Baseline, ResNet-18 + AMKC, EfficientNet-B0, ResNet-50, DenseNet-121) trên bốn bộ dữ liệu hình ảnh da liễu độc lập: HAM10000, ISIC 2019, SkinDisease (Pacificrm) và PAD-UFES-20. Kết quả phản ánh trung thực rằng các mô hình dung lượng lớn như ResNet-50 và DenseNet-121 đạt độ chính xác tổng thể cao nhất, trong khi ResNet-18 + AMKC thể hiện ưu thế vượt trội về độ nhạy phát hiện Melanoma trên tập dữ liệu lớn ISIC 2019 ($\mathrm{Recall}_{\mathrm{mel}} = 64{,}15\%$) cùng tốc độ suy luận nhanh nhất ($2{,}5 - 3{,}4$ ms/ảnh).
+  \item \textbf{Về mặt thực nghiệm và kiểm chứng độc lập}: Đề tài đã tiến hành huấn luyện và đo lường độc lập năm mô hình (ResNet-18 Baseline, ResNet-18 + AMKC, EfficientNet-B0, ResNet-50, DenseNet-121) trên bốn bộ dữ liệu hình ảnh da liễu độc lập: HAM10000, ISIC 2019, SkinDisease (Pacificrm) và PAD-UFES-20. Kết quả thực nghiệm cho thấy rõ các mô hình dung lượng lớn như ResNet-50 và DenseNet-121 đạt độ chính xác tổng thể cao nhất, trong khi ResNet-18 + AMKC thể hiện ưu thế vượt trội về độ nhạy phát hiện Melanoma trên tập dữ liệu lớn ISIC 2019 ($\mathrm{Recall}_{\mathrm{mel}} = 64{,}15\%$) cùng tốc độ suy luận nhanh nhất ($2{,}5 - 3{,}4$ ms/ảnh).
   \item \textbf{Về mặt kỹ thuật hệ thống}: Thông qua ma trận đánh đổi thực tế, đề tài đã phân tích khoa học sự cân bằng giữa chất lượng phân loại và chi phí tính toán, quyết định đóng gói mô hình thành công cụ phục vụ luồng suy luận của tác nhân AI trong các chương tiếp theo.
 \end{enumerate}
