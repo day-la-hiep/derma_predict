@@ -11,14 +11,17 @@
 
 \usepackage{fontspec}
 \setmainfont{Times New Roman}[Ligatures=TeX]
+\setmonofont{Consolas}[Scale=0.96]
 \usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=3cm,right=2cm]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{tikz}
-\usetikzlibrary{arrows.meta}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, calc, fit, shadows}
 \usepackage{float}
 \usepackage{longtable}
 \usepackage{array}
+\usepackage{booktabs}
+\usepackage{multirow}
 \usepackage{enumitem}
 \usepackage{setspace}
 \usepackage{etoolbox}
@@ -28,6 +31,45 @@
 \usepackage{fancyhdr}
 \usepackage{tocloft}
 \usepackage[unicode,hidelinks]{hyperref}
+
+\usepackage{xcolor}
+\usepackage{listings}
+
+% Cấu hình hiển thị code Python
+\definecolor{codegreen}{rgb}{0.13,0.55,0.13}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{codeblue}{rgb}{0.0,0.2,0.7}
+\definecolor{backcolour}{rgb}{0.97,0.97,0.97}
+
+\lstdefinestyle{pythonstyle}{
+    language=Python,
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen}\itshape,
+    keywordstyle=\color{codeblue}\bfseries,
+    numberstyle=\footnotesize\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\fontsize{10.5pt}{14pt}\selectfont,
+    breakatwhitespace=false,
+    breaklines=true,
+    postbreak=\mbox{\textcolor{gray}{$\hookrightarrow$}\space},
+    columns=flexible,
+    keepspaces=true,
+    numbers=left,
+    numbersep=6pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2,
+    frame=single,
+    rulecolor=\color{black!20},
+    xleftmargin=0.4cm,
+    xrightmargin=0.1cm,
+    aboveskip=10pt,
+    belowskip=10pt
+}
+\lstset{style=pythonstyle}
+
 
 % Quy chuẩn trình bày: A4 dọc; lề trên/dưới 2,5 cm, trái 3 cm, phải 2 cm; Times New Roman 13 pt;
 % giãn dòng 1,5 cho nội dung chính; lùi đầu dòng 1,27 cm; giãn đoạn trước 0 pt, sau 6 pt; căn đều hai bên.

@@ -20,7 +20,7 @@ Mục tiêu tổng quát của đề tài là nghiên cứu, thiết kế và hi
 
 Để hiện thực hóa mục tiêu tổng quát, đề tài tập trung giải quyết các mục tiêu cụ thể sau:
 \begin{itemize}
-  \item \textbf{Nghiên cứu mô hình thị giác máy tính phân loại tổn thương da thích nghi đa tỷ lệ:} Tổn thương da trong thực tế rất đa dạng về kích thước, hình thái và góc độ chụp ảnh lâm sàng. Đề tài hướng tới việc xây dựng kiến trúc mạng CNN đa tỷ lệ (AdaptiveCNN) với cơ chế tích chập đa kích thước nhân (AMKC) và cơ chế tổng hợp đặc trưng thích nghi (Adaptive GeM), giúp nhận diện chính xác các tổn thương da phổ biến và cung cấp giả thuyết chẩn đoán kèm độ tin cậy định lượng.
+  \item \textbf{Nghiên cứu mô hình thị giác máy tính phân loại tổn thương da thích nghi đa tỷ lệ:} Tổn thương da trong thực tế rất đa dạng về kích thước, hình thái và góc độ chụp ảnh lâm sàng. Đề tài hướng tới việc xây dựng kiến trúc mạng CNN đa tỷ lệ (AdaptiveCNN) với cơ chế tích chập đa kích thước nhân (AMKC) , giúp nhận diện chính xác các tổn thương da phổ biến và cung cấp giả thuyết chẩn đoán kèm độ tin cậy định lượng.
   \item \textbf{Xây dựng trợ lý hội thoại y khoa minh bạch, không ảo giác thông qua RAG và Knowledge Graph:} Tích hợp kỹ thuật RAG cho phép hệ thống tra cứu chính xác các đoạn trích từ giáo trình và hướng dẫn điều trị da liễu chuẩn hóa được số hóa. Song song đó, khai thác Đồ thị tri thức y sinh (PrimeKG, DermO) để nhận diện thực thể, kiểm tra tính logic giữa các triệu chứng, yếu tố nguy cơ và loại trừ các giả thuyết mâu thuẫn, đảm bảo mọi câu trả lời của trợ lý ảo đều có dẫn chứng cụ thể từ nguồn uy tín.
   \item \textbf{Tối ưu hóa quy trình thu thập bệnh sử và hỗ trợ bác sĩ chuyên khoa:} Tự động hóa quá trình hỏi đáp, sàng lọc triệu chứng ban đầu thông qua tác nhân AI hoạt động liên tục 24/7. Toàn bộ nội dung trao đổi được hệ thống cấu trúc hóa thành bản tóm tắt tiền khám hoàn chỉnh, giúp bác sĩ nắm bắt nhanh chóng diễn biến bệnh lý của bệnh nhân trước các buổi hội chẩn trực tuyến hoặc thăm khám trực tiếp.
   \item \textbf{Xác lập ranh giới đạo đức và tính an toàn trong ứng dụng y tế:} Hệ thống được định vị rõ ràng là công cụ hỗ trợ sàng lọc và định hướng thông tin ban đầu, không thay thế chẩn đoán y khoa chính thức và không tự động ra chỉ định điều trị chuyên sâu. Hệ thống luôn tích hợp các cơ chế cảnh báo an toàn, chủ động hướng dẫn người bệnh đến các cơ sở y tế kịp thời khi phát hiện các dấu hiệu bệnh cảnh phức tạp hoặc nguy hiểm.
@@ -35,7 +35,7 @@ Tóm lại, đề tài hướng đến việc thu hẹp khoảng cách tiếp c�
 \subsection*{a. Phân tích yêu cầu của hệ thống}
 \begin{itemize}
   \item Khảo sát nghiệp vụ tiếp nhận và sàng lọc bệnh nhân trong chuyên khoa da liễu; xác định các yêu cầu chức năng cốt lõi (phân tích ảnh, hội thoại tư vấn y khoa, tra cứu tài liệu, quản lý phiên tư vấn cho bác sĩ) và các tiêu chuẩn phi chức năng nghiêm ngặt về tính bảo mật dữ liệu y tế, độ sẵn sàng và độ trễ phản hồi.
-  \item Xác định các tác nhân hệ thống (Bệnh nhân, Bác sĩ, Quản trị viên) và mô hình hóa toàn diện kiến trúc nghiệp vụ thông qua hệ thống biểu đồ UML chuẩn: Biểu đồ ca sử dụng (Use Case Diagram), Biểu đồ lớp (Class Diagram) và Biểu đồ tuần tự (Sequence Diagram).
+  \item Xác định các tác nhân hệ thống (Bệnh nhân, Bác sĩ, Quản trị viên) và mô hình hóa toàn diện kiến trúc nghiệp vụ thông qua hệ thống biểu đồ UML chuẩn: Biểu đồ ca sử dụng (Use Case Diagram), Biểu đồ lớp (Class Diagram), Biểu đồ tuần tự (Sequence Diagram) và Biểu đồ hoạt động (Activity Diagram).
   \item Xây dựng các kịch bản tương tác chuẩn cho từng quy trình nghiệp vụ: tiếp nhận ảnh và trích xuất dữ kiện lâm sàng, luồng suy luận đa bước của tác nhân AI (Agentic Reasoning Turn/Step), cơ chế tạm dừng xin bổ sung thông tin (Human-in-the-loop) và luồng đồng bộ hồ sơ sang bác sĩ.
 \end{itemize}
 
@@ -49,7 +49,7 @@ Tóm lại, đề tài hướng đến việc thu hẹp khoảng cách tiếp c�
 
 \subsection*{c. Phát triển hệ thống}
 \begin{itemize}
-  \item Xây dựng và huấn luyện mô hình phân loại ảnh sang thương da AdaptiveCNN trên tập dữ liệu ảnh bệnh da liễu, tối ưu hóa các khối tích chập đa kích thước nhân (AMKC) và tổng hợp đặc trưng thích nghi (Adaptive GeM).
+  \item Xây dựng và huấn luyện mô hình phân loại ảnh sang thương da AdaptiveCNN trên tập dữ liệu ảnh bệnh da liễu, tối ưu hóa các khối tích chập đa kích thước nhân (AMKC) .
   \item Xây dựng quy trình tự động số hóa và bóc tách cấu trúc giáo trình y khoa (Document Ingest Pipeline), bao gồm đọc văn bản, phân tích cấu trúc cây mục lục, phân chia khối ngữ cảnh (chunking) và lập chỉ mục vector đa phương thức.
   \item Phát triển phân hệ tác nhân trí tuệ nhân tạo (LangGraph Agent Service) kết hợp kiến trúc GraphRAG: điều phối linh hoạt các công cụ phân tích ảnh CNN, công cụ tìm kiếm tài liệu kết hợp (Hybrid Search: ngữ nghĩa và từ khóa BM25) cùng công cụ tra cứu quan hệ đồ thị tri thức để tổng hợp lời giải đáp chuẩn xác.
 \end{itemize}
@@ -70,10 +70,10 @@ Nội dung chi tiết của báo cáo tiến độ đồ án được trình bà
 
 \begin{itemize}
   \item \textbf{Chương~\ref{ch:chuong1}: Giới thiệu chung} -- Phân tích bối cảnh, phạm vi bài toán, mục tiêu nghiên cứu và tổng quan về giải pháp công nghệ đa phương thức của đề tài.
-  \item \textbf{Chương~\ref{ch:chuong2}: Kỹ thuật xử lý CNN} -- Trình bày cơ sở lý thuyết mạng nơ-ron tích chập, chi tiết kiến trúc AdaptiveCNN (ResNet-18, AMKC, Adaptive GeM Pooling) cùng quy trình huấn luyện và kết quả thực nghiệm phân loại ảnh bệnh da.
+  \item \textbf{Chương~\ref{ch:chuong2}: Kỹ thuật phân loại hình ảnh tổn thương da dựa trên Multi-scale CNN} -- Trình bày cơ sở lý thuyết mạng nơ-ron tích chập, chi tiết kiến trúc AdaptiveCNN (ResNet-18, AMKC) cùng quy trình huấn luyện và kết quả thực nghiệm phân loại ảnh bệnh da.
   \item \textbf{Chương~\ref{ch:chuong3}: Thiết kế luồng truy xuất tri thức} -- Trình bày giải pháp truy xuất tài liệu y khoa số hóa (tìm kiếm ngữ nghĩa, từ khóa, hỗn hợp) và giải pháp khai thác đồ thị tri thức y sinh (PrimeKG, DermO) phục vụ lập luận.
   \item \textbf{Chương~\ref{ch:chuong4}: Thiết kế luồng lập luận chatbot} -- Trình bày chi tiết luồng suy luận của tác nhân AI trong từng lượt hội thoại: nhận diện ý định, trích xuất dữ kiện bệnh sử, điều phối công cụ tra cứu, đánh giá bằng chứng và sinh phản hồi có nguồn trích dẫn.
   \item \textbf{Chương~\ref{ch:chuong5}: Phân tích và thiết kế hệ thống} -- Trình bày chi tiết phân tích tác nhân, hệ thống biểu đồ ca sử dụng, biểu đồ tuần tự và thiết kế cơ sở dữ liệu phân tầng của hệ thống.
   \item \textbf{Chương~\ref{ch:chuong6}: Cài đặt và triển khai hệ thống} -- Mô tả chi tiết các công nghệ triển khai backend/frontend, kiến trúc môi trường thực tế và giao diện ứng dụng.
-  \item \textbf{Chương~\ref{ch:chuong7}: Kết luận} -- Tổng kết các kết quả kỹ thuật đã đạt được, chỉ ra những hạn chế còn tồn tại và đề xuất định hướng phát triển hoàn thiện đề tài trong tương lai.
+  \item \textbf{Kết luận} -- Tổng kết các kết quả kỹ thuật đã đạt được, chỉ ra những hạn chế còn tồn tại và đề xuất định hướng phát triển hoàn thiện đề tài trong tương lai.
 \end{itemize}
