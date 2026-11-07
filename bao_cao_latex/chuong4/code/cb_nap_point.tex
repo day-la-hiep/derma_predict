@@ -1,0 +1,21 @@
+\begin{Verbatim}[commandchars=\\\{\},numbers=left,numbersep=5pt,frame=single,framesep=4pt,breaklines=true,breakanywhere=true,fontsize=\fontsize{9pt}{10.5pt}\selectfont]
+\PY{k}{def} \PY{n+nf}{index\PYZus{}report\PYZus{}sync}\PY{p}{(}
+    \PY{n+nb+bp}{self}\PY{p}{,}
+    \PY{n}{report}\PY{p}{:} \PY{n}{FinalizeReport}\PY{p}{,}
+    \PY{n}{profile}\PY{p}{:} \PY{n}{PatientProfile} \PY{o}{|} \PY{k+kc}{None} \PY{o}{=} \PY{k+kc}{None}\PY{p}{,}
+    \PY{n}{images}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{tuple}\PY{p}{[}\PY{n}{Any}\PY{p}{,} \PY{n}{Any}\PY{p}{]}\PY{p}{]} \PY{o}{|} \PY{k+kc}{None} \PY{o}{=} \PY{k+kc}{None}\PY{p}{,}
+\PY{p}{)} \PY{o}{\PYZhy{}}\PY{o}{\PYZgt{}} \PY{k+kc}{None}\PY{p}{:}
+\PY{+w}{    }\PY{l+s+sd}{\PYZdq{}\PYZdq{}\PYZdq{}Đồng bộ một ca bệnh vào Qdrant (dùng trong script hoặc thread đồng bộ).\PYZdq{}\PYZdq{}\PYZdq{}}
+    \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{ensure\PYZus{}collection}\PY{p}{(}\PY{p}{)}
+    \PY{n}{text}\PY{p}{,} \PY{n}{payload} \PY{o}{=} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{build\PYZus{}report\PYZus{}text}\PY{p}{(}\PY{n}{report}\PY{p}{,} \PY{n}{profile}\PY{p}{,} \PY{n}{images}\PY{o}{=}\PY{n}{images}\PY{p}{)}
+    \PY{n}{vectors}\PY{p}{,} \PY{n}{\PYZus{}}\PY{p}{,} \PY{n}{\PYZus{}} \PY{o}{=} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{\PYZus{}embedding}\PY{o}{.}\PY{n}{embed}\PY{p}{(}\PY{p}{[}\PY{n}{text}\PY{p}{]}\PY{p}{)}
+    \PY{n}{dense\PYZus{}vec} \PY{o}{=} \PY{n}{vectors}\PY{p}{[}\PY{l+m+mi}{0}\PY{p}{]}
+    \PY{n}{sparse\PYZus{}vec} \PY{o}{=} \PY{n}{encode\PYZus{}document}\PY{p}{(}\PY{n}{text}\PY{p}{,} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{mixed}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+
+    \PY{n}{point} \PY{o}{=} \PY{n}{PointStruct}\PY{p}{(}
+        \PY{n+nb}{id}\PY{o}{=}\PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{point\PYZus{}id}\PY{p}{(}\PY{n}{report}\PY{o}{.}\PY{n}{id}\PY{p}{)}\PY{p}{,}
+        \PY{n}{vector}\PY{o}{=}\PY{p}{\PYZob{}}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{dense\PYZus{}vec}\PY{p}{,} \PY{n}{SPARSE\PYZus{}NAME}\PY{p}{:} \PY{n}{sparse\PYZus{}vec}\PY{p}{\PYZcb{}}\PY{p}{,}
+        \PY{n}{payload}\PY{o}{=}\PY{n}{payload}\PY{p}{,}
+    \PY{p}{)}
+    \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{\PYZus{}qdrant}\PY{o}{.}\PY{n}{upsert\PYZus{}points\PYZus{}sync}\PY{p}{(}\PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{\PYZus{}collection}\PY{p}{,} \PY{p}{[}\PY{n}{point}\PY{p}{]}\PY{p}{)}
+\end{Verbatim}

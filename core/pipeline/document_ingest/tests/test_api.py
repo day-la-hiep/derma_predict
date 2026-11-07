@@ -198,7 +198,7 @@ class ApiTest(Base):
         ).json()["data"]
         self.assertTrue(
             lst["items"]
-            and all(c["section"] == "SECTION 2 PSORIASIS" for c in lst["items"])
+            and all("SECTION 2 PSORIASIS" in c["toc_path"] for c in lst["items"])
         )  # lọc theo nhánh mục lục
         self.assertEqual(lst["counts"]["per_node"][sec["id"]], lst["total"])
         self.assertEqual(
@@ -225,14 +225,19 @@ class ApiTest(Base):
         }])
         lst = self.c.get(f"{self.base}/documents/tbook/figures").json()["data"]
         self.assertEqual(
-            [(f["figure_id"], f["page"], f["caption"]) for f in lst], [("tbook:f00001", 2, "Hình 1")]
+            [(f["figure_id"], f["page"], f["caption"]) for f in lst["items"]], [("tbook:f00001", 2, "Hình 1")]
         )
+        self.assertEqual((lst["total"], lst["page"], lst["page_size"]), (1, 1, 12))
+        by_caption = self.c.get(f"{self.base}/documents/tbook/figures", params={"q": "hình 1"}).json()["data"]
+        self.assertEqual(by_caption["total"], 1)
+        no_match = self.c.get(f"{self.base}/documents/tbook/figures", params={"q": "không có"}).json()["data"]
+        self.assertEqual((no_match["total"], no_match["items"]), (0, []))
         img = self.c.get(f"{self.base}/documents/tbook/figures/tbook:f00001/image")
         self.assertEqual((img.status_code, img.content), (200, png))
         self.assertEqual(
             self.c.get(f"{self.base}/documents/tbook/figures/tbook:f99999/image").status_code, 404
         )
-        self.assertEqual(self.c.get(f"{self.base}/documents/nosuch/figures").json()["data"], [])
+        self.assertEqual(self.c.get(f"{self.base}/documents/nosuch/figures").json()["data"]["items"], [])
 
     def test_pages_text_and_image(self) -> None:
         self.assertEqual(

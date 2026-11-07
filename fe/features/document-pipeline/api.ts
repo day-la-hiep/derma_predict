@@ -3,7 +3,7 @@ import { api } from "@/services/client";
 import type {
   Document,
   DocumentSummary,
-  Figure,
+  FigureList,
   ChunkList,
   Settings,
   SourcePage,
@@ -79,7 +79,10 @@ export const documentApi = {
         params: { q: p.q || undefined, node: p.node || undefined, only_review: p.only_review || undefined, page: p.page, page_size: p.pageSize },
       })
     ),
-  figures: (documentId: string) => unwrap<Figure[]>(api.get(`${base(documentId)}/figures`)),
+  figures: (documentId: string, p: { q?: string; page: number; pageSize: number }) =>
+    unwrap<FigureList>(
+      api.get(`${base(documentId)}/figures`, { params: { q: p.q || undefined, page: p.page, page_size: p.pageSize } })
+    ),
   /** Như ảnh trang: cần Authorization nên tải blob rồi dùng object URL. */
   figureImageUrl: async (documentId: string, figureId: string) => {
     const blob = (await api.get(`${base(documentId)}/figures/${encodeURIComponent(figureId)}/image`, { responseType: "blob", timeout: 0 })).data as Blob;

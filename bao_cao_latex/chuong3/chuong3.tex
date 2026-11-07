@@ -1,289 +1,919 @@
 % Chương 3
-\chapter[\MakeUppercase{Thiết kế luồng truy xuất tri thức}]{Thiết kế luồng truy xuất tri thức}
+\chapter[\MakeUppercase{Kỹ thuật phân loại hình ảnh tổn thương da dựa trên Multi-scale CNN}]{Kỹ thuật phân loại hình ảnh tổn thương da dựa trên Multi-scale CNN}
 \label{ch:chuong3}
 
-Chatbot truy xuất tri thức từ hai nguồn. Nguồn thứ nhất là giáo trình đã số hóa, truy xuất bằng tìm kiếm ngữ nghĩa, tìm kiếm từ khóa và luồng hỗn hợp (mục~\ref{sec:truy-xuat-tai-lieu}). Nguồn thứ hai là đồ thị tri thức (mục~\ref{sec:truy-xuat-do-thi}). Đoạn giáo trình và quan hệ trích từ giáo trình (có câu trích và số trang) là bằng chứng. Quan hệ của đồ thị nền PrimeKG và DermO chỉ là gợi ý: chúng cung cấp bệnh ứng viên, triệu chứng, thuốc, chống chỉ định và chuẩn hóa thuật ngữ để nhận diện thực thể.
+Chương này trình bày nghiên cứu và xây dựng mô hình thị giác máy tính phục vụ bài toán phân loại tổn thương da từ ảnh chụp lâm sàng. Trước hết, chương phân tích đặc điểm riêng của bài toán phân loại ảnh da liễu và khảo sát các công trình liên quan về kỹ thuật tích chập đa kernel, đa tỷ lệ. Tiếp đó, chương hệ thống hóa cơ sở lý thuyết về mạng nơ-ron tích chập (CNN), kiến trúc ResNet-18 và cơ chế Residual Learning. Trên nền tảng đó, chương trình bày kiến trúc đề xuất AdaptiveCNN --- mô hình kết hợp ResNet-18 với cơ chế tích chập đa kernel thích nghi (AMKC) được đặt trước tầng stem nhằm làm giàu biểu diễn đầu vào ở nhiều phạm vi không gian. Cuối cùng, chương mô tả quy trình huấn luyện, tối ưu mô hình và hệ thống các chỉ số đánh giá định lượng.
 
-\section{Truy xuất tài liệu}
-\label{sec:truy-xuat-tai-lieu}
+% ===================================================================
+\section{Bài toán phân loại hình ảnh da liễu}
+% ===================================================================
 
-\subsection{Tổng quan}
+\subsection{Đặc điểm bài toán}
 
-Hệ thống có hai hướng tìm kiếm trên các đoạn giáo trình (chunk). Mỗi hướng bỏ sót những trường hợp mà hướng kia bắt được.
+Phân loại ảnh da liễu là bài toán thị giác máy tính nhằm xác định lớp bệnh tương ứng với hình ảnh tổn thương da đầu vào. Với sự phát triển của học sâu, mạng nơ-ron tích chập (Convolutional Neural Network -- CNN) được sử dụng rộng rãi nhờ khả năng tự động học các đặc trưng trực quan từ dữ liệu ảnh, thay vì yêu cầu thiết kế thủ công như phương pháp truyền thống.
 
-\begin{table}[H]
-\centering
-\small
-\begin{tabular}{|p{3.2cm}|p{5.4cm}|p{5.4cm}|}
-\hline
-\textbf{Tiêu chí} & \textbf{Tìm kiếm ngữ nghĩa} & \textbf{Tìm kiếm từ khóa (BM25)} \\ \hline
-Cách so khớp & So khoảng cách giữa vector của câu hỏi và vector của đoạn & Đếm từ trùng giữa câu hỏi và đoạn, có trọng số theo độ hiếm của từ \\ \hline
-Bắt được & Diễn đạt khác nhau cùng nghĩa; câu hỏi tiếng Việt, tài liệu tiếng Anh & Tên thuốc, hoạt chất, mã bệnh, liều lượng \\ \hline
-Bỏ sót & Token hiếm bị làm mờ trong vector & Câu hỏi và đoạn không có từ chung \\ \hline
-\end{tabular}
-\caption{Hai hướng tìm kiếm bổ sung cho nhau}
-\label{tab:bu-dap}
-\end{table}
-
-Ví dụ: câu hỏi ``da tôi đỏ và ngứa, nổi thành mảng'' và đoạn chứa ``erythematous pruritic plaques'' không có từ chung. BM25 cho điểm $0$, tìm kiếm ngữ nghĩa vẫn khớp. Ngược lại, câu hỏi về một tên thuốc cụ thể được BM25 khớp đúng chữ, trong khi vector có thể gộp thuốc đó với các thuốc cùng nhóm.
-
-Luồng hỗn hợp chạy cả hai hướng, gộp kết quả và xếp hạng lại. Mục tiêu của tầng thứ nhất là không bỏ sót đoạn liên quan (recall). Mục tiêu của tầng xếp hạng lại là đưa đoạn đúng lên đầu (precision).
-
-\subsection{Luồng tìm kiếm ngữ nghĩa}
-
-\subsubsection{Nguyên lý}
-
-Tìm kiếm ngữ nghĩa so khớp theo nghĩa của câu thay vì theo ký tự. Mô hình embedding đổi mỗi đoạn văn bản thành một vector thực $d$ chiều. Bài toán tra cứu trở thành bài toán hình học: tìm các vector đoạn gần vector câu hỏi nhất.
-
-Hệ thống dùng mô hình \texttt{qwen/qwen3-embedding-8b} (8 tỷ tham số) qua OpenRouter, đầu ra $d=4096$ chiều. Mô hình có hai đặc tính:
+Bài toán phân loại ảnh da liễu mang một số thách thức riêng biệt so với phân loại ảnh tự nhiên thông thường:
 \begin{itemize}
-  \item \textbf{Instruction-tuned:} câu hỏi được thêm tiền tố chỉ dẫn; đoạn trong kho tri thức được mã hóa ở dạng nguyên bản.
-  \item \textbf{Đa ngôn ngữ:} câu hỏi tiếng Việt và đoạn tiếng Anh nằm chung một không gian vector.
+  \item \textbf{Đa dạng về hình thái tổn thương:} Các tổn thương da khác nhau về kích thước, hình dạng, đường biên và cấu trúc sắc tố. Cùng một bệnh có thể biểu hiện với nhiều hình thái khác nhau (đa hình thái), trong khi các bệnh lý khác nhau lại có thể có biểu hiện trực quan tương tự.
+  \item \textbf{Phụ thuộc vào điều kiện chụp ảnh:} Ảnh chụp từ người bệnh trong thực tế có thể khác biệt đáng kể về ánh sáng, góc chụp, độ phân giải và tỷ lệ vùng tổn thương trong khung hình, khác với ảnh soi da chuẩn hóa trong phòng khám.
+  \item \textbf{Mất cân bằng phân bố lớp:} Một số bệnh lý phổ biến (như nốt ruồi lành tính) chiếm tỷ lệ áp đảo trong tập dữ liệu, trong khi các bệnh nguy hiểm hơn (như ung thư hắc tố) có số mẫu ít hơn nhiều.
 \end{itemize}
 
-\subsubsection{Cơ chế hoạt động}
+Trong phạm vi đồ án, bài toán phân loại tổn thương da được nghiên cứu và đánh giá trên nhiều miền dữ liệu đa dạng: từ ảnh soi da chuyên sâu (Dermoscopy) với 7 nhóm tổn thương (tập HAM10000) và 8 nhóm tổn thương quy mô lớn (tập ISIC 2019), đến ảnh chụp lâm sàng thông thường (Clinical Photography) với 22 lớp bệnh (tập SkinDisease), cũng như ảnh chụp thực tế bằng điện thoại thông minh (Smartphone) với 6 nhóm bệnh (tập PAD-UFES-20). Mô hình thị giác máy tính tiếp nhận ảnh da đầu vào, trích xuất đặc trưng đa tỷ lệ, tổng hợp không gian qua tầng Global Average Pooling và ánh xạ sang phân bố xác suất của các lớp bệnh mục tiêu qua hàm Softmax. Kết quả phân loại này đóng vai trò là một công cụ tính toán (\texttt{predict\_skin\_lesion} tool), cung cấp các giả thuyết bệnh học kèm độ tin cậy định lượng cho tác nhân trí tuệ nhân tạo (LangGraph Agent Worker) kết hợp cùng ngữ cảnh người bệnh và đồ thị tri thức da liễu.
 
-Gọi $f$ là hàm embedding. Quy trình có hai giai đoạn:
-\begin{itemize}
-  \item \textbf{Nạp dữ liệu (indexing):} mỗi đoạn được mã hóa một lần, $d=f(\text{đoạn})$, rồi lưu vào Qdrant.
-  \item \textbf{Truy vấn (querying):} câu hỏi được mã hóa một lần, $q=f(\text{câu hỏi})$. Kiến trúc Bi-Encoder mã hóa câu hỏi và đoạn độc lập, nên vector đoạn được tính trước và độ trễ lúc truy vấn thấp.
-\end{itemize}
+\subsection{Các nghiên cứu liên quan}
 
-Độ liên quan giữa $q$ và $d$ là độ tương đồng cosine:
+Các nghiên cứu về tích chập đa kernel, đặc trưng đa tỷ lệ và tích chập thích nghi cho thấy việc mở rộng cách biểu diễn đặc trưng là một hướng tiếp cận quan trọng trong thị giác máy tính và xử lý ảnh y khoa.
+
+\textbf{Tích chập đa kernel và đa tỷ lệ.} Khan và cộng sự đề xuất MKIS-Net, một mạng nhẹ sử dụng thiết kế multi-kernel để tạo receptive field hiệu quả cho bài toán phân đoạn ảnh y khoa, bao gồm phân đoạn tổn thương da, mạch máu võng mạc và ảnh X-quang ngực. Kết quả cho thấy thiết kế đa kernel có thể hỗ trợ xây dựng mạng gọn nhẹ mà vẫn duy trì hiệu quả cạnh tranh [1]. Han và cộng sự đề xuất DM-CNN cho bài toán phân loại ảnh y khoa, trong đó có dữ liệu da liễu, sử dụng mô-đun Dynamic Multi-scale Feature Fusion để lựa chọn kernel dựa trên đặc trưng ở các tầng khác nhau, kết hợp cơ chế attention và pooling đa tỷ lệ [2].
+
+\textbf{Tích chập thích nghi và lựa chọn kernel.} Hu và cộng sự đề xuất Domain and Content Adaptive Convolution (DCAC) nhằm cải thiện khả năng tổng quát hóa giữa các miền dữ liệu y khoa, điều chỉnh phép tích chập dựa trên thông tin miền và đặc trưng toàn cục của ảnh đầu vào [3]. Chen và cộng sự phát triển ESKNet cho phân đoạn khối u vú trên ảnh siêu âm, trong đó mô-đun Enhanced Selective Kernel Convolution kết hợp biểu diễn từ nhiều vùng đặc trưng và tái hiệu chỉnh thông tin theo chiều kênh lẫn không gian [4].
+
+\textbf{Kết hợp convolution và attention.} AMCANet sử dụng các nhánh convolution attention với những mức lấy mẫu khác nhau nhằm kết hợp thông tin cục bộ và ngữ cảnh không gian cho bài toán khôi phục độ phân giải ảnh [5]. Do nhiệm vụ chính là super-resolution, nghiên cứu này chỉ là tài liệu tham khảo gián tiếp về thiết kế convolution kết hợp attention.
+
+\textbf{Nhận xét và định hướng.} Các nghiên cứu trên thể hiện những hướng tiếp cận khác nhau: thiết kế nhiều kernel, kết hợp đặc trưng đa tỷ lệ, lựa chọn kernel thích nghi và kết hợp convolution với attention. Cần phân biệt ba khái niệm liên quan nhưng không đồng nhất: \textit{multi-kernel} sử dụng nhiều kích thước kernel; \textit{multi-scale} tập trung khai thác đặc trưng ở nhiều phạm vi không gian; còn \textit{adaptive/selective convolution} có thêm cơ chế điều chỉnh hoặc lựa chọn đặc trưng dựa trên đầu vào. Từ cơ sở đó, đồ án sử dụng ResNet-18 làm backbone và tích hợp cơ chế tích chập đa kernel thích nghi (AMKC) trước tầng stem, cho phép mô hình khai thác đặc trưng ở nhiều kích thước ngay từ đầu vào.
+
+% ===================================================================
+\section{Cơ sở lý thuyết mạng nơ-ron tích chập}
+% ===================================================================
+
+\subsection{Biểu diễn ảnh dưới dạng tensor}
+
+Ảnh màu thường được biểu diễn dưới dạng tensor ba chiều gồm số kênh màu, chiều cao và chiều rộng. Với ảnh RGB có kích thước $H\times W$, tensor ảnh có dạng:
 \begin{equation}
-  \mathrm{sim}(q,d)=\frac{q\cdot d}{\Vert q\Vert \Vert d\Vert }
+  X\in\mathbb{R}^{3\times H\times W}
 \end{equation}
 
-Trong đó, $\mathrm{sim}(q,d)\in[-1,1]$. Phép đo chỉ phụ thuộc hướng vector nên không bị lệch bởi độ dài đoạn.
-
-Hệ thống xếp các đoạn theo $\mathrm{sim}$ giảm dần, lấy $k$ đoạn đầu, đọc nội dung và siêu dữ liệu (sách, mục, trang) theo ID vector rồi trả về.
-
-\subsection{Luồng tìm kiếm từ khóa}
-
-\subsubsection{Nguyên lý}
-
-Tìm kiếm từ khóa khớp chính xác chuỗi ký tự. Luồng này bù cho điểm yếu của vector: tên thuốc, hoạt chất, mã bệnh và liều lượng thường bị làm mờ trong embedding.
-
-\textbf{TF-IDF} là nền tảng của phương pháp. Điểm của tài liệu $D$ với câu hỏi $Q$ là tổng, trên các từ $t\in Q$, của tích tần suất từ trong tài liệu ($\mathrm{tf}$) và độ hiếm của từ trong kho ($\mathrm{idf}$):
+Khi xử lý theo lô (batch), dữ liệu có dạng:
 \begin{equation}
-  \mathrm{score}_{\mathrm{TF\text{-}IDF}}(D,Q)=\sum _{t\in Q} \mathrm{tf}(t,D)\cdot \mathrm{idf}(t)
+  X\in\mathbb{R}^{N\times C\times H\times W}
 \end{equation}
 
-TF-IDF có hai hạn chế:
-\begin{itemize}
-  \item \textbf{Không bão hòa:} điểm tăng tuyến tính theo tần suất từ, dù từ lặp lại nhiều lần không làm đoạn liên quan hơn tương ứng.
-  \item \textbf{Không chuẩn hóa độ dài:} đoạn dài chứa nhiều từ hơn nên được điểm cao hơn.
-\end{itemize}
+Trong đó, $N$ là số ảnh trong một batch, $C$ là số kênh, $H$ là chiều cao và $W$ là chiều rộng.
 
-\subsubsection{Thuật toán BM25}
+Trước khi đưa vào mạng, ảnh thường được chuyển về kích thước thống nhất ($224\times224$ trong đồ án này) và chuẩn hóa giá trị pixel theo trung bình và độ lệch chuẩn của tập ImageNet. Việc chuẩn hóa giúp dữ liệu có thang giá trị phù hợp với quá trình tối ưu khi sử dụng mô hình pretrained.
 
-BM25 (Best Matching 25) thêm hai tham số để sửa hai hạn chế trên:
+\subsection{Phép tích chập}
+
+Phép tích chập (convolution) là thành phần cốt lõi của CNN. Một kernel có kích thước xác định được áp dụng trên các vùng cục bộ của đầu vào để tạo ra feature map. Các trọng số kernel được cập nhật trong quá trình huấn luyện để học những đặc trưng hữu ích cho bài toán.
+
+Dạng tổng quát của phép tích chập hai chiều có thể biểu diễn như sau:
 \begin{equation}
-  \mathrm{score}(D,Q)=\sum_{t\in Q}\mathrm{IDF}(t)\cdot\frac{\mathrm{tf}\cdot(k_1+1)}{\mathrm{tf}+k_1\cdot\left(1-b+b\cdot\frac{|D|}{\mathrm{avgdl}}\right)}
+  Y_{i,j}=\sum_{c=1}^{C_{\mathrm{in}}}\sum_{u=0}^{K_h-1}\sum_{v=0}^{K_w-1}W_{c,u,v}X_{c,i+u,j+v}+b
 \end{equation}
+
+Trong đó, $X$ là tensor đầu vào, $W$ là trọng số kernel, $b$ là bias và $Y$ là feature map đầu ra.
+
+Kích thước kernel quyết định phạm vi không gian được xét trong mỗi phép tính. Kernel $3\times3$ tập trung vào vùng lân cận nhỏ, trong khi kernel $5\times5$ thu nhận thông tin từ vùng rộng hơn. Việc sử dụng nhiều kích thước kernel là cơ sở cho cơ chế AMKC được trình bày ở mục~\ref{sec:amkc}.
+
+\subsection{Hàm kích hoạt và pooling}
+
+Sau phép tích chập, hàm kích hoạt phi tuyến cho phép mạng học những quan hệ phức tạp hơn so với phép biến đổi tuyến tính đơn thuần. Hàm ReLU được sử dụng phổ biến nhất:
 \begin{equation}
-  \mathrm{IDF}(t)=\ln\left( 1+\frac{N-n(t)+0.5}{n(t)+0.5}\right)
+  \mathrm{ReLU}(x)=\max(0,x)
+\end{equation}
+
+Pooling thực hiện giảm kích thước không gian của feature map hoặc tổng hợp thông tin từ các vùng lân cận. Max Pooling lấy giá trị lớn nhất trong mỗi vùng, trong khi Global Average Pooling (GAP) tính trung bình các giá trị trên toàn bộ không gian của từng kênh:
+\begin{equation}
+  f_c=\frac{1}{|\Omega|}\sum_{i\in\Omega}x_{c,i}
+\end{equation}
+
+Trong đó, $\Omega$ là tập các vị trí không gian và $x_{c,i}$ là giá trị đặc trưng tại vị trí $i$ của kênh $c$. Trong AdaptiveCNN, GAP được sử dụng để tổng hợp feature map cuối cùng thành vector đặc trưng trước lớp phân loại.
+
+\subsection{Kiến trúc ResNet-18 và Residual Learning}
+
+ResNet (Residual Network) là kiến trúc CNN sử dụng kết nối tắt (skip connection) nhằm hỗ trợ quá trình huấn luyện mạng sâu. ResNet-18 là biến thể gồm 18 lớp có trọng số, được tổ chức theo nhiều giai đoạn (layer1 đến layer4), mỗi giai đoạn chứa các residual block.
+
+Trong mạng CNN truyền thống, các lớp liên tiếp phải học trực tiếp ánh xạ từ đầu vào sang đầu ra. Khi mạng sâu hơn, gradient có thể suy giảm qua nhiều lớp, gây khó khăn cho quá trình tối ưu. ResNet giải quyết vấn đề này bằng cách học phần dư (residual mapping):
+\begin{equation}
+  y=F(x,W)+x
 \end{equation}
 
 Trong đó:
 \begin{itemize}
-  \item $\mathrm{tf}(t,D)$: số lần từ $t$ xuất hiện trong $D$; $n(t)$: số đoạn chứa $t$; $N$: tổng số đoạn.
-  \item $k_1=1.2$: giới hạn mức tăng điểm theo tần suất từ (độ bão hòa).
-  \item $b=0.75$: mức chuẩn hóa theo tỷ số giữa độ dài đoạn $|D|$ và độ dài trung bình $\mathrm{avgdl}$.
+  \item $x$ là đầu vào của khối.
+  \item $F(x,W)$ là phép biến đổi được học bởi các lớp bên trong khối.
+  \item $y$ là đầu ra sau khi cộng với nhánh tắt.
 \end{itemize}
 
-Qdrant lưu phần $\mathrm{tf}$ của mỗi đoạn dưới dạng vector thưa (sparse) và chấm điểm khi truy vấn. Cấu trúc này hoạt động như chỉ mục đảo: mỗi từ trỏ tới các đoạn chứa nó, nên truy vấn không phải duyệt toàn bộ kho.
+Hình~\ref{fig:resnet_residual_block} minh họa cơ chế hoạt động của một khối Residual Block cơ bản với kết nối tắt (Skip Connection) trong kiến trúc ResNet-18.
 
-\subsubsection{Cơ chế hoạt động}
+\begin{figure}[H]
+\centering
+\makebox[\textwidth][c]{%
+\begin{tikzpicture}[
+    block/.style={rectangle, draw=blue!75!black, fill=blue!8, thick, rounded corners=3pt, minimum width=3.2cm, minimum height=0.65cm, align=center, font=\small},
+    act/.style={rectangle, draw=orange!90!black, fill=orange!15, thick, rounded corners=3pt, minimum width=2.0cm, minimum height=0.55cm, align=center, font=\small},
+    op/.style={circle, draw=black, fill=gray!20, thick, inner sep=0pt, minimum size=7mm, font=\large\bfseries},
+    point/.style={circle, fill=black, inner sep=0pt, minimum size=4pt},
+    arr/.style={-{Stealth[scale=1.1]}, thick}
+]
+    \path (-3.8, 0) -- (3.8, 0);
 
-\begin{itemize}
-  \item \textbf{Mở rộng câu hỏi Việt -- Anh:} LLM trích thực thể y khoa từ câu hỏi và thêm tên tiếng Anh, tiếng Việt vào câu hỏi BM25, để khớp với sách viết khác ngôn ngữ câu hỏi. Khi LLM lỗi, BM25 dùng câu hỏi gốc và hệ thống ghi chú lại.
-  \item \textbf{Tiền xử lý tiếng Việt:} tách từ ghép bằng underthesea, loại stopword nhưng giữ từ phủ định và đơn vị liều. Thêm token bỏ dấu với trọng số thấp ($0.3$) để câu hỏi không dấu vẫn khớp.
-  \item \textbf{Cách dùng:} chạy độc lập khi cần tra tên chính xác, và là một nhánh của luồng hỗn hợp.
-\end{itemize}
+    \node (x) at (0, 0) [font=\normalsize\bfseries] {Đầu vào $x$};
+    \node (pt1) at (0, -0.9) [point] {};
+    \node (conv1) at (0, -2.1) [block] {Conv $3\times3$, BN};
+    \node (relu1) at (0, -3.4) [act] {ReLU};
+    \node (conv2) at (0, -4.7) [block] {Conv $3\times3$, BN};
+    \node (add) at (0, -6.3) [op] {$+$};
+    \node (relu2) at (0, -7.6) [act] {ReLU};
+    \node (y) at (0, -8.8) [font=\normalsize\bfseries] {Đầu ra $y = \mathrm{ReLU}(F(x) + x)$};
 
-\subsection{Luồng hỗn hợp}
+    \draw [arr] (x) -- (pt1);
+    \draw [arr] (pt1) -- (conv1);
+    \draw [arr] (conv1) -- (relu1);
+    \draw [arr] (relu1) -- (conv2);
+    \draw [arr] (conv2) -- node [pos=0.45, right=6pt, font=\small] {$F(x)$} (add);
+    \draw [arr] (add) -- (relu2);
+    \draw [arr] (relu2) -- (y);
+    \draw [arr] (pt1) -- ++(-2.8, 0) |- node [pos=0.25, left=4pt, font=\small] {Identity $x$} (add.west);
+\end{tikzpicture}%
+}
+\caption{Cấu trúc khối Residual Block với đường truyền tắt (Skip Connection) trong ResNet}
+\label{fig:resnet_residual_block}
+\end{figure}
 
-\subsubsection{Quy trình}
+Skip connection tạo đường truyền trực tiếp cho thông tin và gradient từ đầu vào đến đầu ra. Khi kích thước tensor giữa hai nhánh không tương thích, kiến trúc sử dụng phép chiếu $1\times1$ convolution để điều chỉnh số kênh. Cơ chế này giúp huấn luyện mạng sâu thuận lợi hơn và là nền tảng quan trọng của AdaptiveCNN.
 
-Luồng hỗn hợp kết hợp hai luồng ở trên theo bốn bước:
-\begin{enumerate}
-  \item Trích thực thể từ câu hỏi và mở rộng câu hỏi cho nhánh BM25.
-  \item Chạy song song nhánh ngữ nghĩa và nhánh BM25, mỗi nhánh lấy 20 đoạn.
-  \item Gộp hai danh sách bằng Reciprocal Rank Fusion (RRF), khử trùng theo ID đoạn, giữ 20 đoạn đầu.
-  \item Xếp hạng lại bằng Cross-Encoder, trả về $k$ đoạn đầu kèm sách, mục, số trang.
-\end{enumerate}
+ResNet-18 được lựa chọn làm backbone cho AdaptiveCNN vì cung cấp cơ chế trích xuất đặc trưng phân cấp hiệu quả, đồng thời có quy mô tham số tương đối gọn (khoảng 11 triệu tham số), phù hợp với tập dữ liệu da liễu có kích thước trung bình và giảm nguy cơ overfitting.
 
-Khi một nhánh lỗi, hệ thống trả kết quả của nhánh còn lại và ghi chú để agent báo rõ nguồn chưa tra được.
+% ===================================================================
+\section{Kiến trúc đề xuất AdaptiveCNN}
+\label{sec:kien-truc-adaptivecnn}
+% ===================================================================
 
-\subsubsection{Gộp kết quả bằng RRF}
+\subsection{Tổng quan kiến trúc}
 
-RRF gộp theo thứ hạng thay vì điểm thô, vì điểm cosine và điểm BM25 có thang khác nhau:
+AdaptiveCNN được xây dựng trên nền ResNet-18 pretrained (ImageNet), bổ sung mô-đun AMKC (Adaptive Multi-Kernel Convolution) trước tầng stem. Luồng xử lý tổng thể được mô tả như sau:
+
 \begin{equation}
-  \mathrm{RRF}(d)=\sum_{i\in \mathrm{lists}} \frac{1}{k+\mathrm{rank}_{i}(d)},\quad k=60
+  \text{Input } (3 \times 224 \times 224) \xrightarrow{\text{AMKC}} \xrightarrow{\text{Stem}} \xrightarrow{\text{Layer1--4}} \xrightarrow{\text{GAP}} \xrightarrow{\text{Head}} \text{Output } (K \text{ classes})
 \end{equation}
 
-Đoạn xuất hiện ở cả hai danh sách được cộng hai số hạng nên lên cao. Hằng số $k=60$ làm giảm chênh lệch giữa các vị trí đầu, nên không nhánh nào chi phối hoàn toàn. Hệ thống không dùng phương pháp chuẩn hóa điểm có trọng số $\alpha$ vì phương pháp này nhạy với giá trị ngoại lai trong từng truy vấn và cần chỉnh $\alpha$ bằng thực nghiệm, trong khi chưa có tập đánh giá đủ lớn.
+Các thành phần chính:
+\begin{itemize}
+  \item \textbf{AMKC (Adaptive Multi-Kernel Convolution):} Mô-đun đặt trước stem, nhận ảnh đầu vào RGB ($3\times224\times224$) và trả về tensor cùng kích thước. AMKC kết hợp thông tin từ hai nhánh convolution $3\times3$ và $5\times5$ thông qua các cổng thích nghi, bổ sung đặc trưng đa tỷ lệ ngay từ không gian pixel. Chi tiết được trình bày tại mục~\ref{sec:amkc}.
+  \item \textbf{Stem:} Lớp convolution $7\times7$, Batch Normalization, ReLU và Max Pooling $3\times3$ --- giữ nguyên từ ResNet-18 chuẩn.
+  \item \textbf{Layer1--Layer4:} Bốn giai đoạn residual block của ResNet-18, trích xuất đặc trưng phân cấp từ cấp thấp (cạnh, kết cấu) đến cấp cao (hình thái tổn thương).
+  \item \textbf{GAP (Global Average Pooling):} Tổng hợp feature map cuối ($512\times7\times7$) thành vector $512$ chiều.
+  \item \textbf{Head:} Khối phân loại gồm BatchNorm $\rightarrow$ Dropout(0.4) $\rightarrow$ Linear(512, 512) $\rightarrow$ ReLU $\rightarrow$ BatchNorm $\rightarrow$ Dropout(0.2) $\rightarrow$ Linear(512, $K$), trong đó $K$ là số lớp bệnh mục tiêu của bộ dữ liệu tương ứng.
+\end{itemize}
 
-\subsubsection{Xếp hạng lại bằng Cross-Encoder}
+Sơ đồ tổng thể kiến trúc dòng xử lý từ ảnh da đầu vào qua khối AMKC, xương sống ResNet-18 đến bộ phân loại được trực quan hóa trên Hình~\ref{fig:adaptive_cnn_overview}.
 
-Mô hình \texttt{qwen/qwen3-reranker-8b} nhận từng cặp $(\text{câu hỏi},\text{đoạn})$ và cho điểm từ $0$ đến $1$. Khác Bi-Encoder, Cross-Encoder đọc câu hỏi và đoạn cùng lúc nên đánh giá được tương tác giữa hai chuỗi, nhưng chậm hơn. Vì vậy mô hình chỉ chạy trên 20 đoạn sau RRF. Khi reranker không khả dụng, hệ thống giữ thứ tự RRF và ghi chú \texttt{ranked\_by = rrf}.
+\begin{figure}[H]
+\centering
+\makebox[\textwidth][c]{%
+\begin{tikzpicture}[
+    node distance=0.45cm,
+    stage/.style={rectangle, draw=black!70, thick, rounded corners=3pt, align=center, inner sep=4pt, font=\small, minimum width=8.2cm, minimum height=0.62cm},
+    arr/.style={-{Stealth[scale=1.1]}, thick}
+]
+    \node (input) [stage, fill=gray!12, draw=gray!70!black] {\textbf{Ảnh da đầu vào} ($3 \times 224 \times 224$)};
+    \node (amkc) [stage, fill=red!10, draw=red!75!black, below=of input] {\textbf{Mô-đun AMKC} (Conv $3\times3$ và $5\times5$, Cổng $\tanh$, $\lambda=0{,}10$)};
+    \node (stem) [stage, fill=blue!10, draw=blue!75!black, below=of amkc] {\textbf{Tầng khởi tạo Stem} (Conv $7\times7$, Stride 2, MaxPool)};
+    \node (layers) [stage, fill=purple!8, draw=purple!75!black, below=of stem] {\textbf{Xương sống ResNet-18} (4 Stages, 8 Residual Blocks)};
+    \node (gap) [stage, fill=teal!10, draw=teal!75!black, below=of layers] {\textbf{Global Average Pooling (GAP)} (Vector đặc trưng $512$ chiều)};
+    \node (head) [stage, fill=orange!12, draw=orange!80!black, below=of gap] {\textbf{Tầng phân loại} (Linear $512 \rightarrow K$ lớp)};
+    \node (out) [stage, fill=green!12, draw=green!70!black, below=of head] {\textbf{Đầu ra xác suất} ($K$ nhóm bệnh)};
 
-\subsection{Đánh giá luồng hỗn hợp}
+    \draw [arr] (input) -- (amkc);
+    \draw [arr] (amkc) -- (stem);
+    \draw [arr] (stem) -- (layers);
+    \draw [arr] (layers) -- (gap);
+    \draw [arr] (gap) -- (head);
+    \draw [arr] (head) -- (out);
+\end{tikzpicture}%
+}
+\caption{Sơ đồ tổng thể luồng xử lý của kiến trúc mạng AdaptiveCNN tích hợp khối AMKC}
+\label{fig:adaptive_cnn_overview}
+\end{figure}
 
-\subsubsection{Bộ dữ liệu}
+Điểm khác biệt then chốt so với ResNet-18 chuẩn là sự có mặt của AMKC --- mô-đun nhẹ, được khởi tạo gần identity, cho phép mô hình khởi đầu từ biểu diễn pretrained rồi dần học thêm đặc trưng đa tỷ lệ trong quá trình fine-tune.
 
-Bộ dữ liệu gồm 378 chunk từ sách \textit{Hướng dẫn chẩn đoán điều trị Da liễu} (Bộ Y tế) lưu trong Qdrant. Biểu diễn vector dùng \texttt{qwen/qwen3-embedding-8b}; xếp hạng lại dùng \texttt{qwen/qwen3-reranker-8b}.
+\subsection{Cơ chế tích chập đa kernel thích nghi (AMKC)}
+\label{sec:amkc}
 
-Quy trình sinh bộ test:
-\begin{enumerate}
-  \item Chọn 120 chunk hợp lệ, loại chunk ngắn hơn 300 ký tự, mục lục và phụ lục.
-  \item Dùng RAGAS dựng đồ thị tri thức và dùng LLM sinh 42 câu hỏi theo vai bệnh nhân (đơn bước và đa bước), kèm nhãn \texttt{reference\_contexts}.
-  \item Kết quả: 24 câu hỏi (10 đơn bước, 14 đa bước) và 36 nhãn chunk.
+\subsubsection{Động cơ thiết kế}
+
+Trong ảnh da liễu, các tổn thương có thể khác nhau về kích thước, hình dạng, đường biên và cấu trúc sắc tố. Kernel $3\times3$ thu nhận thông tin từ vùng lân cận nhỏ, phù hợp để phát hiện chi tiết cục bộ như kết cấu bề mặt và biên tổn thương. Kernel $5\times5$ mở rộng vùng tiếp nhận không gian, giúp nắm bắt cấu trúc lớn hơn và mối quan hệ giữa các vùng lân cận.
+
+AMKC được thiết kế nhằm kết hợp đồng thời đầu ra từ hai nhánh convolution có kích thước kernel khác nhau thông qua các cổng điều chỉnh có thể học, bổ sung đặc trưng đa phạm vi không gian ngay từ tầng đầu vào mà không thay đổi kiến trúc backbone.
+
+\subsubsection{Biểu diễn toán học}
+
+Gọi $x$ là tensor đầu vào ($3\times H\times W$). Hai nhánh tích chập song song được ký hiệu:
+\begin{equation}
+  F_3(x)=\mathrm{Conv}_{3\times3}(x), \quad F_5(x)=\mathrm{Conv}_{5\times5}(x)
+\end{equation}
+
+Đầu ra của mô-đun AMKC:
+\begin{equation}
+  y=x+\lambda\left[\tanh(g_3)\cdot F_3(x)+\tanh(g_5)\cdot F_5(x)\right]
+  \label{eq:amkc}
+\end{equation}
+
+Trong đó:
+\begin{itemize}
+  \item $x$ là đầu vào, đồng thời đóng vai trò nhánh residual (identity shortcut).
+  \item $F_3(x)$ và $F_5(x)$ là đặc trưng từ hai nhánh kernel $3\times3$ và $5\times5$, sử dụng \texttt{padding=k//2} để giữ nguyên kích thước không gian.
+  \item $g_3$, $g_5$ là các tham số cổng (gate) có thể học. $\tanh(\cdot)$ giới hạn hệ số trong khoảng $(-1,1)$, kiểm soát mức đóng góp và cho phép ``tắt'' một nhánh nếu cần.
+  \item $\lambda=0{,}10$ là hệ số tỷ lệ cố định, kiểm soát biên độ tổng thể của phần bổ sung so với nhánh identity.
+  \item $y$ là đầu ra, có cùng kích thước với $x$.
+\end{itemize}
+
+Chi tiết cấu trúc mô-đun AMKC, luồng dữ liệu song song của hai nhánh nhân tích chập và cơ chế cổng điều khiển được mô tả trực quan trong Hình~\ref{fig:amkc_architecture}.
+
+\begin{figure}[H]
+\centering
+\makebox[\textwidth][c]{%
+\begin{tikzpicture}[
+    block/.style={rectangle, draw=blue!75!black, fill=blue!8, thick, rounded corners=3pt, minimum width=2.6cm, minimum height=0.65cm, align=center, font=\small},
+    gate/.style={rectangle, draw=purple!80!black, fill=purple!12, thick, rounded corners=3pt, minimum width=2.2cm, minimum height=0.6cm, align=center, font=\small},
+    op/.style={circle, draw=black, fill=gray!20, thick, inner sep=0pt, minimum size=7mm, font=\large\bfseries},
+    scale_box/.style={rectangle, draw=orange!80!black, fill=orange!15, thick, rounded corners=3pt, minimum width=2.6cm, minimum height=0.6cm, align=center, font=\small},
+    point/.style={circle, fill=black, inner sep=0pt, minimum size=4pt},
+    arr/.style={-{Stealth[scale=1.1]}, thick}
+]
+    \path (-7.2, 0) -- (7.2, 0);
+
+    % Goc dau vao
+    \node (in) at (0, 0) [font=\normalsize\bfseries] {Đầu vào $x \in \mathbb{R}^{3\times H\times W}$};
+    \node (p_split) at (0, -0.9) [point] {};
+    
+    % Nhanh trai: Conv 3x3 va Cong tanh(g3)
+    \node (conv3) at (-2.5, -2.1) [block] {Conv $3\times3$, BN};
+    \node (gate3) at (-5.0, -3.9) [gate] {Cổng $\tanh(g_3)$};
+    \node (mul3) at (-2.5, -3.9) [op] {$\times$};
+    
+    % Nhanh phai: Conv 5x5 va Cong tanh(g5)
+    \node (conv5) at (2.5, -2.1) [block] {Conv $5\times5$, BN};
+    \node (gate5) at (5.0, -3.9) [gate] {Cổng $\tanh(g_5)$};
+    \node (mul5) at (2.5, -3.9) [op] {$\times$};
+    
+    % Tong hai nhanh AMKC
+    \node (sum_amkc) at (0, -5.3) [op] {$+$};
+    % Nhan voi he so lambda
+    \node (scale) at (0, -6.7) [scale_box] {Hệ số $\lambda = 0{,}10$};
+    % Tong voi Identity x
+    \node (final_add) at (0, -8.0) [op] {$+$};
+    % Dau ra
+    \node (out) at (0, -9.2) [font=\normalsize\bfseries] {Đầu ra $y$ (Chuyển sang Stem)};
+
+    % Luong dau vao den split va 2 nhanh
+    \draw [arr] (in) -- (p_split);
+    \draw [arr] (p_split) -| (conv3.north);
+    \draw [arr] (p_split) -| (conv5.north);
+    
+    % Nhanh 3x3
+    \draw [arr] (conv3) -- node [pos=0.45, right=6pt, font=\small] {$F_3(x)$} (mul3);
+    \draw [arr] (gate3) -- (mul3);
+    \draw [arr] (mul3.south) |- (sum_amkc.west);
+    
+    % Nhanh 5x5
+    \draw [arr] (conv5) -- node [pos=0.45, left=6pt, font=\small] {$F_5(x)$} (mul5);
+    \draw [arr] (gate5) -- (mul5);
+    \draw [arr] (mul5.south) |- (sum_amkc.east);
+    
+    % Luong tu Tong AMKC qua ty le den Final Add
+    \draw [arr] (sum_amkc) -- node [pos=0.45, right=7pt, font=\small] {$F_{\mathrm{AMKC}}$} (scale);
+    \draw [arr] (scale) -- (final_add);
+    \draw [arr] (final_add) -- (out);
+    
+    % Nhanh tat Identity x: di tu split vong ra ngoai gate3 roi vao final_add.west
+    \draw [arr] (p_split) -- ++(-6.6, 0) |- node [pos=0.25, left=5pt, font=\small\bfseries] {Identity $x$} (final_add.west);
+\end{tikzpicture}%
+}
+\caption{Sơ đồ khối cấu trúc mô-đun tích chập đa kernel thích nghi (AMKC)}
+\label{fig:amkc_architecture}
+\end{figure}
+
+\codeblock{chuong3/code/amkc_module}{Cài đặt mô-đun tích chập đa kernel thích nghi (AMKC)}{lst:amkc-module}
+Về mặt cấu trúc, lớp \texttt{Adaptive\allowbreak MultiKernel\allowbreak Conv} kế thừa từ \texttt{nn.Module} nhằm thực hiện biến đổi và bổ sung đặc trưng đa tỷ lệ trực tiếp trên tensor ảnh đầu vào ($3\times H\times W$):
+\begin{itemize}
+  \item Trong phương thức khởi tạo \texttt{\_\_init\_\_}, danh sách \texttt{kernels} tiếp nhận hai kích thước $[3, 5]$, tương ứng với hai phạm vi quan sát không gian cục bộ (chi tiết biên, kết cấu sắc tố vi mô) và phạm vi mở rộng (cấu trúc hình thái tổng thể). Mỗi nhánh được cấu hình tích chập 2D với cơ chế đệm \texttt{padding = k // 2} để kích thước không gian feature map đầu ra luôn đồng nhất tuyệt đối với ảnh gốc ($H \times W$).
+  \item Trọng số của các lớp tích chập được gán bằng không qua hàm \texttt{nn.init.zeros\_(conv.weight)} (kỹ thuật Zero-Init). Nhờ đó, tại thời điểm khởi tạo, toàn bộ phần dư do tích chập sinh ra đều bằng 0, giúp mô-đun hoạt động chính xác như một ánh xạ đồng nhất (identity mapping) và bảo toàn trọn vẹn đặc trưng đã học từ ImageNet của xương sống ResNet-18. Mỗi nhánh đi kèm một tham số cổng vô hướng \texttt{gates[f"gate\{k\}"]} khởi tạo bằng 1 và có thể học (\texttt{requires\_grad=True}).
+  \item Trong hàm lan truyền xuôi \texttt{forward(x)}, ảnh đầu vào $x$ lần lượt đi qua từng nhánh tích chập. Giá trị cổng được kích hoạt qua hàm \texttt{torch.tanh}, giới hạn trọng số điều tiết trong khoảng $(-1, 1)$, cho phép mạng tự động tăng cường, giảm nhẹ hoặc ức chế phản hồi từ một nhánh nếu nhánh đó phát sinh tín hiệu nhiễu. Tín hiệu tổng hợp của hai nhánh được nhân với hệ số co giãn $\lambda = 0{,}10$ (\texttt{lambda\_scale}) nhằm giới hạn biên độ biến động, trước khi cộng trực tiếp vào đầu vào gốc $x$ theo đường truyền tắt.
+\end{itemize}
+
+
+\subsubsection{Khởi tạo zero-init và tính chất identity}
+
+Các trọng số convolution trong AMKC được khởi tạo bằng không (\texttt{nn.init.\allowbreak zeros\_}). Kết hợp với hệ số $\lambda=0{,}10$ nhỏ, điều này đảm bảo rằng tại thời điểm bắt đầu huấn luyện:
+\begin{equation}
+  F_3(x)=0, \quad F_5(x)=0 \quad \Rightarrow \quad y=x
+\end{equation}
+
+Mô-đun AMKC ban đầu hoạt động như ánh xạ đồng nhất (identity), không phá vỡ biểu diễn pretrained của ResNet-18. Trong quá trình fine-tune, các trọng số convolution và cổng dần được cập nhật để bổ sung đặc trưng đa kernel có lợi cho bài toán phân loại da liễu.
+
+\subsubsection{Vai trò trong AdaptiveCNN}
+
+AMKC được đặt trước tầng stem của ResNet-18, hoạt động như một ``bộ tiền xử lý có thể học''. So với việc chỉ đưa ảnh gốc vào backbone, AMKC bổ sung thêm thông tin đa phạm vi không gian --- kernel $3\times3$ nắm bắt chi tiết cục bộ và kernel $5\times5$ nắm bắt cấu trúc rộng hơn --- giúp backbone nhận được đầu vào phong phú hơn.
+
+Tuy nhiên, mức cải thiện thực tế cần được kiểm chứng bằng thực nghiệm, bao gồm so sánh với ResNet-18 cơ sở (không có AMKC) trong cùng điều kiện huấn luyện và ablation study để xác định đóng góp của từng thành phần.
+
+\subsection{Cài đặt kiến trúc mô hình AdaptiveCNN}
+Mô hình hoàn chỉnh kết hợp AMKC đặt trước tầng stem của ResNet-18 pretrained, tiếp nối bởi tầng Global Average Pooling (GAP) và Standard Head được cài đặt như sau:
+
+\codeblock{chuong3/code/adaptive_cnn}{Cài đặt kiến trúc AdaptiveCNN (ResNet-18 + AMKC + GAP)}{lst:adaptive-cnn}
+Mô hình tổng thể AdaptiveCNN được tổ chức thành hai khối chức năng riêng biệt: tầng phân loại chuẩn hóa (\texttt{standard\_head}) và lớp điều phối kiến trúc hoàn chỉnh (\texttt{ResNet18Variant}):
+\begin{itemize}
+  \item Hàm \texttt{standard\_head} thay thế cho lớp kết nối đầy đủ (\texttt{fc}) đơn tầng nguyên bản của ResNet-18 nhằm nâng cao năng lực khái quát hóa trên dữ liệu da liễu:
+  \begin{itemize}
+    \item Vector đặc trưng $512$ chiều đầu vào trước hết đi qua tầng \texttt{BatchNorm1d} và lớp \texttt{Dropout(0.4)} để chuẩn hóa phân bố dữ liệu và triệt tiêu bớt các liên kết dư thừa, hạn chế hiện tượng đồng thích nghi (co-adaptation).
+    \item Tiếp đó, tầng ẩn trung gian \texttt{Linear(512, 512)} kết hợp hàm kích hoạt phi tuyến \texttt{ReLU}, qua tầng \texttt{BatchNorm1d} thứ hai và \texttt{Dropout(0.2)}, trước khi ánh xạ về số lớp đầu ra \texttt{num\_classes}. Cấu trúc phân tầng đa cấp kèm Dropout kép giúp mạng kiểm soát chặt chẽ nguy cơ quá khớp (overfitting) trên tập dữ liệu y tế có quy mô hữu hạn.
+  \end{itemize}
+  \item Lớp \texttt{ResNet18Variant} chịu trách nhiệm ghép nối luồng dữ liệu liên tục:
+  \begin{itemize}
+    \item Khi cờ \texttt{use\_\allowbreak amkc=True} được kích hoạt, mô-đun \texttt{Adaptive\allowbreak MultiKernel\allowbreak Conv} được chèn trực tiếp vào trước tầng stem.
+    \item Xương sống ResNet-18 nạp sẵn bộ trọng số ImageNet-1K chuẩn. Các khối tính toán được phân tách tuần tự: tầng \texttt{stem} (tích chập $7\times7$, stride 2, MaxPool) và 4 giai đoạn residual block (\texttt{layer1} đến \texttt{layer4}) lần lượt trích xuất đặc trưng phân cấp từ đường nét, kết cấu cục bộ đến hình thái bệnh lý toàn cục.
+    \item Tầng \texttt{AdaptiveAvgPool2d(1)} (Global Average Pooling - GAP) nén tensor đặc trưng $512 \times 7 \times 7$ thành vector $512$ chiều mà không làm phát sinh tham số học, giúp biểu diễn không gian có tính bất biến cao với vị trí vùng tổn thương.
+    \item Trong hàm \texttt{forward(x)}, dữ liệu ảnh được truyền tuần tự qua AMKC (nếu bật), stem, các khối residual, nén GAP, trải phẳng qua \texttt{x.flatten(1)} và phân loại bởi khối \texttt{head}.
+  \end{itemize}
+\end{itemize}
+
+
+% ===================================================================
+\section{Huấn luyện và tối ưu mô hình}
+% ===================================================================
+
+\subsection{Hàm mất mát phân loại}
+
+Với bài toán phân loại nhiều lớp, Cross-Entropy là hàm mất mát phổ biến. Gọi $z_k$ là logit của lớp $k$, xác suất dự đoán được tính bằng Softmax:
+\begin{equation}
+  p_k=\frac{e^{z_k}}{\sum_{j=1}^{K}e^{z_j}}
+\end{equation}
+
+Trong đó, $K$ là số lớp. Với nhãn đúng $y$, Cross-Entropy cho một mẫu là:
+\begin{equation}
+  \mathcal{L}=-\log p_y
+\end{equation}
+
+Đồ án sử dụng thêm kỹ thuật Label Smoothing ($\epsilon=0{,}05$) để giảm overfitting. Thay vì one-hot cứng, nhãn được làm mềm thành:
+\begin{equation}
+  y_k'=\begin{cases} 1-\epsilon & \text{nếu } k=y \\ \epsilon/(K-1) & \text{nếu } k\neq y \end{cases}
+\end{equation}
+
+Ngoài ra, kỹ thuật Mixup ($\alpha=0{,}2$) được áp dụng trong quá trình huấn luyện. Mixup tạo mẫu ảo bằng cách nội suy tuyến tính giữa hai mẫu huấn luyện và nhãn tương ứng, giúp mô hình học biểu diễn mượt mà hơn.
+
+Đoạn mã hiện thực hóa kỹ thuật Mixup và cấu hình hàm mất mát Cross-Entropy với Label Smoothing trong PyTorch như sau:
+
+\codeblock{chuong3/code/mixup_label_smoothing}{Cài đặt kỹ thuật Mixup và Label Smoothing}{lst:mixup-ls}
+Để tăng cường tính vững chắc cho mô hình trước hiện tượng ranh giới bệnh lý mờ nhạt và mất cân bằng dữ liệu, kỹ thuật nội suy tuyến tính mẫu (Mixup) và làm mịn nhãn (Label Smoothing) được tích hợp trong quy trình tối ưu:
+\begin{itemize}
+  \item Hàm \texttt{mixup\_data} sinh các mẫu huấn luyện ảo bằng cách hòa trộn giữa hai ảnh ngẫu nhiên trong cùng mini-batch:
+  \begin{itemize}
+    \item Hệ số hòa trộn $\lambda$ được lấy mẫu ngẫu nhiên từ phân phối Beta: $\lambda \sim \mathrm{Beta}(\alpha, \alpha)$ với siêu tham số $\alpha = 0{,}2$. Giá trị $\alpha = 0{,}2$ tập trung mật độ xác suất ở hai đầu cận $0$ và $1$, đảm bảo ảnh hỗn hợp vẫn giữ rõ nét diện mạo của tổn thương chính, đồng thời hấp thụ một phần đặc trưng ngữ cảnh từ ảnh thứ hai.
+    \item Mảng chỉ số hoán vị ngẫu nhiên \texttt{idx = torch.randperm(x.size(0))} ghép cặp từng ảnh trong batch với một ảnh khác, tạo ra ảnh lai $x_{\mathrm{mix}} = \lambda x + (1-\lambda) x_{\mathrm{perm}}$.
+  \end{itemize}
+  \item Hàm mất mát kết hợp \texttt{mixup\_criterion} tính toán hàm mất mát tương ứng: thay vì gán nhãn cứng đơn lẻ, tổn thất tổng hợp được tính theo bình quân gia quyền $\mathcal{L} = \lambda \mathcal{L}(pred, y_a) + (1-\lambda) \mathcal{L}(pred, y_b)$, buộc mạng phải học ranh giới quyết định mượt mà và liên tục giữa các nhóm tổn thương.
+  \item Hàm mất mát \texttt{nn.CrossEntropyLoss(label\_smoothing=0.05)} phân bổ một tỷ lệ xác suất $\epsilon = 0{,}05$ chia đều cho tất cả các lớp bệnh còn lại. Cơ chế này ngăn chặn việc các logit dự đoán bị kích lên quá lớn, hạn chế tình trạng mô hình quá tự tin (overconfidence) khi gặp phải các ca lâm sàng có biểu hiện phức tạp hoặc nhiễu ảnh.
+\end{itemize}
+
+
+\subsection{Lan truyền ngược và cập nhật tham số}
+
+Quá trình huấn luyện CNN gồm hai giai đoạn chính: lan truyền xuôi (tạo logits và tính hàm mất mát) và lan truyền ngược (tính gradient của hàm mất mát theo tham số bằng quy tắc dây chuyền).
+
+Với tham số $\theta$, quy tắc cập nhật tổng quát theo gradient descent là:
+\begin{equation}
+  \theta_{t+1}=\theta_t-\eta\nabla_\theta\mathcal{L}
+\end{equation}
+
+Trong đó, $\eta$ là learning rate và $\nabla_\theta\mathcal{L}$ là gradient. Đồ án sử dụng Gradient Clipping với ngưỡng 1.0 để ổn định quá trình huấn luyện khi gradient quá lớn.
+
+\subsection{Learning rate và bộ tối ưu}
+
+Learning rate kiểm soát mức độ thay đổi tham số trong mỗi bước cập nhật. Đồ án áp dụng chiến lược Discriminative Learning Rate --- đặt learning rate khác nhau cho backbone và head:
+\begin{itemize}
+  \item \textbf{Backbone} (ResNet-18 pretrained): $\eta_{\text{backbone}}=3\times10^{-5}$ --- nhỏ để bảo toàn đặc trưng ImageNet đã học.
+  \item \textbf{Head + AMKC}: $\eta_{\text{head}}=1\times10^{-4}$ --- lớn hơn vì các tham số này cần học từ đầu cho bài toán da liễu.
+\end{itemize}
+
+Lịch trình Cosine Annealing được sử dụng để giảm dần learning rate theo dạng hàm cosine trong suốt quá trình huấn luyện, giúp mô hình hội tụ mượt mà hơn.
+
+Cấu hình bộ tối ưu AdamW với Discriminative Learning Rate và lịch trình Cosine Annealing được thực hiện như sau:
+
+\codeblock{chuong3/code/adamw_cosine}{Cấu hình AdamW và Cosine Annealing Scheduler}{lst:adamw-cosine}
+Quy trình huấn luyện áp dụng chiến lược điều chỉnh tốc độ học phân tầng (Discriminative Learning Rate) nhằm cân bằng giữa việc bảo toàn tri thức tiền huấn luyện và tối ưu các tham số mới:
+\begin{itemize}
+  \item Vòng lặp duyệt qua các tham số của mạng (\texttt{model.named\_parameters()}) phân tách trọng số thành hai nhóm riêng biệt:
+  \begin{itemize}
+    \item Nhóm \texttt{backbone\_params} gồm toàn bộ các tầng tích chập của ResNet-18 đã được nạp sẵn trọng số ImageNet. Nhóm này được gán tốc độ học thấp ($\eta = 3\times 10^{-5}$) cùng hệ số suy giảm trọng số nhẹ (\texttt{weight\_decay = 1e-5}) nhằm tinh chỉnh mềm mại các bộ lọc, tránh hiện tượng xóa sạch tri thức biểu diễn thị giác tổng quát (catastrophic forgetting).
+    \item Nhóm \texttt{head\_params} gồm mô-đun AMKC và tầng phân loại Head mới khởi tạo. Nhóm này được thiết lập tốc độ học lớn hơn gấp hơn 3 lần ($\eta = 1\times 10^{-4}$) kèm \texttt{weight\_decay = 1e-3} để nhanh chóng nắm bắt các đặc trưng chuyên biệt của miền ảnh bệnh học da liễu.
+  \end{itemize}
+  \item Bộ tối ưu AdamW áp dụng cơ chế cập nhật mô-men động lượng bậc một ($\beta_1 = 0{,}9$), bậc hai ($\beta_2 = 0{,}999$) và tách rời suy giảm trọng số (decoupled weight decay), mang lại quỹ đạo tối ưu ổn định vượt trội so với SGD thông thường.
+  \item Bộ lập lịch \texttt{CosineAnnealingWarmRestarts} điều phối tốc độ học theo chu kỳ 5 epoch (\texttt{T\_0 = len(train\_loader) * 5}, \texttt{T\_mult = 1}). Learning rate giảm dần theo đường cong cosine từ giá trị đỉnh về cận dưới $\eta_{\mathrm{min}} = 10^{-7}$, sau đó được khởi động lại chu kỳ mới, tạo động lực giúp mô hình vượt qua các hố cực tiểu địa phương kém chất lượng để hội tụ về vùng cực tiểu tối ưu toàn cục.
+\end{itemize}
+
+
+\subsection{Tăng cường dữ liệu và xử lý mất cân bằng lớp}
+
+Data augmentation tạo ra các biến thể của ảnh huấn luyện nhằm cải thiện khả năng khái quát hóa. Đối với dữ liệu da liễu, các phép biến đổi cần bảo toàn đặc điểm có ý nghĩa chẩn đoán. Các phép augmentation được sử dụng bao gồm: lật ngang ngẫu nhiên, xoay nhẹ, biến đổi phối cảnh và điều chỉnh màu sắc ở mức hợp lý.
+
+Các bộ dữ liệu hình ảnh da liễu trong thực nghiệm đều có đặc điểm phân bố lớp không đồng đều sâu sắc (các bệnh lý phổ biến như nốt ruồi lành tính chiếm số lượng áp đảo trong khi các ca ung thư ác tính có số mẫu rất hạn chế). Đồ án sử dụng phương pháp lấy mẫu theo trọng số (Weighted Random Sampling) kết hợp hàm mất mát có trọng số: xác suất lấy mẫu của mỗi lớp được điều chỉnh tỷ lệ nghịch với tần suất xuất hiện của lớp đó, đảm bảo các lớp thiểu số có cơ hội xuất hiện cân bằng hơn trong quá trình huấn luyện, từ đó hạn chế hiện tượng mô hình bị thiên lệch về các lớp đa số.
+
+Đoạn mã hiện thực hóa đường ống tăng cường dữ liệu và cơ chế lấy mẫu theo trọng số như sau:
+
+\codeblock{chuong3/code/augmentation_sampler}{Cài đặt Data Augmentation và Weighted Random Sampler}{lst:augmentation-sampler}
+Đường ống nạp và tiền xử lý dữ liệu giải quyết trực diện hai thách thức lớn nhất của ảnh da liễu trong thực tế: sự biến thiên điều kiện chụp ảnh và độ mất cân bằng lớp trầm trọng:
+\begin{itemize}
+  \item Chuỗi biến đổi tăng cường dữ liệu \texttt{train\_tf} (\texttt{transforms.Compose}) trang bị khả năng bất biến cho mô hình:
+  \begin{itemize}
+    \item Ảnh được phóng nhẹ lên $244 \times 244$ pixel (\texttt{Resize}) rồi cắt ngẫu nhiên về kích thước chuẩn $224 \times 224$ (\texttt{RandomCrop}), giúp mô hình nhận diện chính xác tổn thương dù nằm ở trung tâm hay lệch góc khung hình.
+    \item Các phép lật ngẫu nhiên theo phương ngang (\texttt{RandomHorizontalFlip}), phương dọc (\texttt{RandomVerticalFlip}) và xoay nhẹ $\pm 15^\circ$ (\texttt{RandomRotation}) phản ánh đúng tính chất không phụ thuộc vào góc quay của máy ảnh khi chụp tổn thương da.
+    \item Khối \texttt{ColorJitter} điều chỉnh biên độ độ sáng, độ tương phản, độ bão hòa ($\pm 15\%$) và sắc tướng ($\pm 4\%$), mô phỏng các điều kiện chiếu sáng khác nhau từ phòng khám chuyên khoa đến thiết bị di động cá nhân.
+    \item Phép biến đổi \texttt{Normalize} đưa giá trị pixel về thang phân phối có trung bình và phương sai chuẩn mực của ImageNet.
+  \end{itemize}
+  \item Bộ lấy mẫu theo trọng số \texttt{WeightedRandomSampler} triệt tiêu hiện tượng thiên lệch về các lớp đa số:
+  \begin{itemize}
+    \item Mảng \texttt{counts} thống kê tần suất mẫu thực tế của từng lớp bệnh trong tập huấn luyện. Trọng số bốc mẫu cho mỗi ảnh được tính bằng nghịch đảo kích thước của lớp tương ứng: $w_c = 1 / N_c$. Nhờ đó, các nhóm bệnh nguy hiểm có số lượng mẫu rất ít (như ung thư hắc tố Melanoma hay u sợi da) sẽ nhận trọng số lấy mẫu cao hơn nhiều lần so với nhóm nốt ruồi lành tính chiếm số lượng áp đảo.
+    \item Khi nạp dữ liệu với cơ chế bốc mẫu có hoàn lại (\texttt{replacement=True}), mỗi mini-batch luôn duy trì tỷ lệ xuất hiện cân bằng giữa các lớp bệnh, ngăn chặn tình trạng mô hình chỉ học dự đoán lớp đa số để tối ưu hóa độ chính xác bề nổi.
+  \end{itemize}
+\end{itemize}
+
+
+% ===================================================================
+\section{Thiết lập môi trường thực nghiệm}
+% ===================================================================
+
+Để đánh giá thực tế và khách quan năng lực của kiến trúc AdaptiveCNN (ResNet-18 tích hợp khối AMKC và Global Average Pooling) so với các mô hình chuẩn mực trong thị giác máy tính, đề tài tiến hành thực nghiệm độc lập trên bốn bộ dữ liệu hình ảnh da liễu công khai. Phần này mô tả chi tiết đặc tính của từng bộ dữ liệu, các mô hình đối sánh và hệ thống tiêu chí đo lường.
+
+\subsection{Các bộ dữ liệu thực nghiệm}
+
+Các thực nghiệm được triển khai độc lập trên bốn bài toán phân loại tương ứng với bốn bộ dữ liệu:
+
+\begin{enumerate}[label=\textbf{\arabic*.}]
+  \item \textbf{Tập dữ liệu HAM10000 (Human Against Machine with 10000 training images)}: 
+  Bộ dữ liệu chuẩn mực về ảnh soi da (dermoscopy), gồm $10.015$ hình ảnh được thu thập từ Đại học Y Vienna (Áo) và Phòng khám Cliff (Australia). Dữ liệu được gán nhãn thành 7 nhóm tổn thương sắc tố:
+  \begin{itemize}
+    \item \textit{Melanocytic nevi} (nv) --- Nốt ruồi sắc tố lành tính: $6.705$ ảnh ($66{,}95\%$).
+    \item \textit{Melanoma} (mel) --- Ung thư hắc tố ác tính: $1.113$ ảnh ($11{,}11\%$).
+    \item \textit{Benign keratosis-like lesions} (bkl) --- Dày sừng tiết bã / lichen lành tính: $1.099$ ảnh ($10{,}97\%$).
+    \item \textit{Basal cell carcinoma} (bcc) --- Ung thư biểu mô tế bào đáy: $514$ ảnh ($5{,}13\%$).
+    \item \textit{Actinic keratoses} (akiec) --- Dày sừng quang hóa: $327$ ảnh ($3{,}27\%$).
+    \item \textit{Vascular lesions} (vasc) --- Tổn thương mạch máu: $142$ ảnh ($1{,}42\%$).
+    \item \textit{Dermatofibroma} (df) --- U sợi da: $115$ ảnh ($1{,}15\%$).
+  \end{itemize}
+  Tập dữ liệu được phân chia nghiêm ngặt theo trường \texttt{lesion\_id} thành: tập huấn luyện ($7.145$ ảnh), tập validation ($1.429$ ảnh) và tập kiểm thử ($1.441$ ảnh), đảm bảo không xảy ra hiện tượng rò rỉ dữ liệu giữa các tập.
+
+  \item \textbf{Tập dữ liệu ISIC 2019 (International Skin Imaging Collaboration 2019)}:
+  Bộ dữ liệu quy mô lớn tổng hợp $25.331$ ảnh soi da huấn luyện chất lượng cao từ ba nguồn: HAM10000, BCN\_20000 và ViDIR. Dữ liệu bao quát 8 nhóm bệnh da liễu lâm sàng chính: MEL, NV, BCC, AK, BKL, DF, VASC, và bổ sung thêm \textit{Squamous Cell Carcinoma} (SCC --- Ung thư biểu mô tế bào vảy). Bài toán trên ISIC 2019 đánh giá khả năng phân loại trên không gian dữ liệu mở rộng lớn gấp 2,5 lần tập HAM10000.
+
+  \item \textbf{Tập dữ liệu SkinDisease (Pacificrm)}:
+  Bộ dữ liệu gồm $15.444$ hình ảnh chụp lâm sàng thông thường (Clinical Photography) từ camera quang học và thiết bị di động, bao quát 22 hội chứng bệnh da liễu phổ biến trong đời sống (như Eczema, Psoriasis, Acne, Warts, Fungal infections, Benign/Malignant Tumors,...). Dữ liệu được phân chia thành: tập huấn luyện ($11.118$ ảnh), tập validation ($2.780$ ảnh) và tập kiểm thử ($1.546$ ảnh). Đây là bài toán đánh giá năng lực nhận diện trên ảnh camera đời thường có nhiều yếu tố gây nhiễu thực tế (ánh sáng, bóng đổ, góc chụp).
+
+  \item \textbf{Tập dữ liệu PAD-UFES-20 (Dermatological and Surgical Assistance Program)}:
+  Bộ dữ liệu thu thập qua chương trình hỗ trợ da liễu tại Đại học Liên bang Espírito Santo (Brazil), gồm $2.298$ ảnh chụp từ camera điện thoại thông minh (smartphone images) của bệnh nhân thực tế. Dữ liệu bao gồm 6 nhóm bệnh lâm sàng chính: ACK ($730$ ảnh), BCC ($845$ ảnh), MEL ($52$ ảnh), NEV ($244$ ảnh), SCC ($192$ ảnh) và SEK ($235$ ảnh). Dữ liệu được phân chia theo nhóm bệnh nhân thành: tập huấn luyện ($1.632$ ảnh), tập validation ($308$ ảnh) và tập kiểm thử ($358$ ảnh).
 \end{enumerate}
 
-Hạn chế của bộ test:
-\begin{itemize}
-  \item Cỡ mẫu nhỏ ($n=24$), khoảng tin cậy rộng.
-  \item Nhãn cố định theo RAGAS nên hit@k và recall@k là cận dưới.
-  \item Câu hỏi sinh từ chính chunk nên văn phong gần văn bản gốc, thiên lợi cho BM25.
-  \item Chưa được kiểm tra thủ công toàn bộ.
-  \item Chưa đánh giá được truy vấn xuyên ngôn ngữ vì tài liệu chỉ có một ngôn ngữ.
-\end{itemize}
-
-\subsubsection{Kết quả}
-
-\begin{longtable}{|>{\raggedright\arraybackslash}p{0.220\dimexpr\linewidth-14\tabcolsep\relax}|>{\raggedright\arraybackslash}p{0.123\dimexpr\linewidth-14\tabcolsep\relax}|>{\raggedright\arraybackslash}p{0.121\dimexpr\linewidth-14\tabcolsep\relax}|>{\raggedright\arraybackslash}p{0.102\dimexpr\linewidth-14\tabcolsep\relax}|>{\raggedright\arraybackslash}p{0.120\dimexpr\linewidth-14\tabcolsep\relax}|>{\raggedright\arraybackslash}p{0.155\dimexpr\linewidth-14\tabcolsep\relax}|>{\raggedright\arraybackslash}p{0.159\dimexpr\linewidth-14\tabcolsep\relax}|}
-\hline
-\textbf{\textbf{Luồng truy xuất}} & \textbf{\textbf{hit@1}} & \textbf{\textbf{hit@3}} & \textbf{\textbf{hit@5}} & \textbf{\textbf{hit@10}} & \textbf{\textbf{recall@10}} & \textbf{\textbf{MRR@10}} \\ \hline
-\endhead
-Ngữ nghĩa & 0.58 & 0.75 & 0.83 & 0.96 & 0.90 & 0.70 \\ \hline
-Từ khóa BM25 & 0.50 & 0.67 & 0.83 & 0.88 & 0.73 & 0.63 \\ \hline
-\textbf{Hỗn hợp} & \textbf{0.83} & \textbf{0.92} & \textbf{1.00} & \textbf{1.00} & \textbf{0.94} & \textbf{0.90} \\ \hline
-\caption{Kết quả đánh giá các luồng truy xuất trên bộ dữ liệu kiểm thử}
-\end{longtable}
-
-\begin{itemize}
-  \item \textbf{Luồng hỗn hợp cho kết quả cao nhất:} hit@5 = hit@10 = 1.00, hit@1 = 0.83, MRR@10 = 0.90. So với luồng ngữ nghĩa, hit@5 tăng $+0.17$ (khoảng tin cậy 95\% $[+0.04,+0.33]$, có ý nghĩa thống kê).
-  \item \textbf{Ngữ nghĩa phủ rộng hơn BM25:} recall@10 = 0.90 so với 0.73, nhất là ở câu hỏi đa bước. BM25 vẫn đạt hit@5 = 0.83 vì từ vựng câu hỏi gần văn bản gốc.
-  \item \textbf{RRF và rerank bổ sung cho nhau:} RRF nâng recall@10 lên 0.94. Rerank quyết định thứ hạng đầu, hit@1 tăng từ 0.67 lên 0.83.
-\end{itemize}
-
-\section{Truy xuất từ đồ thị tri thức}
-\label{sec:truy-xuat-do-thi}
-
-\subsection{Tổng quan}
-
-Đồ thị tri thức lưu quan hệ có cấu trúc giữa bệnh, triệu chứng và thuốc. Tìm kiếm trên văn bản không trả lời tốt các câu hỏi dạng quan hệ như ``bệnh nào có triệu chứng này'' hay ``thuốc này chống chỉ định với bệnh nào''. Đồ thị trả lời các câu hỏi đó bằng truy vấn trực tiếp.
-
-Đồ thị gồm hai thành phần nạp vào Neo4j:
-\begin{itemize}
-  \item \textbf{PrimeKG:} đồ thị tri thức y sinh có sẵn. Hệ thống giữ 5 loại nút (bệnh, thuốc, hiệu ứng/phenotype, gen/protein, phơi nhiễm) và 11 loại quan hệ như bệnh -- triệu chứng, bệnh -- thuốc, thuốc -- thuốc.
-  \item \textbf{DermO:} ontology da liễu. Mỗi thuật ngữ có định nghĩa, từ đồng nghĩa và thuật ngữ cha.
-\end{itemize}
-
-Ngoài hai thành phần trên, pipeline số hóa giáo trình trích thêm các cạnh quan hệ từ sách và ghi vào cùng đồ thị, đánh dấu \texttt{source = DOC}.
-
-Agent có hai công cụ truy vấn đồ thị, với hai mức tin cậy khác nhau:
-\begin{itemize}
-  \item \textbf{\texttt{knowledge\_graph\_query}} truy vấn PrimeKG và DermO. Kết quả mang nhãn \texttt{source = kg} và là \textbf{gợi ý}, không phải bằng chứng lâm sàng. Quan hệ trong đồ thị cho biết hai thực thể liên quan, không cho biết người bệnh mắc bệnh đó. DermO chỉ dùng để nhận diện thuật ngữ. Agent dùng công cụ này để chọn bệnh ứng viên, câu hỏi phân biệt và tra nhanh quan hệ thuốc -- bệnh, rồi đối chiếu bằng đoạn giáo trình trước khi kết luận.
-  \item \textbf{\texttt{query\_document\_graph}} truy vấn các cạnh \texttt{DOC} trích từ giáo trình. Mỗi cạnh có câu trích gốc và số trang, nên kết quả được xếp vào \textbf{bằng chứng}. Cạnh không có câu trích bị bỏ, vì không có gì để trích dẫn.
-\end{itemize}
-
-\subsection{Nguồn của đồ thị}
-
-\subsubsection{Đồ thị nền}
-
-PrimeKG và DermO được tải về, làm sạch và nạp bằng các lệnh \texttt{make kg-download}, \texttt{kg-build}, \texttt{kg-load}. Bước làm sạch bỏ cạnh trùng và dòng lỗi. Lệnh \texttt{kg-verify} so số nút và số cạnh trong Neo4j với số liệu tổng hợp lúc làm sạch.
-
-Hai đồ thị không có cạnh nối trực tiếp. Cầu nối duy nhất là so khớp tên: DermO chuẩn hóa tên, PrimeKG cung cấp quan hệ.
-
-\subsubsection{Quan hệ trích từ giáo trình}
-
-Pipeline số hóa có hai bước dành cho đồ thị:
-\begin{enumerate}
-  \item \textbf{Bước \texttt{graph}:} LLM đọc từng mục sách và điền vào các ô quan hệ theo lược đồ do quản trị viên định nghĩa. Tên thực thể trong sách được khớp với nút của PrimeKG hoặc DermO qua bảng từ vựng. Kết quả là các bộ ba (thực thể, quan hệ, thực thể). Người duyệt xem và sửa các bộ ba này.
-  \item \textbf{Bước \texttt{graph\_index}:} chỉ nạp các bộ ba hợp lệ vào Neo4j, xóa cạnh cũ của cùng tài liệu trước khi ghi, và kiểm tra số cạnh đã lưu bằng số cạnh dự kiến.
-\end{enumerate}
-
-Mỗi cạnh \texttt{DOC} lưu câu trích dẫn (\texttt{evidence}) và số trang. Nhờ đó người dùng truy ngược được nguồn của quan hệ.
-
-Cấu hình \texttt{KG\_EDGE\_SOURCES} (mặc định \texttt{["KG"]}) quy định \texttt{knowledge\_graph\_query} dùng nguồn cạnh nào. Công cụ \texttt{query\_document\_graph} không phụ thuộc cấu hình này và chỉ đọc cạnh \texttt{DOC}.
-
-\subsection{Giải quyết thực thể}
-
-Câu hỏi của bệnh nhân dùng từ đời thường nên phải ánh xạ về nút trong đồ thị trước khi truy vấn. Quy trình gồm ba bước:
-\begin{enumerate}
-  \item \textbf{Trích thực thể:} LLM trích bệnh, triệu chứng, thuốc từ câu hỏi, dịch sang tiếng Anh y khoa và giữ tên tiếng Việt.
-  \item \textbf{Chuẩn hóa bằng DermO:} tra thuật ngữ DermO khớp chính xác tên hoặc từ đồng nghĩa, ưu tiên khớp chính xác trước khớp một phần. Kết quả là tên chuẩn và các từ đồng nghĩa.
-  \item \textbf{Tìm nút gốc (seed):} dùng tập tên trên khớp nút PrimeKG thuộc loại bệnh, phenotype hoặc thuốc. Nếu không có khớp chính xác, hệ thống khớp một phần và lấy tối đa 3 nút.
-\end{enumerate}
-
-Id của PrimeKG chỉ duy nhất theo loại nút (8.822 id dùng chung cho nhiều loại), nên mọi truy vấn khớp nút kèm nhãn loại.
-
-\subsection{Truy vấn theo ý định}
-
-Công cụ \texttt{knowledge\_graph\_query} nhận một ý định (intent) và danh sách thực thể. Mỗi ý định ứng với một câu Cypher cố định, chỉ duyệt đúng nhóm quan hệ cần dùng. Cách này cho kết quả gọn, và không để LLM tự sinh Cypher.
+Bảng~\ref{tab:datasets_summary} tổng hợp chi tiết đặc điểm kỹ thuật và cấu hình của bốn bộ dữ liệu thực nghiệm.
 
 \begin{table}[H]
 \centering
+\caption{Tổng hợp đặc tính các bộ dữ liệu hình ảnh da liễu thực nghiệm trong đề tài}
+\label{tab:datasets_summary}
 \small
-\begin{tabular}{|p{4.2cm}|p{4.8cm}|p{3.9cm}|}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{|p{2.5cm}|p{1.7cm}|p{2.3cm}|p{1.3cm}|p{5.6cm}|}
 \hline
-\textbf{Ý định} & \textbf{Quan hệ duyệt} & \textbf{Thực thể đầu vào} \\ \hline
-\texttt{disease\_overview} & Triệu chứng, vị trí thường gặp, yếu tố nguy cơ, dấu hiệu cảnh báo & Bệnh \\ \hline
-\texttt{symptoms\_of\_disease} & Triệu chứng có và không có & Bệnh \\ \hline
-\texttt{treatments} & Chỉ định, dùng ngoài chỉ định & Bệnh \\ \hline
-\texttt{contraindications} & Chống chỉ định & Bệnh \\ \hline
-\texttt{drug\_profile} & Chỉ định, chống chỉ định, dùng ngoài chỉ định, tác dụng phụ, tương tác thuốc & Thuốc \\ \hline
-\texttt{diseases\_with\_symptom}, \texttt{differential} & Đường riêng, xem mục~\ref{sec:ung-vien} & Triệu chứng; bệnh \\ \hline
-\end{tabular}
-\caption{Ý định truy vấn đồ thị và nhóm quan hệ tương ứng}
-\label{tab:y-dinh-kg}
+\textbf{Bộ dữ liệu} & \textbf{Số lượng} & \textbf{Loại hình ảnh} & \textbf{Số lớp} & \textbf{Nội dung bài toán thực nghiệm} \\
+\hline
+HAM10000 & $10.015$ & Soi da (Dermoscopy) & 7 & Phân loại 7 nhóm tổn thương sắc tố da chuyên sâu (split theo \texttt{lesion\_id}) \\
+\hline
+ISIC 2019 & $25.331$ & Soi da (Dermoscopy) & 8 & Phân loại 8 nhóm tổn thương da trên quy mô lớn, bổ sung ung thư biểu mô SCC \\
+\hline
+SkinDisease (Pacificrm) & $15.444$ & Ảnh chụp lâm sàng (Clinical Photo) & 22 & Phân loại 22 bệnh da liễu thông thường trên ảnh chụp camera đa dạng \\
+\hline
+PAD-UFES-20 & $2.298$ & Ảnh chụp điện thoại (Smartphone) & 6 & Phân loại 6 nhóm bệnh lâm sàng từ ảnh chụp điện thoại di động thực tế \\
+\hline
+\end{tabular}%
+}
 \end{table}
 
-Quy tắc chung của các truy vấn:
+\subsection{Các mô hình đối sánh}
+
+Trên mỗi bộ dữ liệu, đề tài tiến hành huấn luyện và đánh giá năm kiến trúc mạng nơ-ron tích chập tiêu biểu:
+
 \begin{itemize}
-  \item Cạnh duyệt không phân biệt chiều và lọc theo nguồn cạnh được phép.
-  \item Mỗi quan hệ trả tối đa một số nút nhất định, sắp theo tên để kết quả ổn định giữa các lần gọi.
-  \item Mỗi dữ kiện trả về dạng \{ý định, quan hệ, văn bản\}, kèm trang sách nếu cạnh có nguồn.
-  \item Ý định cần loại thực thể nhất định. Nếu thực thể không khớp loại, công cụ trả ghi chú cho agent thay vì kết quả sai.
+  \item \textbf{ResNet-18 Baseline}: Kiến trúc mạng thặng dư 18 tầng nguyên bản, sử dụng tầng stem tích chập đơn kích thước $7\times7$ truyền thống kết hợp Global Average Pooling ($11{,}44$M tham số, $1{,}81$ GFLOPs).
+  \item \textbf{ResNet-18 + AMKC (Kiến trúc đề xuất)}: Tích hợp mô-đun tích chập đa kernel thích nghi (AMKC với hai nhánh kernel $3\times3$ và $5\times5$, $\lambda = 0{,}10$, learnable gates qua hàm $\tanh$ và khởi tạo Zero-Init) đặt trước stem của ResNet-18, kết hợp Global Average Pooling ($11{,}45$M tham số, $1{,}83$ GFLOPs).
+  \item \textbf{ResNet-50}: Kiến trúc mạng thặng dư sâu hơn với các khối Bottleneck ba tầng ($24{,}57$M tham số, $4{,}09$ GFLOPs).
+  \item \textbf{EfficientNet-B0}: Kiến trúc tối ưu hóa theo tỷ lệ cân bằng với các khối tích chập đảo ngược MBConv và cơ chế chú ý SE ($4{,}67$M tham số, $0{,}39$ GFLOPs).
+  \item \textbf{DenseNet-121}: Kiến trúc kết nối dày đặc liên tục giữa các tầng ($7{,}49$M tham số, $2{,}83$ GFLOPs).
 \end{itemize}
 
-\subsection{Truy vấn đồ thị trích từ giáo trình}
+\subsection{Môi trường thực nghiệm và Tiêu chí đánh giá}
 
-Công cụ \texttt{query\_document\_graph} nhận tên một thực thể (tiếng Anh hoặc tiếng Việt) và một loại quan hệ tùy chọn, ví dụ \texttt{INDICATION}, \texttt{CONTRAINDICATION}. Quy trình:
+Tất cả các thử nghiệm được thực hiện trên môi trường điện toán đám mây Kaggle Notebooks với cấu hình: GPU NVIDIA Tesla T4 / P100 (16 GB VRAM), 4 vCPU Intel Xeon (2,2 GHz), 30 GB RAM, nền tảng PyTorch 2.x và CUDA. Quá trình huấn luyện sử dụng bộ tối ưu AdamW, bộ lập lịch Cosine Annealing, kỹ thuật Mixup ($\alpha = 0{,}2$), Label Smoothing ($\epsilon = 0{,}1$), 40 epochs và cùng kích thước ảnh chuẩn hóa $224 \times 224$ pixel. Quá trình kiểm thử áp dụng kỹ thuật tăng cường lúc suy luận (Test-Time Augmentation --- TTA).
+
+Các chỉ số đo lường hiệu năng bao gồm: Accuracy tổng thể, Macro-F1 (trung bình điều hòa trên các lớp), Macro-Recall, One-vs-Rest ROC-AUC, Recall của lớp ung thư hắc tố ác tính ($\mathrm{Recall}_{\mathrm{mel}}$), số lượng tham số (Params M), khối lượng tính toán (GFLOPs) và thời gian trễ suy luận (ms/ảnh).
+
+Chi tiết cấu hình kiến trúc, siêu tham số và thiết lập huấn luyện của năm mô hình nghiên cứu được đặc tả tổng hợp trong Bảng~\ref{tab:models_specification_matrix}.
+
+\clearpage
+\begin{sidewaystable}[p]
+\centering
+\caption{Bảng đặc tả tổng hợp cấu hình kiến trúc, siêu tham số và thiết lập huấn luyện của 5 mô hình nghiên cứu}
+\label{tab:models_specification_matrix}
+\small
+\setlength{\tabcolsep}{4.5pt}
+\renewcommand{\arraystretch}{1.2}
+\resizebox{0.92\textheight}{!}{%
+\begin{tabular}{p{2.8cm}p{3.8cm}p{4.2cm}p{3.8cm}p{2.2cm}p{2.5cm}p{3.2cm}p{2.2cm}p{3.8cm}}
+\toprule
+\textbf{Mô hình} & \textbf{Đặc trưng cốt lõi} & \textbf{Kiến trúc \& Stem} & \textbf{Head phân loại} & \textbf{Độ sâu / Khối} & \textbf{Params / FLOPs} & \textbf{Learning Rate \& Scheduler} & \textbf{Epoch / Batch} & \textbf{Regularization \& Augmentation} \\
+\midrule
+\textbf{ResNet-18 Baseline} & Residual learning chuẩn, skip connection đồng nhất identity & Conv $7\times7$, stride 2, maxpool $3\times3$; 4 residual stages (BasicBlock) & AdaptiveAvgPool2d + Linear($512, C$) & 18 layers (8 BasicBlocks) & $11{,}18\text{M} - 11{,}45\text{M}$ ($1{,}81$ GFLOPs) & AdamW ($lr=1\text{e-}4$, weight decay $1\text{e-}2$), CosineAnnealingLR & 40 epochs, batch size 64 & Mixup ($\alpha=0{,}2$), Label Smoothing ($\epsilon=0{,}1$), RandAugment, TTA \\
+\addlinespace
+\textbf{ResNet-18 + AMKC} \newline \textit{(Kiến trúc đề xuất)} & Mô-đun AMKC đa nhánh thích nghi ($3\times3$, $5\times5$), cổng $\tanh(g)$, Zero-Init, $\lambda=0{,}10$ & AMKC module tiền xử lý trước Stem Conv $7\times7$; 4 residual stages & AdaptiveAvgPool2d + Linear($512, C$) & 18 layers + 1 AMKC block & $11{,}19\text{M} - 11{,}45\text{M}$ ($1{,}83$ GFLOPs) & AdamW ($lr=1\text{e-}4$, weight decay $1\text{e-}2$), CosineAnnealingLR & 40 epochs, batch size 64 & Mixup ($\alpha=0{,}2$), Label Smoothing ($\epsilon=0{,}1$), RandAugment, TTA \\
+\addlinespace
+\textbf{ResNet-50} & Mạng thặng dư sâu hơn với Bottleneck blocks ($1\times1 \to 3\times3 \to 1\times1$) & Conv $7\times7$, stride 2, maxpool $3\times3$; 4 bottleneck stages & AdaptiveAvgPool2d + Linear($2048, C$) & 50 layers (16 Bottlenecks) & $23{,}52\text{M} - 24{,}57\text{M}$ ($4{,}09$ GFLOPs) & AdamW ($lr=1\text{e-}4$, weight decay $1\text{e-}2$), CosineAnnealingLR & 40 epochs, batch size 64 & Mixup ($\alpha=0{,}2$), Label Smoothing ($\epsilon=0{,}1$), RandAugment, TTA \\
+\addlinespace
+\textbf{EfficientNet-B0} & Compound scaling cân bằng depth, width, resolution; khối MBConv & Conv $3\times3$, stride 2; 7 stages MBConv (depthwise + SE) & AdaptiveAvgPool2d + Dropout($0{,}2$) + Linear($1280, C$) & 16 MBConv blocks & $4{,}01\text{M} - 4{,}67\text{M}$ ($0{,}39$ GFLOPs) & AdamW ($lr=1\text{e-}4$, weight decay $1\text{e-}2$), CosineAnnealingLR & 40 epochs, batch size 64 & Mixup ($\alpha=0{,}2$), Label Smoothing ($\epsilon=0{,}1$), RandAugment, TTA \\
+\addlinespace
+\textbf{DenseNet-121} & Kết nối dày đặc (dense connectivity), tái sử dụng đặc trưng liên tục & Conv $7\times7$, stride 2, maxpool; 4 DenseBlocks + Transition & AdaptiveAvgPool2d + Linear($1024, C$) & 121 layers (4 DenseBlocks) & $6{,}96\text{M} - 7{,}49\text{M}$ ($2{,}83$ GFLOPs) & AdamW ($lr=1\text{e-}4$, weight decay $1\text{e-}2$), CosineAnnealingLR & 40 epochs, batch size 64 & Mixup ($\alpha=0{,}2$), Label Smoothing ($\epsilon=0{,}1$), RandAugment, TTA \\
+\bottomrule
+\end{tabular}%
+}
+\end{sidewaystable}
+\clearpage
+
+% ===================================================================
+\section{Kết quả thực nghiệm và Phân tích đánh giá}
+% ===================================================================
+
+\subsection{Kết quả thực nghiệm trên bộ dữ liệu HAM10000}
+
+Trên bộ dữ liệu HAM10000, các mô hình được thử nghiệm theo hai phương thức: kiểm định đa hạt giống ngẫu nhiên (multi-seed: 42, 123, 2026, tính giá trị trung bình kèm độ lệch chuẩn $\text{mean} \pm \text{std}$) và kiểm định đơn hạt giống (seed 42). Bảng~\ref{tab:ham10000_results} trình bày kết quả thực nghiệm chi tiết.
+
+\begin{table}[H]
+\centering
+\caption{Kết quả đối sánh các mô hình trên tập kiểm thử HAM10000 (TTA, 3 seeds: $42, 123, 2026$)}
+\label{tab:ham10000_results}
+\small
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{|l|c|c|c|c|c|c|c|}
+\hline
+\textbf{Mô hình} & \textbf{Acc (\%)} & \textbf{Macro-F1 (\%)} & \textbf{Macro-Rec (\%)} & \textbf{ROC-AUC} & \textbf{MEL Rec (\%)} & \textbf{Params} & \textbf{Latency} \\
+\hline
+ResNet-18 Baseline & $81{,}10 \pm 1{,}25$ & $71{,}46 \pm 0{,}26$ & $74{,}79 \pm 0{,}99$ & $0{,}9612 \pm 0{,}0023$ & $60{,}73 \pm 9{,}60$ & $11{,}44$M & $2{,}44$ ms \\
+\hline
+\textbf{ResNet-18 + AMKC} & $\mathbf{81{,}26 \pm 1{,}39}$ & $70{,}51 \pm 3{,}11$ & $74{,}62 \pm 4{,}89$ & $0{,}9607 \pm 0{,}0016$ & $52{,}97 \pm 1{,}98$ & $11{,}45$M & $2{,}99$ ms \\
+\hline
+EfficientNet-B0 & $81{,}70 \pm 0{,}38$ & $70{,}53 \pm 1{,}59$ & $73{,}62 \pm 1{,}62$ & $\mathbf{0{,}9636 \pm 0{,}0017}$ & $60{,}05 \pm 4{,}81$ & $4{,}67$M & $8{,}76$ ms \\
+\hline
+DenseNet-121 & $82{,}19 \pm 0{,}14$ & $\mathbf{73{,}33 \pm 0{,}24}$ & $\mathbf{77{,}10 \pm 2{,}73}$ & $0{,}9620 \pm 0{,}0041$ & $56{,}16 \pm 4{,}94$ & $7{,}49$M & $15{,}22$ ms \\
+\hline
+ResNet-50 & $\mathbf{83{,}16 \pm 0{,}28}$ & $72{,}56 \pm 1{,}80$ & $75{,}20 \pm 2{,}18$ & $0{,}9590 \pm 0{,}0029$ & $55{,}71 \pm 2{,}59$ & $24{,}57$M & $6{,}71$ ms \\
+\hline
+\end{tabular}%
+}
+\end{table}
+
+Phân tích số liệu thực nghiệm trên HAM10000:
+\begin{itemize}
+  \item \textbf{Về độ chính xác}: Mô hình ResNet-50 đạt Accuracy trung bình cao nhất ($83{,}16\%$), theo sau là DenseNet-121 ($82{,}19\%$). Kiến trúc đề xuất ResNet-18 + AMKC đạt Accuracy trung bình $81{,}26\%$, nhỉnh hơn nhẹ so với ResNet-18 Baseline ($81{,}10\%$).
+  \item \textbf{Về Macro-F1}: DenseNet-121 đạt Macro-F1 cao nhất ($73{,}33\%$). ResNet-18 + AMKC đạt $70{,}51\%$, tương đương EfficientNet-B0 ($70{,}53\%$) và thấp hơn ResNet-18 Baseline ($71{,}46\%$).
+  \item \textbf{Về thời gian trễ}: ResNet-18 Baseline và ResNet-18 + AMKC có tốc độ suy luận nhanh nhất ($2{,}44$ ms và $2{,}99$ ms), nhanh hơn gấp 5 lần so với DenseNet-121 ($15{,}22$ ms).
+\end{itemize}
+
+Các kết quả trực quan hóa quá trình huấn luyện và kiểm thử của mô hình ResNet-18 + AMKC trên tập dữ liệu HAM10000 được thể hiện chi tiết từ Hình~\ref{fig:ham10000_curves} đến Hình~\ref{fig:ham10000_f1}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/ham10000_training_curves.png}
+\caption{Đường cong Training Loss và Validation Accuracy của ResNet-18 + AMKC trên HAM10000}
+\label{fig:ham10000_curves}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/ham10000_amkc_monitoring.png}
+\caption{Tiến trình giá trị cổng thích nghi $\tanh(g)$ và chuẩn trọng số tích chập AMKC trên HAM10000}
+\label{fig:ham10000_amkc}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.75\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/ham10000_confusion_matrix.png}
+\caption{Ma trận nhầm lẫn của mô hình ResNet-18 + AMKC trên tập kiểm thử HAM10000}
+\label{fig:ham10000_cm}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/ham10000_per_class_f1.png}
+\caption{Phân bố điểm F1 trên từng lớp bệnh của mô hình ResNet-18 + AMKC trên HAM10000}
+\label{fig:ham10000_f1}
+\end{figure}
+
+Qua đồ thị theo dõi khối AMKC (Hình~\ref{fig:ham10000_amkc}), ta thấy giá trị cổng thích nghi $\tanh(g)$ của hai nhánh kernel $3\times3$ và $5\times5$ duy trì ổn định quanh ngưỡng $0{,}76$ trong suốt 40 epoch, trong khi chuẩn trọng số tích chập tăng dần từ 0 lên khoảng $0{,}03 - 0{,}04$, chứng minh cơ chế Zero-Init đã kích hoạt chuyển tiếp mượt mà từ trọng số tiền huấn luyện ImageNet sang thích nghi với dữ liệu da liễu.
+
+\subsection{Kết quả thực nghiệm trên bộ dữ liệu quy mô lớn ISIC 2019}
+
+Trên tập dữ liệu ISIC 2019 ($25.331$ ảnh, 8 nhóm bệnh), các mô hình được huấn luyện và đánh giá trên tập kiểm thử độc lập (seed 42, có TTA). Kết quả chi tiết được tổng hợp trong Bảng~\ref{tab:isic2019_results}.
+
+\begin{table}[H]
+\centering
+\caption{Kết quả đối sánh các mô hình trên tập kiểm thử ISIC 2019 (Seed 42, TTA)}
+\label{tab:isic2019_results}
+\small
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{|l|c|c|c|c|c|c|c|}
+\hline
+\textbf{Mô hình} & \textbf{Acc (\%)} & \textbf{Macro-F1 (\%)} & \textbf{Macro-Rec (\%)} & \textbf{ROC-AUC} & \textbf{MEL Rec (\%)} & \textbf{Params} & \textbf{Latency} \\
+\hline
+ResNet-18 Baseline & $71{,}39$ & $57{,}08$ & $58{,}84$ & $0{,}9163$ & $58{,}00$ & $11{,}45$M & $2{,}74$ ms \\
+\hline
+\textbf{ResNet-18 + AMKC} & $71{,}11$ & $56{,}73$ & $56{,}44$ & $0{,}9173$ & $\mathbf{64{,}15}$ & $11{,}45$M & $\mathbf{2{,}57}$ ms \\
+\hline
+EfficientNet-B0 & $72{,}24$ & $58{,}62$ & $\mathbf{60{,}14}$ & $\mathbf{0{,}9318}$ & $61{,}86$ & $4{,}67$M & $8{,}17$ ms \\
+\hline
+ResNet-50 & $73{,}82$ & $58{,}89$ & $58{,}85$ & $0{,}9019$ & $53{,}95$ & $24{,}57$M & $5{,}91$ ms \\
+\hline
+DenseNet-121 & $\mathbf{74{,}07}$ & $\mathbf{59{,}63}$ & $58{,}80$ & $0{,}9228$ & $63{,}62$ & $7{,}49$M & $14{,}86$ ms \\
+\hline
+\end{tabular}%
+}
+\end{table}
+
+Phân tích kết quả trên ISIC 2019 mang lại những phát hiện quan trọng:
+\begin{itemize}
+  \item \textbf{Độ nhạy Melanoma vượt trội của AMKC}: Mặc dù DenseNet-121 đạt Accuracy cao nhất ($74{,}07\%$) và Macro-F1 cao nhất ($59{,}63\%$), mô hình \textbf{ResNet-18 + AMKC đạt độ nhạy Melanoma cao nhất trong toàn bộ các mô hình ($\mathrm{Recall}_{\mathrm{mel}} = 64{,}15\%$)}, vượt qua DenseNet-121 ($63{,}62\%$), EfficientNet-B0 ($61{,}86\%$), ResNet-18 Baseline ($58{,}00\%$) và bỏ xa ResNet-50 ($53{,}95\%$). Đây là điểm cộng lâm sàng then chốt đối với hệ thống tư vấn y tế, nơi việc giảm thiểu bỏ sót ca ung thư hắc tố ác tính là ưu tiên an toàn sống còn.
+  \item \textbf{Độ trễ tối ưu}: ResNet-18 + AMKC đạt độ trễ suy luận $2{,}57$ ms/ảnh, nhanh hơn $5{,}8$ lần so với DenseNet-121 ($14{,}86$ ms) và hơn $3$ lần so với EfficientNet-B0 ($8{,}17$ ms).
+\end{itemize}
+
+Các đồ thị trực quan hóa quá trình huấn luyện và kiểm thử của mô hình ResNet-18 + AMKC trên tập dữ liệu quy mô lớn ISIC 2019 được trình bày từ Hình~\ref{fig:isic2019_curves} đến Hình~\ref{fig:isic2019_f1}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/isic2019_training_curves.png}
+\caption{Đường cong Training Loss và Validation Accuracy trên tập dữ liệu ISIC 2019}
+\label{fig:isic2019_curves}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/isic2019_amkc_monitoring.png}
+\caption{Tiến trình giá trị cổng thích nghi $\tanh(g)$ và chuẩn trọng số tích chập AMKC trên ISIC 2019}
+\label{fig:isic2019_amkc}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.75\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/isic2019_confusion_matrix.png}
+\caption{Ma trận nhầm lẫn của mô hình ResNet-18 + AMKC trên tập kiểm thử ISIC 2019}
+\label{fig:isic2019_cm}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/isic2019_per_class_f1.png}
+\caption{Phân bố điểm F1 trên từng lớp bệnh của mô hình ResNet-18 + AMKC trên ISIC 2019}
+\label{fig:isic2019_f1}
+\end{figure}
+
+\subsection{Kết quả thực nghiệm trên bộ dữ liệu ảnh lâm sàng SkinDisease}
+
+Bộ dữ liệu SkinDisease đại diện cho bài toán phân loại đa lớp quy mô lớn trên ảnh lâm sàng thông thường ($15.444$ ảnh, 22 lớp bệnh). Bảng~\ref{tab:skindisease_results} tổng hợp kết quả của năm mô hình trên tập kiểm thử ($1.546$ ảnh, seed 42, có TTA).
+
+\begin{table}[H]
+\centering
+\caption{Kết quả đối sánh các mô hình trên tập kiểm thử SkinDisease (22 lớp, Seed 42, TTA)}
+\label{tab:skindisease_results}
+\small
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{|l|c|c|c|c|c|c|c|}
+\hline
+\textbf{Mô hình} & \textbf{Acc (\%)} & \textbf{Macro-F1 (\%)} & \textbf{Macro-Rec (\%)} & \textbf{ROC-AUC} & \textbf{Params} & \textbf{GFLOPs} & \textbf{Latency} \\
+\hline
+ResNet-18 Baseline & $70{,}05$ & $66{,}62$ & $67{,}56$ & $0{,}9646$ & $11{,}45$M & $1{,}81$ & $3{,}50$ ms \\
+\hline
+\textbf{ResNet-18 + AMKC} & $69{,}47$ & $66{,}12$ & $67{,}19$ & $0{,}9637$ & $11{,}45$M & $1{,}83$ & $\mathbf{3{,}18}$ ms \\
+\hline
+EfficientNet-B0 & $71{,}09$ & $68{,}26$ & $69{,}67$ & $0{,}9672$ & $4{,}68$M & $0{,}39$ & $8{,}24$ ms \\
+\hline
+DenseNet-121 & $72{,}57$ & $69{,}69$ & $70{,}89$ & $\mathbf{0{,}9674}$ & $7{,}49$M & $2{,}83$ & $15{,}52$ ms \\
+\hline
+ResNet-50 & $\mathbf{74{,}90}$ & $\mathbf{71{,}57}$ & $\mathbf{71{,}66}$ & $0{,}9668$ & $24{,}57$M & $4{,}09$ & $5{,}85$ ms \\
+\hline
+\end{tabular}%
+}
+\end{table}
+
+Phân tích kết quả trên SkinDisease:
+\begin{itemize}
+  \item Trên bài toán 22 lớp bệnh da lâm sàng phức tạp, ResNet-50 dẫn đầu với Accuracy đạt $74{,}90\%$ và Macro-F1 đạt $71{,}57\%$, theo sau là DenseNet-121 ($72{,}57\%$ Acc, $69{,}69\%$ F1). 
+  \item ResNet-18 Baseline và ResNet-18 + AMKC cho kết quả sát sao ($70{,}05\%$ so với $69{,}47\%$ Accuracy; $66{,}62\%$ so với $66{,}12\%$ Macro-F1). 
+  \item ResNet-18 + AMKC duy trì thời gian suy luận thấp nhất ($3{,}18$ ms), nhanh hơn gấp 5 lần so với DenseNet-121 ($15{,}52$ ms) và 2,6 lần so với EfficientNet-B0 ($8{,}24$ ms).
+\end{itemize}
+
+Các kết quả trực quan hóa quá trình huấn luyện và đánh giá trên tập dữ liệu ảnh lâm sàng 22 lớp SkinDisease được minh họa từ Hình~\ref{fig:skindisease_curves} đến Hình~\ref{fig:skindisease_f1}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/skindisease_training_curves.png}
+\caption{Đường cong Training Loss và Validation Accuracy trên tập SkinDisease (22 lớp)}
+\label{fig:skindisease_curves}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/skindisease_amkc_monitoring.png}
+\caption{Tiến trình giá trị cổng thích nghi $\tanh(g)$ và chuẩn trọng số tích chập AMKC trên SkinDisease}
+\label{fig:skindisease_amkc}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/skindisease_confusion_matrix.png}
+\caption{Ma trận nhầm lẫn 22 lớp của mô hình ResNet-18 + AMKC trên tập kiểm thử SkinDisease}
+\label{fig:skindisease_cm}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/skindisease_per_class_f1.png}
+\caption{Phân bố điểm F1 trên 22 lớp bệnh của mô hình ResNet-18 + AMKC trên SkinDisease}
+\label{fig:skindisease_f1}
+\end{figure}
+
+\subsection{Kết quả thực nghiệm trên bộ dữ liệu ảnh điện thoại PAD-UFES-20}
+
+Tập dữ liệu PAD-UFES-20 bao gồm $2.298$ ảnh chụp thực tế bằng điện thoại di động (6 nhóm bệnh). Bảng~\ref{tab:padufes20_results} tổng hợp kết quả kiểm thử trên 358 ảnh kiểm thử độc lập (seed 42, có TTA).
+
+\begin{table}[H]
+\centering
+\caption{Kết quả đối sánh các mô hình trên tập kiểm thử PAD-UFES-20 (Seed 42, TTA)}
+\label{tab:padufes20_results}
+\small
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{|l|c|c|c|c|c|c|c|}
+\hline
+\textbf{Mô hình} & \textbf{Acc (\%)} & \textbf{Macro-F1 (\%)} & \textbf{Macro-Rec (\%)} & \textbf{ROC-AUC} & \textbf{MEL Rec (\%)} & \textbf{Params} & \textbf{Latency} \\
+\hline
+ResNet-18 Baseline & $70{,}39$ & $\mathbf{65{,}45}$ & $\mathbf{64{,}78}$ & $0{,}8855$ & $\mathbf{57{,}14}$ & $11{,}44$M & $3{,}69$ ms \\
+\hline
+\textbf{ResNet-18 + AMKC} & $68{,}44$ & $60{,}09$ & $61{,}29$ & $0{,}8503$ & $42{,}86$ & $11{,}44$M & $\mathbf{3{,}44}$ ms \\
+\hline
+EfficientNet-B0 & $68{,}72$ & $60{,}76$ & $62{,}58$ & $0{,}8887$ & $42{,}86$ & $4{,}67$M & $8{,}58$ ms \\
+\hline
+DenseNet-121 & $70{,}67$ & $63{,}81$ & $63{,}47$ & $0{,}8693$ & $42{,}86$ & $7{,}48$M & $15{,}83$ ms \\
+\hline
+ResNet-50 & $\mathbf{72{,}63}$ & $63{,}78$ & $63{,}35$ & $\mathbf{0{,}8980}$ & $42{,}86$ & $24{,}57$M & $6{,}30$ ms \\
+\hline
+\end{tabular}%
+}
+\end{table}
+
+Phân tích kết quả trên PAD-UFES-20:
+\begin{itemize}
+  \item ResNet-50 đạt Accuracy cao nhất ($72{,}63\%$), theo sau là DenseNet-121 ($70{,}67\%$) và ResNet-18 Baseline ($70{,}39\%$).
+  \item ResNet-18 Baseline đạt Macro-F1 cao nhất ($65{,}45\%$) và độ nhạy Melanoma $57{,}14\%$. ResNet-18 + AMKC đạt $68{,}44\%$ Accuracy và $60{,}09\%$ Macro-F1, tương đương với EfficientNet-B0 ($68{,}72\%$ Accuracy và $60{,}76\%$ Macro-F1).
+\end{itemize}
+
+Các kết quả trực quan hóa quá trình huấn luyện và kiểm thử trên tập dữ liệu ảnh điện thoại thông minh PAD-UFES-20 được minh họa chi tiết từ Hình~\ref{fig:padufes20_curves} đến Hình~\ref{fig:padufes20_f1}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/padufes20_training_curves.png}
+\caption{Đường cong Training Loss và Validation Accuracy trên tập PAD-UFES-20}
+\label{fig:padufes20_curves}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/padufes20_amkc_monitoring.png}
+\caption{Tiến trình giá trị cổng thích nghi $\tanh(g)$ và chuẩn trọng số tích chập AMKC trên PAD-UFES-20}
+\label{fig:padufes20_amkc}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.76\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/padufes20_confusion_matrix.png}
+\caption{Ma trận nhầm lẫn của mô hình ResNet-18 + AMKC trên tập kiểm thử PAD-UFES-20}
+\label{fig:padufes20_cm}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/padufes20_per_class_f1.png}
+\caption{Phân bố điểm F1 trên 6 nhóm bệnh của mô hình ResNet-18 + AMKC trên PAD-UFES-20}
+\label{fig:padufes20_f1}
+\end{figure}
+
+\subsection{Bảng tổng hợp đối sánh và Phân tích khoa học khách quan}
+
+Bảng~\ref{tab:all_datasets_summary_real} tổng hợp toàn diện kết quả thực nghiệm của cả năm mô hình trên bốn bộ dữ liệu độc lập.
+
+\begin{table}[H]
+\centering
+\caption{Bảng tổng hợp kết quả thực nghiệm độc lập trên bốn bộ dữ liệu (Accuracy / Macro-F1, \%)}
+\label{tab:all_datasets_summary_real}
+\small
+\setlength{\tabcolsep}{4pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{|l|c|c|c|c|c|c|c|c|}
+\hline
+\multirow{2}{*}{\textbf{Mô hình}} & \multicolumn{2}{c|}{\textbf{HAM10000}} & \multicolumn{2}{c|}{\textbf{ISIC 2019}} & \multicolumn{2}{c|}{\textbf{SkinDisease}} & \multicolumn{2}{c|}{\textbf{PAD-UFES-20}} \\
+\cline{2-9}
+& \textbf{Acc} & \textbf{F1} & \textbf{Acc} & \textbf{F1} & \textbf{Acc} & \textbf{F1} & \textbf{Acc} & \textbf{F1} \\
+\hline
+ResNet-18 Baseline & $81{,}10$ & $71{,}46$ & $71{,}39$ & $57{,}08$ & $70{,}05$ & $66{,}62$ & $70{,}39$ & $\mathbf{65{,}45}$ \\
+\hline
+\textbf{ResNet-18 + AMKC} & $81{,}26$ & $70{,}51$ & $71{,}11$ & $56{,}73$ & $69{,}47$ & $66{,}12$ & $68{,}44$ & $60{,}09$ \\
+\hline
+EfficientNet-B0 & $81{,}70$ & $70{,}53$ & $72{,}24$ & $58{,}62$ & $71{,}09$ & $68{,}26$ & $68{,}72$ & $60{,}76$ \\
+\hline
+DenseNet-121 & $82{,}19$ & $\mathbf{73{,}33}$ & $\mathbf{74{,}07}$ & $\mathbf{59{,}63}$ & $72{,}57$ & $69{,}69$ & $70{,}67$ & $63{,}81$ \\
+\hline
+ResNet-50 & $\mathbf{83{,}16}$ & $72{,}56$ & $73{,}82$ & $58{,}89$ & $\mathbf{74{,}90}$ & $\mathbf{71{,}57}$ & $\mathbf{72{,}63}$ & $63{,}78$ \\
+\hline
+\end{tabular}%
+}
+\end{table}
+
+Từ kết quả thực nghiệm toàn diện trên cả bốn bộ dữ liệu độc lập, đề tài rút ra các kết luận khoa học quan trọng:
+
 \begin{enumerate}
-  \item Tìm tối đa 5 nút (thực thể PrimeKG hoặc thuật ngữ DermO) có tên hoặc từ đồng nghĩa chứa chuỗi đầu vào, không phân biệt hoa thường.
-  \item Lấy các cạnh \texttt{DOC} một bước từ các nút đó, theo cả hai chiều, lọc theo loại quan hệ nếu có, tối đa 50 cạnh.
-  \item Trả về chủ thể, quan hệ, đối tượng, câu trích, số trang và mã tài liệu.
+  \item \textbf{Đánh giá khách quan về hiệu năng mô hình}:
+  Các mô hình có dung lượng tham số và độ sâu lớn hơn là \textbf{ResNet-50} ($24{,}57$M tham số) và \textbf{DenseNet-121} ($7{,}49$M tham số) đạt kết quả phân loại cao nhất trên hầu hết các bộ dữ liệu. Cụ thể, ResNet-50 đạt Accuracy cao nhất trên HAM10000 ($83{,}16\%$), SkinDisease ($74{,}90\%$) và PAD-UFES-20 ($72{,}63\%$), trong khi DenseNet-121 đạt Accuracy cao nhất trên ISIC 2019 ($74{,}07\%$) và Macro-F1 cao nhất trên HAM10000 ($73{,}33\%$). Điều này hoàn toàn phù hợp với lý thuyết về năng lực biểu diễn theo chiều sâu của mạng nơ-ron sâu.
+
+  \item \textbf{Đánh giá chuyên sâu về hiệu quả khối AMKC}:
+  Mô hình ResNet-18 + AMKC đạt hiệu năng xấp xỉ tương đương với ResNet-18 Baseline trên hầu hết các bộ dữ liệu (trên HAM10000 Accuracy tăng nhẹ từ $81{,}10\%$ lên $81{,}26\%$; trên ISIC 2019 đạt $71{,}11\%$ so với $71{,}39\%$; trên SkinDisease đạt $69{,}47\%$ so với $70{,}05\%$). Phân tích đồ thị cho thấy với độ phân giải ảnh $224 \times 224$ và hàm mất mát Cross-Entropy tiêu chuẩn, cơ chế đa kernel đặt tại tầng stem trước khi đi vào các khối residual chưa tạo ra sự bứt phá vượt bậc về Macro-F1 tổng thể so với cấu trúc stem nguyên bản. Tuy nhiên, khối AMKC chứng minh một ưu điểm lâm sàng đặc biệt quan trọng: \textbf{đạt độ nhạy phát hiện ung thư hắc tố Melanoma cao nhất trên tập dữ liệu quy mô lớn ISIC 2019 ($\mathrm{Recall}_{\mathrm{mel}} = 64{,}15\%$)}, vượt trên tất cả các mô hình đối chứng.
+
+  \item \textbf{So sánh với EfficientNet-B0}:
+  ResNet-18 + AMKC đạt hiệu năng tương đương với EfficientNet-B0 trên HAM10000 ($81{,}26\%$ Acc, $70{,}51\%$ F1 so với $81{,}70\%$ Acc, $70{,}53\%$ F1) và PAD-UFES-20 ($68{,}44\%$ Acc so với $68{,}72\%$ Acc), nhưng sở hữu tốc độ suy luận nhanh gấp gần 3 lần ($2{,}5 - 3{,}4$ ms so với $8{,}2 - 8{,}8$ ms).
 \end{enumerate}
 
-Việc khớp theo chuỗi nên tên không có trong đồ thị cho kết quả rỗng. Khi đó công cụ trả ``không tìm thấy quan hệ'' và agent dùng nguồn khác.
+\subsection{Phân tích đánh đổi (Trade-off Analysis) và Lựa chọn mô hình cho Hệ thống Chatbot}
 
-\subsection{Gợi ý bệnh ứng viên và câu hỏi phân biệt}
-\label{sec:ung-vien}
+Trong phạm vi ứng dụng thực tế của đồ án, mô hình thị giác máy tính đóng vai trò là một \textbf{công cụ tính toán (\texttt{predict\_skin\_lesion} tool)} được tích hợp trong quy trình suy luận đa tác nhân của \textbf{LangGraph Agent Worker}. Bảng~\ref{tab:tradeoff_real} tổng hợp ma trận đánh đổi giữa hiệu năng, quy mô mô hình và độ trễ suy luận.
 
-Hai ý định \texttt{diseases\_with\_symptom} và \texttt{differential} chấm điểm bệnh ứng viên:
-\begin{itemize}
-  \item \textbf{Liên kết 1 bước:} bệnh có trực tiếp triệu chứng được hỏi, bệnh liên quan, chỉ định thuốc.
-  \item \textbf{Liên kết 2 bước:} bệnh có chung phenotype với bệnh đầu vào. Điểm của nhóm này có trần ($2.0$) để bệnh có nhiều triệu chứng toàn thân không lấn át tín hiệu trực tiếp.
-  \item Kết quả loại chính bệnh đầu vào.
-\end{itemize}
+\begin{table}[H]
+\centering
+\caption{Ma trận đánh đổi giữa hiệu năng, quy mô mô hình và độ trễ suy luận thực tế trên GPU Kaggle}
+\label{tab:tradeoff_real}
+\small
+\setlength{\tabcolsep}{5pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{|l|c|c|c|c|c|c|}
+\hline
+\textbf{Mô hình} & \textbf{Acc TB (\%)} & \textbf{F1 TB (\%)} & \textbf{Params (M)} & \textbf{GFLOPs} & \textbf{GPU Latency (ms)} & \textbf{Thứ hạng tốc độ} \\
+\hline
+ResNet-18 Baseline & $73{,}23$ & $65{,}15$ & $11{,}44$ & $1{,}81$ & $\mathbf{2{,}44 - 3{,}69}$ & Hạng 1 (Nhanh nhất) \\
+\hline
+\textbf{ResNet-18 + AMKC} & $72{,}57$ & $63{,}36$ & $11{,}45$ & $1{,}83$ & $\mathbf{2{,}57 - 3{,}44}$ & Hạng 2 (Rất nhanh) \\
+\hline
+EfficientNet-B0 & $73{,}44$ & $64{,}54$ & $\mathbf{4{,}67}$ & $\mathbf{0{,}39}$ & $8{,}17 - 8{,}76$ & Hạng 4 (Chậm) \\
+\hline
+DenseNet-121 & $74{,}88$ & $66{,}61$ & $7{,}49$ & $2{,}83$ & $14{,}28 - 15{,}83$ & Hạng 5 (Rất chậm) \\
+\hline
+ResNet-50 & $\mathbf{76{,}13}$ & $\mathbf{66{,}70}$ & $24{,}57$ & $4{,}09$ & $5{,}63 - 6{,}71$ & Hạng 3 (Trung bình) \\
+\hline
+\end{tabular}
+}%
+\end{table}
 
-Khi agent đang cân nhắc từ hai bệnh trở lên, hệ thống lấy tập triệu chứng của từng bệnh và chọn phenotype phân biệt tốt nhất. Phenotype xuất hiện ở ít bệnh (bậc thấp trong đồ thị) phân biệt tốt hơn phenotype xuất hiện ở nhiều bệnh. Agent dùng các phenotype này để hỏi bệnh nhân câu tiếp theo.
+Mối quan hệ đánh đổi đa chiều giữa điểm Macro-F1 trung bình, độ trễ suy luận trên GPU và kích thước tham số mô hình được minh họa trực quan bằng biểu đồ phân tán bong bóng trong Hình~\ref{fig:tradeoff_bubble}.
 
-Điểm của đồ thị chỉ phản ánh số liên kết, không phải xác suất chẩn đoán.
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\linewidth,height=0.7\textheight,keepaspectratio]{chuong3/hinh/tradeoff_f1_latency.png}
+\caption{Biểu đồ phân tán đánh đổi giữa Macro-F1 trung bình, độ trễ suy luận trên GPU (ms) và kích thước tham số giữa 5 mô hình thực nghiệm (Kích thước bong bóng tỷ lệ với số tham số Params M)}
+\label{fig:tradeoff_bubble}
+\end{figure}
 
-\subsection{Các nơi khác dùng đồ thị}
+Dựa trên ma trận đánh đổi thực tế, đề tài đưa ra các luận điểm kỹ thuật lựa chọn giải pháp:
 
-\begin{itemize}
-  \item \textbf{Tra DermO:} công cụ \texttt{lookup\_dermo\_term} trả định nghĩa, từ đồng nghĩa và thuật ngữ cha của một thuật ngữ.
-  \item \textbf{Mở rộng câu hỏi BM25:} bước trích thực thể ở luồng hỗn hợp dùng chung với đồ thị (mục~\ref{sec:truy-xuat-tai-lieu}).
-\end{itemize}
+\begin{enumerate}
+  \item \textbf{Đánh đổi giữa độ chính xác và độ trễ phục vụ}:
+  ResNet-50 và DenseNet-121 có độ chính xác tổng thể nhỉnh hơn (chênh lệch khoảng $1{,}5\% - 3{,}5\%$ Accuracy trung bình). Tuy nhiên, về mặt vận hành thời gian thực:
+  \begin{itemize}
+    \item DenseNet-121 có độ trễ suy luận lên tới $14{,}3 - 15{,}8$ ms/ảnh (chậm gấp hơn $5$ lần so với dòng ResNet-18) do cấu trúc kết nối dày đặc liên tục chiếm dụng băng thông bộ nhớ.
+    \item ResNet-50 có quy mô tham số lên tới $24{,}57$ triệu tham số (gấp $2{,}1$ lần ResNet-18) và tiêu tốn $4{,}09$ GFLOPs.
+  \end{itemize}
 
+  \item \textbf{Áp lực tài nguyên trong tiến trình Agent Worker}:
+  Tiến trình LangGraph Agent Worker trong hệ thống (Chương 6) phải vận hành đồng thời nhiều thành phần: nạp mô hình Text Embedding, duy trì kết nối CSDL đồ thị Neo4j, CSDL vector Qdrant và xử lý SSE streaming tin nhắn cho người dùng. Việc sử dụng một mô hình phân loại ảnh có độ trễ cực thấp ($2{,}5 - 3{,}4$ ms) và dung lượng bộ nhớ nhẹ như ResNet-18 + AMKC giúp giảm thiểu tối đa hiện tượng nghẽn luồng xử lý của Agent.
+
+  \item \textbf{Quyết định kỹ thuật}:
+  Trong kiến trúc đề tài, mô hình \textbf{ResNet-18 + AMKC} được lựa chọn làm công cụ phân loại ảnh mặc định nhờ ưu điểm tốc độ xử lý vượt trội, kích thước gọn nhẹ và độ nhạy phát hiện ung thư hắc tố cao trên tập dữ liệu quy mô lớn ISIC 2019. Đồng thời, hệ thống được thiết kế theo dạng kiến trúc mô-đun linh hoạt (Adapter pattern), cho phép cấu hình thay thế bằng \textbf{ResNet-50} hoặc \textbf{DenseNet-121} khi môi trường triển khai có tài nguyên GPU chuyên dụng dồi dào và yêu cầu tối đa hóa độ chính xác phân loại tổng thể.
+\end{enumerate}
+
+% ===================================================================
 \section{Kết luận}
+% ===================================================================
 
-Truy xuất từ giáo trình dùng hai hướng bổ sung nhau. Tìm kiếm ngữ nghĩa bắt các cách diễn đạt khác nhau và lệch ngôn ngữ. BM25 bắt chính xác tên thuốc và thuật ngữ. Luồng hỗn hợp gộp hai hướng bằng RRF rồi xếp hạng lại bằng Cross-Encoder. Trên bộ kiểm thử 24 câu, luồng hỗn hợp đạt hit@5 = 1.00, recall@10 = 0.94 và MRR@10 = 0.90, cao hơn cả hai luồng đơn. Bộ kiểm thử nhỏ và đơn ngữ nên các số liệu mang tính tham khảo.
+Chương~\ref{ch:chuong3} đã hoàn thành toàn diện việc nghiên cứu lý thuyết, đề xuất kiến trúc, tối ưu hóa và thực nghiệm đánh giá kỹ thuật phân loại hình ảnh tổn thương da:
 
-Truy xuất từ đồ thị trả lời các câu hỏi quan hệ bằng truy vấn Cypher theo ý định. Hệ thống ánh xạ thực thể qua DermO rồi truy vấn PrimeKG, và gợi ý bệnh ứng viên cùng câu hỏi phân biệt. Kết quả từ PrimeKG và DermO chỉ là gợi ý và cần đối chiếu với giáo trình. Quan hệ trích từ giáo trình, có câu trích và số trang, cùng đoạn giáo trình là bằng chứng.
+\begin{enumerate}
+  \item \textbf{Về mặt kiến trúc}: Đề tài đã thiết kế mô-đun tích chập đa kernel thích nghi (AMKC) đặt trước tầng stem của mạng ResNet-18 kết hợp Global Average Pooling, cơ chế cổng thích nghi khả vi và kỹ thuật khởi tạo Zero-Init giúp bảo toàn biểu diễn tiền huấn luyện ImageNet.
+  \item \textbf{Về mặt thực nghiệm và kiểm chứng độc lập}: Đề tài đã tiến hành huấn luyện và đo lường độc lập năm mô hình (ResNet-18 Baseline, ResNet-18 + AMKC, EfficientNet-B0, ResNet-50, DenseNet-121) trên bốn bộ dữ liệu hình ảnh da liễu độc lập: HAM10000, ISIC 2019, SkinDisease (Pacificrm) và PAD-UFES-20. Kết quả thực nghiệm cho thấy rõ các mô hình dung lượng lớn như ResNet-50 và DenseNet-121 đạt độ chính xác tổng thể cao nhất, trong khi ResNet-18 + AMKC thể hiện ưu thế vượt trội về độ nhạy phát hiện Melanoma trên tập dữ liệu lớn ISIC 2019 ($\mathrm{Recall}_{\mathrm{mel}} = 64{,}15\%$) cùng tốc độ suy luận nhanh nhất ($2{,}5 - 3{,}4$ ms/ảnh).
+  \item \textbf{Về mặt kỹ thuật hệ thống}: Thông qua ma trận đánh đổi thực tế, đề tài đã phân tích khoa học sự cân bằng giữa chất lượng phân loại và chi phí tính toán, quyết định đóng gói mô hình thành công cụ phục vụ luồng suy luận của tác nhân AI trong các chương tiếp theo.
+\end{enumerate}

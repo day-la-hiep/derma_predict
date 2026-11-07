@@ -1,0 +1,45 @@
+\begin{Verbatim}[commandchars=\\\{\},numbers=left,numbersep=5pt,frame=single,framesep=4pt,breaklines=true,breakanywhere=true,fontsize=\fontsize{9pt}{10.5pt}\selectfont]
+\PY{k}{def} \PY{n+nf}{parse}\PY{p}{(}\PY{n}{lines}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{str}\PY{p}{]}\PY{p}{)} \PY{o}{\PYZhy{}}\PY{o}{\PYZgt{}} \PY{n+nb}{tuple}\PY{p}{[}\PY{n+nb}{dict}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n+nb}{str}\PY{p}{]}\PY{p}{,} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{dict}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n}{Any}\PY{p}{]}\PY{p}{]}\PY{p}{]}\PY{p}{:}
+    \PY{n}{header}\PY{p}{:} \PY{n+nb}{dict}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n+nb}{str}\PY{p}{]} \PY{o}{=} \PY{p}{\PYZob{}}\PY{p}{\PYZcb{}}
+    \PY{n}{terms}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{dict}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n}{Any}\PY{p}{]}\PY{p}{]} \PY{o}{=} \PY{p}{[}\PY{p}{]}
+    \PY{n}{cur}\PY{p}{:} \PY{n+nb}{dict}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n}{Any}\PY{p}{]} \PY{o}{|} \PY{k+kc}{None} \PY{o}{=} \PY{k+kc}{None}
+    \PY{n}{in\PYZus{}term} \PY{o}{=} \PY{k+kc}{False}
+    \PY{k}{for} \PY{n}{raw} \PY{o+ow}{in} \PY{n}{lines}\PY{p}{:}
+        \PY{n}{line} \PY{o}{=} \PY{n}{raw}\PY{o}{.}\PY{n}{rstrip}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+se}{\PYZbs{}n}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+        \PY{k}{if} \PY{n}{line}\PY{o}{.}\PY{n}{startswith}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{[}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}\PY{p}{:}
+            \PY{n}{in\PYZus{}term} \PY{o}{=} \PY{n}{line} \PY{o}{==} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{[Term]}\PY{l+s+s2}{\PYZdq{}}
+            \PY{n}{cur} \PY{o}{=} \PY{n}{new\PYZus{}term}\PY{p}{(}\PY{p}{)} \PY{k}{if} \PY{n}{in\PYZus{}term} \PY{k}{else} \PY{k+kc}{None}
+            \PY{k}{if} \PY{n}{cur} \PY{o+ow}{is} \PY{o+ow}{not} \PY{k+kc}{None}\PY{p}{:}
+                \PY{n}{terms}\PY{o}{.}\PY{n}{append}\PY{p}{(}\PY{n}{cur}\PY{p}{)}
+            \PY{k}{continue}
+        \PY{k}{if} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{:}\PY{l+s+s2}{\PYZdq{}} \PY{o+ow}{not} \PY{o+ow}{in} \PY{n}{line}\PY{p}{:}
+            \PY{k}{continue}
+        \PY{n}{tag}\PY{p}{,} \PY{n}{\PYZus{}}\PY{p}{,} \PY{n}{value} \PY{o}{=} \PY{n}{line}\PY{o}{.}\PY{n}{partition}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{:}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+        \PY{n}{value} \PY{o}{=} \PY{n}{value}\PY{o}{.}\PY{n}{strip}\PY{p}{(}\PY{p}{)}
+        \PY{k}{if} \PY{n}{cur} \PY{o+ow}{is} \PY{k+kc}{None}\PY{p}{:}
+            \PY{k}{if} \PY{o+ow}{not} \PY{n}{in\PYZus{}term} \PY{o+ow}{and} \PY{o+ow}{not} \PY{n}{terms}\PY{p}{:}
+                \PY{n}{header}\PY{p}{[}\PY{n}{tag}\PY{p}{]} \PY{o}{=} \PY{n}{value}
+            \PY{k}{continue}
+        \PY{k}{if} \PY{n}{tag} \PY{o}{==} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{id}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:}
+            \PY{n}{cur}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{id}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]} \PY{o}{=} \PY{n}{value}
+        \PY{k}{elif} \PY{n}{tag} \PY{o}{==} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{name}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:}
+            \PY{n}{cur}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{name}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]} \PY{o}{=} \PY{n}{value}
+        \PY{k}{elif} \PY{n}{tag} \PY{o}{==} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{def}\PY{l+s+s2}{\PYZdq{}} \PY{o+ow}{and} \PY{p}{(}\PY{n}{m} \PY{o}{:=} \PY{n}{DEF\PYZus{}RE}\PY{o}{.}\PY{n}{match}\PY{p}{(}\PY{n}{value}\PY{p}{)}\PY{p}{)}\PY{p}{:}
+            \PY{n}{cur}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{def}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]} \PY{o}{=} \PY{n}{m}\PY{o}{.}\PY{n}{group}\PY{p}{(}\PY{l+m+mi}{1}\PY{p}{)}
+        \PY{k}{elif} \PY{n}{tag} \PY{o}{==} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{synonym}\PY{l+s+s2}{\PYZdq{}} \PY{o+ow}{and} \PY{p}{(}\PY{n}{m} \PY{o}{:=} \PY{n}{SYN\PYZus{}RE}\PY{o}{.}\PY{n}{match}\PY{p}{(}\PY{n}{value}\PY{p}{)}\PY{p}{)}\PY{p}{:}
+            \PY{n}{text} \PY{o}{=} \PY{n}{m}\PY{o}{.}\PY{n}{group}\PY{p}{(}\PY{l+m+mi}{1}\PY{p}{)}\PY{o}{.}\PY{n}{removeprefix}\PY{p}{(}\PY{n}{NEW\PYZus{}SYN\PYZus{}TAG}\PY{p}{)}\PY{o}{.}\PY{n}{strip}\PY{p}{(}\PY{p}{)}
+            \PY{k}{if} \PY{n}{text}\PY{p}{:}
+                \PY{n}{cur}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{synonyms}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]}\PY{o}{.}\PY{n}{append}\PY{p}{(}\PY{p}{\PYZob{}}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{text}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{text}\PY{p}{,} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{scope}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{m}\PY{o}{.}\PY{n}{group}\PY{p}{(}\PY{l+m+mi}{2}\PY{p}{)}\PY{p}{\PYZcb{}}\PY{p}{)}
+        \PY{k}{elif} \PY{n}{tag} \PY{o}{==} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{xref}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:}
+            \PY{n}{cur}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{xrefs}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]}\PY{o}{.}\PY{n}{append}\PY{p}{(}\PY{n}{value}\PY{o}{.}\PY{n}{split}\PY{p}{(}\PY{p}{)}\PY{p}{[}\PY{l+m+mi}{0}\PY{p}{]}\PY{p}{)}
+        \PY{k}{elif} \PY{n}{tag} \PY{o}{==} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{alt\PYZus{}id}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:}
+            \PY{n}{cur}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{alt\PYZus{}ids}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]}\PY{o}{.}\PY{n}{append}\PY{p}{(}\PY{n}{value}\PY{p}{)}
+        \PY{k}{elif} \PY{n}{tag} \PY{o}{==} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{is\PYZus{}a}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:}
+            \PY{n}{cur}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{is\PYZus{}a}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]}\PY{o}{.}\PY{n}{append}\PY{p}{(}\PY{n}{value}\PY{o}{.}\PY{n}{split}\PY{p}{(}\PY{p}{)}\PY{p}{[}\PY{l+m+mi}{0}\PY{p}{]}\PY{p}{)}
+        \PY{k}{elif} \PY{n}{tag} \PY{o}{==} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{relationship}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:}
+            \PY{n}{rel}\PY{p}{,} \PY{n}{target} \PY{o}{=} \PY{n}{value}\PY{o}{.}\PY{n}{split}\PY{p}{(}\PY{p}{)}\PY{p}{[}\PY{p}{:}\PY{l+m+mi}{2}\PY{p}{]}
+            \PY{n}{cur}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{relationships}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]}\PY{o}{.}\PY{n}{append}\PY{p}{(}\PY{p}{\PYZob{}}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{type}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{rel}\PY{p}{,} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{target}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{target}\PY{p}{\PYZcb{}}\PY{p}{)}
+        \PY{k}{elif} \PY{n}{tag} \PY{o}{==} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{is\PYZus{}obsolete}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:}
+            \PY{n}{cur}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{is\PYZus{}obsolete}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]} \PY{o}{=} \PY{n}{value} \PY{o}{==} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{true}\PY{l+s+s2}{\PYZdq{}}
+    \PY{k}{return} \PY{n}{header}\PY{p}{,} \PY{n}{terms}
+\end{Verbatim}

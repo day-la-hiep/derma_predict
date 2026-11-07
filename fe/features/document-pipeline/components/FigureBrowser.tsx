@@ -2,12 +2,15 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ImageOff } from "lucide-react";
+import { useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { documentApi } from "../api";
-import { useData } from "../hooks";
+import { useData, usePage } from "../hooks";
 import type { Figure } from "../types";
-import { EmptyState } from "./bits";
+import { EmptyState, Pager, SearchBox, StepTitle } from "./bits";
 import { PageChip } from "./PagePreview";
+
+const PAGE_SIZE = 12;
 
 /** Một hình: ảnh tải bằng axios (cần token) rồi hiển thị qua object URL, kèm trang và chú thích của sách. */
 function FigureCard({ documentId, f, onPreview }: { documentId: string; f: Figure; onPreview: (p: number) => void }) {
@@ -41,9 +44,14 @@ function FigureCard({ documentId, f, onPreview }: { documentId: string; f: Figur
 
 /** Danh sách hình ảnh trích từ sách (bước Đọc nội dung, engine docling). */
 export function FigureBrowser({ documentId, onPreview }: { documentId: string; onPreview: (p: number) => void }) {
-  const list = useData(documentId, "figures", {}, () => documentApi.figures(documentId));
-  const items = list.data ?? [];
-  if (list.data && items.length === 0) {
+  const [q, setQ] = useState("");
+  const [page, setPage] = usePage(q);
+  const list = useData(documentId, "figures", { q, page }, () => documentApi.figures(documentId, { q, page, pageSize: PAGE_SIZE }));
+  const data = list.data;
+  const items = data?.items ?? [];
+  const empty = Boolean(data) && items.length === 0;
+  // không có hình nào và không đang tìm: sách chưa trích ảnh (khác với tìm không ra)
+  if (empty && !q) {
     return (
       <EmptyState
         title="Chưa có hình ảnh"
@@ -52,13 +60,23 @@ export function FigureBrowser({ documentId, onPreview }: { documentId: string; o
     );
   }
   return (
-    <section className="space-y-3">
-      <h3 className="text-sm font-medium">Hình ảnh trong sách ({items.length})</h3>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {items.map((f) => (
-          <FigureCard key={f.figure_id} documentId={documentId} f={f} onPreview={onPreview} />
-        ))}
+    <div className="sticky top-[4.5rem] flex h-[calc(100vh-6rem)] min-h-96 min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border px-3 py-2">
+        <StepTitle step="ingest" />
+        <SearchBox value={q} onChange={setQ} placeholder="Tìm chú thích, số trang..." className="w-56" />
       </div>
-    </section>
+      <div className="min-h-0 flex-1 overflow-auto p-3">
+        {empty ? (
+          <EmptyState title="Không có hình nào phù hợp" />
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {items.map((f) => (
+              <FigureCard key={f.figure_id} documentId={documentId} f={f} onPreview={onPreview} />
+            ))}
+          </div>
+        )}
+      </div>
+      <Pager attached={!empty} page={page} pageSize={PAGE_SIZE} total={data?.total ?? 0} onPage={setPage} />
+    </div>
   );
 }

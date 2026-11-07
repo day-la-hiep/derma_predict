@@ -76,12 +76,9 @@ class IndexTest(Base):
         chunks = self.files.read_jsonl("chunks.jsonl")
         self.assertEqual((out["points"], out["dimension"]), (len(chunks), DIM))
         pts = {p.payload["chunk_id"]: p.payload for p in self.points()}
-        c = next(x for x in chunks if x["topic"] == "Atopic Dermatitis")
+        c = next(x for x in chunks if x["toc_path"][-1] == "Atopic Dermatitis")
         pl = pts[c["chunk_id"]]
-        self.assertEqual(
-            (pl["part"], pl["section"], pl["topic"]),
-            (c["part"], c["section"], c["topic"]),
-        )
+        self.assertEqual(pl["toc_path"], c["toc_path"])
         self.assertEqual(
             (pl["page_start"], pl["pages_hint"], pl["document_id"]),
             (c["page_start"], c["pages_hint"], "tbook"),
@@ -123,7 +120,7 @@ class IndexTest(Base):
             {},
         )
         self.assertIn(
-            "Contact Dermatitis", {p.payload["topic"] for p in self.points()}
+            "Contact Dermatitis", {p.payload["toc_path"][-1] for p in self.points()}
         )
         # xoá mục Contact Dermatitis rồi chia lại: ít đoạn hơn
         ents = self.files.read_json("toc.json")["entries"]
@@ -144,7 +141,7 @@ class IndexTest(Base):
         out = self.runner.run_stage("tbook", "index", {}, force=True)
         self.assertEqual(len(self.points()), out["points"])
         self.assertNotIn(
-            "Contact Dermatitis", {p.payload["topic"] for p in self.points()}
+            "Contact Dermatitis", {p.payload["toc_path"][-1] for p in self.points()}
         )  # đoạn cũ không còn sót
         self.assertEqual(
             len(self.points("obook")), 1

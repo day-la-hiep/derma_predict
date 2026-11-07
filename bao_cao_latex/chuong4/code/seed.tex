@@ -1,0 +1,21 @@
+\begin{Verbatim}[commandchars=\\\{\},numbers=left,numbersep=5pt,frame=single,framesep=4pt,breaklines=true,breakanywhere=true,fontsize=\fontsize{9pt}{10.5pt}\selectfont]
+\PY{k}{async} \PY{k}{def} \PY{n+nf}{resolve\PYZus{}seeds}\PY{p}{(}\PY{n+nb+bp}{self}\PY{p}{,} \PY{n}{entities}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{str}\PY{p}{]}\PY{p}{)} \PY{o}{\PYZhy{}}\PY{o}{\PYZgt{}} \PY{n+nb}{tuple}\PY{p}{[}\PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{dict}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n}{Any}\PY{p}{]}\PY{p}{]}\PY{p}{,} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{str}\PY{p}{]}\PY{p}{,} \PY{n+nb}{set}\PY{p}{[}\PY{n+nb}{str}\PY{p}{]}\PY{p}{]}\PY{p}{:}
+\PY{+w}{    }\PY{l+s+sd}{\PYZdq{}\PYZdq{}\PYZdq{}Trả (các nút PrimeKG khớp, input không khớp nút nào, DermO id của các input).\PYZdq{}\PYZdq{}\PYZdq{}}
+    \PY{n}{seeds}\PY{p}{:} \PY{n+nb}{dict}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n+nb}{dict}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n}{Any}\PY{p}{]}\PY{p}{]} \PY{o}{=} \PY{p}{\PYZob{}}\PY{p}{\PYZcb{}}
+    \PY{n}{unmatched}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{str}\PY{p}{]} \PY{o}{=} \PY{p}{[}\PY{p}{]}
+    \PY{n}{dermo\PYZus{}ids}\PY{p}{:} \PY{n+nb}{set}\PY{p}{[}\PY{n+nb}{str}\PY{p}{]} \PY{o}{=} \PY{n+nb}{set}\PY{p}{(}\PY{p}{)}
+    \PY{k}{for} \PY{n}{entity} \PY{o+ow}{in} \PY{n}{entities}\PY{p}{:}
+        \PY{n}{names} \PY{o}{=} \PY{p}{\PYZob{}}\PY{n}{entity}\PY{o}{.}\PY{n}{lower}\PY{p}{(}\PY{p}{)}\PY{p}{\PYZcb{}}
+        \PY{n}{record} \PY{o}{=} \PY{k}{await} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{exact\PYZus{}dermo}\PY{p}{(}\PY{n}{entity}\PY{p}{)}
+        \PY{k}{if} \PY{n}{record}\PY{p}{:}
+            \PY{n}{dermo\PYZus{}ids}\PY{o}{.}\PY{n}{add}\PY{p}{(}\PY{n}{record}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{id}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]}\PY{p}{)}
+            \PY{n}{names} \PY{o}{|}\PY{o}{=} \PY{p}{\PYZob{}}\PY{n+nb}{str}\PY{p}{(}\PY{n}{record}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{name}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]}\PY{p}{)}\PY{o}{.}\PY{n}{lower}\PY{p}{(}\PY{p}{)}\PY{p}{,} \PY{o}{*}\PY{p}{(}\PY{n}{s}\PY{o}{.}\PY{n}{lower}\PY{p}{(}\PY{p}{)} \PY{k}{for} \PY{n}{s} \PY{o+ow}{in} \PY{n}{record}\PY{o}{.}\PY{n}{get}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{synonyms}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)} \PY{o+ow}{or} \PY{p}{[}\PY{p}{]}\PY{p}{)}\PY{p}{\PYZcb{}}
+        \PY{n}{rows} \PY{o}{=} \PY{k}{await} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{run}\PY{p}{(}\PY{n}{EXACT\PYZus{}SEED\PYZus{}QUERY}\PY{p}{,} \PY{n}{types}\PY{o}{=}\PY{n}{SEED\PYZus{}TYPES}\PY{p}{,} \PY{n}{names}\PY{o}{=}\PY{n+nb}{sorted}\PY{p}{(}\PY{n}{names}\PY{p}{)}\PY{p}{)}
+        \PY{k}{if} \PY{o+ow}{not} \PY{n}{rows}\PY{p}{:}
+            \PY{n}{rows} \PY{o}{=} \PY{k}{await} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{run}\PY{p}{(}\PY{n}{LOOSE\PYZus{}SEED\PYZus{}QUERY}\PY{p}{,} \PY{n}{types}\PY{o}{=}\PY{n}{SEED\PYZus{}TYPES}\PY{p}{,} \PY{n}{name}\PY{o}{=}\PY{n}{entity}\PY{o}{.}\PY{n}{lower}\PY{p}{(}\PY{p}{)}\PY{p}{)}
+        \PY{k}{if} \PY{o+ow}{not} \PY{n}{rows}\PY{p}{:}
+            \PY{n}{unmatched}\PY{o}{.}\PY{n}{append}\PY{p}{(}\PY{n}{entity}\PY{p}{)}
+        \PY{k}{for} \PY{n}{row} \PY{o+ow}{in} \PY{n}{rows}\PY{p}{:}
+            \PY{n}{seeds}\PY{p}{[}\PY{n}{row}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{id}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]}\PY{p}{]} \PY{o}{=} \PY{n}{row}
+    \PY{k}{return} \PY{n+nb}{list}\PY{p}{(}\PY{n}{seeds}\PY{o}{.}\PY{n}{values}\PY{p}{(}\PY{p}{)}\PY{p}{)}\PY{p}{,} \PY{n}{unmatched}\PY{p}{,} \PY{n}{dermo\PYZus{}ids}
+\end{Verbatim}

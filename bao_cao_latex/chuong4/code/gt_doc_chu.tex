@@ -1,0 +1,24 @@
+\begin{Verbatim}[commandchars=\\\{\},numbers=left,numbersep=5pt,frame=single,framesep=4pt,breaklines=true,breakanywhere=true,fontsize=\fontsize{9pt}{10.5pt}\selectfont]
+\PY{k}{def} \PY{n+nf}{\PYZus{}extract\PYZus{}docling}\PY{p}{(}\PY{n}{pdf}\PY{p}{:} \PY{n}{Path}\PY{p}{,} \PY{n}{ext}\PY{p}{:} \PY{n}{ExtractionConfig}\PY{p}{,} \PY{n}{document\PYZus{}id}\PY{p}{:} \PY{n+nb}{str}\PY{p}{,} \PY{n}{pages\PYZus{}opt}\PY{p}{:} \PY{n+nb}{object}\PY{p}{,} \PY{n}{convert}\PY{p}{:} \PY{n}{Convert}\PY{p}{,}
+                     \PY{n}{on\PYZus{}progress}\PY{p}{:} \PY{n}{OnProgress}\PY{p}{,} \PY{n}{on\PYZus{}log}\PY{p}{:} \PY{n}{OnLog}\PY{p}{)} \PY{o}{\PYZhy{}}\PY{o}{\PYZgt{}} \PY{n+nb}{tuple}\PY{p}{[}\PY{n+nb}{list}\PY{p}{[}\PY{n}{PageRow}\PY{p}{]}\PY{p}{,} \PY{n+nb}{list}\PY{p}{[}\PY{n}{FigureDraft}\PY{p}{]}\PY{p}{,} \PY{n+nb}{dict}\PY{p}{]}\PY{p}{:}
+    \PY{k+kn}{from} \PY{n+nn}{pypdf} \PY{k+kn}{import} \PY{n}{PdfReader}
+
+    \PY{n}{total} \PY{o}{=} \PY{n+nb}{len}\PY{p}{(}\PY{n}{PdfReader}\PY{p}{(}\PY{n+nb}{str}\PY{p}{(}\PY{n}{pdf}\PY{p}{)}\PY{p}{)}\PY{o}{.}\PY{n}{pages}\PY{p}{)}
+    \PY{n}{first}\PY{p}{,} \PY{n}{last} \PY{o}{=} \PY{n}{\PYZus{}page\PYZus{}range}\PY{p}{(}\PY{n}{pages\PYZus{}opt}\PY{p}{,} \PY{n}{total}\PY{p}{)}
+    \PY{n}{step} \PY{o}{=} \PY{n}{ext}\PY{o}{.}\PY{n}{docling\PYZus{}chunk\PYZus{}pages}
+    \PY{n}{spans} \PY{o}{=} \PY{p}{[}\PY{p}{(}\PY{n}{a}\PY{p}{,} \PY{n+nb}{min}\PY{p}{(}\PY{n}{a} \PY{o}{+} \PY{n}{step} \PY{o}{\PYZhy{}} \PY{l+m+mi}{1}\PY{p}{,} \PY{n}{last}\PY{p}{)}\PY{p}{)} \PY{k}{for} \PY{n}{a} \PY{o+ow}{in} \PY{n+nb}{range}\PY{p}{(}\PY{n}{first}\PY{p}{,} \PY{n}{last} \PY{o}{+} \PY{l+m+mi}{1}\PY{p}{,} \PY{n}{step}\PY{p}{)}\PY{p}{]}
+    \PY{n}{by\PYZus{}page}\PY{p}{:} \PY{n+nb}{dict}\PY{p}{[}\PY{n+nb}{int}\PY{p}{,} \PY{n+nb}{list}\PY{p}{[}\PY{n}{DoclingBlock}\PY{p}{]}\PY{p}{]} \PY{o}{=} \PY{p}{\PYZob{}}\PY{p}{\PYZcb{}}
+    \PY{k}{for} \PY{n}{i}\PY{p}{,} \PY{p}{(}\PY{n}{a}\PY{p}{,} \PY{n}{b}\PY{p}{)} \PY{o+ow}{in} \PY{n+nb}{enumerate}\PY{p}{(}\PY{n}{spans}\PY{p}{,} \PY{l+m+mi}{1}\PY{p}{)}\PY{p}{:}
+        \PY{n}{on\PYZus{}progress}\PY{p}{(}\PY{n}{i} \PY{o}{\PYZhy{}} \PY{l+m+mi}{1}\PY{p}{,} \PY{n+nb}{len}\PY{p}{(}\PY{n}{spans}\PY{p}{)}\PY{p}{,} \PY{l+s+sa}{f}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{Nhận dạng chữ: trang }\PY{l+s+si}{\PYZob{}}\PY{n}{a}\PY{l+s+si}{\PYZcb{}}\PY{l+s+s2}{\PYZhy{}}\PY{l+s+si}{\PYZob{}}\PY{n}{b}\PY{l+s+si}{\PYZcb{}}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+        \PY{n}{blocks} \PY{o}{=} \PY{n}{convert}\PY{p}{(}\PY{n}{a}\PY{p}{,} \PY{n}{b}\PY{p}{)}
+        \PY{n}{on\PYZus{}log}\PY{p}{(}\PY{l+s+sa}{f}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{trang }\PY{l+s+si}{\PYZob{}}\PY{n}{a}\PY{l+s+si}{\PYZcb{}}\PY{l+s+s2}{\PYZhy{}}\PY{l+s+si}{\PYZob{}}\PY{n}{b}\PY{l+s+si}{\PYZcb{}}\PY{l+s+s2}{: }\PY{l+s+si}{\PYZob{}}\PY{n+nb}{len}\PY{p}{(}\PY{n}{blocks}\PY{p}{)}\PY{l+s+si}{\PYZcb{}}\PY{l+s+s2}{ khối}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+        \PY{k}{for} \PY{n}{blk} \PY{o+ow}{in} \PY{n}{blocks}\PY{p}{:}
+            \PY{k}{if} \PY{n}{first} \PY{o}{\PYZlt{}}\PY{o}{=} \PY{n}{blk}\PY{o}{.}\PY{n}{page} \PY{o}{\PYZlt{}}\PY{o}{=} \PY{n}{last}\PY{p}{:}
+                \PY{n}{by\PYZus{}page}\PY{o}{.}\PY{n}{setdefault}\PY{p}{(}\PY{n}{blk}\PY{o}{.}\PY{n}{page}\PY{p}{,} \PY{p}{[}\PY{p}{]}\PY{p}{)}\PY{o}{.}\PY{n}{append}\PY{p}{(}\PY{n}{blk}\PY{p}{)}
+    \PY{n}{on\PYZus{}progress}\PY{p}{(}\PY{n+nb}{len}\PY{p}{(}\PY{n}{spans}\PY{p}{)}\PY{p}{,} \PY{n+nb}{len}\PY{p}{(}\PY{n}{spans}\PY{p}{)}\PY{p}{,} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{dựng pages.jsonl}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{n}{rows} \PY{o}{=} \PY{n}{build\PYZus{}docling\PYZus{}rows}\PY{p}{(}\PY{n}{by\PYZus{}page}\PY{p}{,} \PY{n}{first}\PY{p}{,} \PY{n}{last}\PY{p}{,} \PY{n}{total}\PY{p}{,} \PY{n}{ext}\PY{p}{)}
+    \PY{n}{figures} \PY{o}{=} \PY{n}{get\PYZus{}figures\PYZus{}from\PYZus{}blocks}\PY{p}{(}\PY{n}{document\PYZus{}id}\PY{p}{,} \PY{n}{by\PYZus{}page}\PY{p}{,} \PY{n}{first}\PY{p}{,} \PY{n}{last}\PY{p}{)}
+    \PY{n}{summary} \PY{o}{=} \PY{n}{build\PYZus{}summary}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{docling}\PY{l+s+s2}{\PYZdq{}}\PY{p}{,} \PY{n}{rows}\PY{p}{,} \PY{n}{first}\PY{p}{,} \PY{n}{last}\PY{p}{)}
+    \PY{n}{summary}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{figures}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]} \PY{o}{=} \PY{n+nb}{len}\PY{p}{(}\PY{n}{figures}\PY{p}{)}
+    \PY{k}{return} \PY{n}{rows}\PY{p}{,} \PY{n}{figures}\PY{p}{,} \PY{n}{summary}
+\end{Verbatim}

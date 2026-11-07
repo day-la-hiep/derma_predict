@@ -18,6 +18,11 @@ Người đọc là hội đồng chấm đồ án. Họ cần biết hệ thố
 - **Số liệu kèm đơn vị và nguồn:** 22 lớp, 500 MB, 10 bản ghi. Số chưa có thì ghi `% TODO: bổ sung số liệu`, không tự điền.
 - **Không khẳng định quá mức:** kết quả AI là giả thuyết hoặc gợi ý. Mọi đoạn nói về kết quả mô hình hay chatbot giữ nguyên ý "không phải chẩn đoán y khoa".
 - **Thuật ngữ:** tiếng Việt kèm tiếng Anh trong ngoặc ở lần đầu (truy xuất tăng cường sinh văn bản (RAG)), sau đó dùng một dạng nhất quán. Tên công nghệ, hàm, bảng, endpoint giữ nguyên tiếng Anh, đặt trong `\texttt{}`.
+- **Kiểm tra thuật ngữ trước khi dùng.** Với mỗi thuật ngữ (tên khái niệm, công nghệ) và mọi thứ gắn với code (tên hàm, class, stage, file, trường dữ liệu, mã, endpoint, đường dẫn trang giao diện như `/admin/documents`) định đưa vào câu, tự hỏi lần lượt:
+  1. Trong báo cáo đã giải thích thuật ngữ này chưa (ở chương trước, mục thuật ngữ, hoặc lần dùng đầu)? Rồi thì dùng đúng cách gọi đã có, không đổi tên.
+  2. Chưa: người đọc là hội đồng chấm đồ án có biết và hiểu thuật ngữ này không? Biết thì dùng, và giải thích ngắn ở lần đầu nếu cần.
+  3. Không biết hoặc không chắc: diễn đạt lại bằng một từ hoặc cụm từ tổng quát (ví dụ ``danh sách cần soát'' thay cho tên file, ``công cụ trích chữ'' thay cho tên công cụ). Chỉ giữ tên gốc khi cả đoạn thật sự cần đến nó, và khi đó định nghĩa ngay tại chỗ.
+  Không dùng tên hàm, tên stage, tên file, đường dẫn thư mục, endpoint hay đường dẫn trang giao diện trong lời mô tả; gọi bằng tên chức năng (ví dụ ``trang quản lý tài liệu của quản trị viên thay cho `/admin/documents`). Để chúng trong khung mã hoặc bảng tra cứu nếu cần.
 - **Liệt kê:** dùng `itemize` khi có từ ba mục song song; mỗi mục bắt đầu bằng thành phần in đậm, sau đó là một mệnh đề. Đoạn văn dài hơn 6 câu thì tách hoặc chuyển thành bảng.
 - **Không lặp:** mục kết luận chương tóm tắt một lần, không chép lại nguyên câu của các mục trước.
 
@@ -41,7 +46,7 @@ Tên mô hình, số lớp, tham số mà tài liệu không ghi thì hỏi ngư
 - Mỗi chương một thư mục `chuongN/chuongN.tex` (ảnh để trong `chuongN/hinh/`); `main.tex` nạp bằng `\input`. Mở đầu nằm ở `mo_dau/`.
 - Cấu trúc `\chapter` → `\section` → `\subsection` (tự đánh số 1.1, 1.1.1). Không đánh số tay trong tiêu đề. Kết thúc chương bằng `\section{Kết luận chương}`.
 - Nhãn: `\label{ch:chuongN}` cho chương; hình `fig:`, bảng `tab:`, công thức `eq:`. Tham chiếu bằng `Chương~\ref{...}`, `Hình~\ref{...}` (dấu `~` giữ liền với số).
-- Bảng và hình dùng `[H]` (đã nạp gói `float`), có `\caption`; chú thích bảng đặt dưới bảng như các bảng hiện có. Hình dùng `\includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuongN/hinh/...}`.
+- Bảng và hình dùng `[H]` (đã nạp gói `float`), có `\caption`; chú thích bảng đặt **trên** bảng (`\caption` và `\label` ngay sau `\centering`; với `longtable` đặt `\caption...\\` trước dòng tiêu đề kèm `\endfirsthead`), chú thích hình đặt **dưới** hình. Hình dùng `\includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuongN/hinh/...}`.
 - Công thức dùng môi trường `equation` và giải thích ký hiệu ngay sau công thức ("Trong đó, ...").
 - Dấu ngoặc kép tiếng Việt viết ``...'' (hai dấu huyền, hai dấu nháy đơn). Ký tự đặc biệt phải escape: `\_`, `\%`, `\&`.
 - Không chỉnh gói, lề, cỡ chữ trong `main.tex` khi chỉ viết nội dung. Định dạng đã khai báo ở đó: Times New Roman 13 pt; giãn dòng 1,5 cho nội dung; giãn đoạn trước 0 pt, sau 6 pt; giãn dòng đơn cho bảng (kể cả `longtable`), chú thích hình/bảng, trích dẫn khối và tài liệu tham khảo. Tiêu đề chương là `\chapter[\MakeUppercase{Tên}]{Tên}` để mục lục và đầu trang in hoa.

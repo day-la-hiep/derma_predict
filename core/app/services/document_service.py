@@ -1,12 +1,10 @@
 """Nghiệp vụ tài liệu"""
 import asyncio
-import contextlib
 import json
 import shutil
 import subprocess
 import tempfile
 import uuid
-from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +23,8 @@ from app.dto.response.document import (
     DocumentOutput,
     DocumentSummary,
     ChunkListOutput,
+    FigureListOutput,
+    FigureOutput,
     StageOutput,
 )
 from app.exception.errors import ConflictError, InvalidError, NotFoundError
@@ -37,7 +37,7 @@ from app.services.document_graph_service import DocumentGraphService
 from pipeline.document_ingest.profile import ProfileError, default_profile
 from pipeline.document_ingest.textutil import sha
 
-_PAYLOAD_KEYS = ("chunk_id", "seq", "document_id", "text", "context_text", "part", "section", "topic", "subtopic", "toc_path", "toc_node_ids",
+_PAYLOAD_KEYS = ("chunk_id", "seq", "document_id", "text", "context_text", "toc_path", "toc_node_ids",
                  "figure_ids", "level", "pages_hint", "boundary", "suspect", "page_start", "page_end", "page_printed_start", "page_printed_end",
                  "tokens", "chars")
 
@@ -78,16 +78,6 @@ def get_local_pdf(repo: DocumentRepository, document_id: str) -> Path:
         return repo.files_for(document_id).local_copy("source.pdf", get_temp_root() / document_id / "source.pdf")
     except FileNotFoundError as exc:
         raise FileNotFoundError("Không tìm thấy file PDF của tài liệu.") from exc
-
-
-@contextlib.contextmanager
-def copy_temp_pdf(repo: DocumentRepository, document_id: str) -> Generator[Path]:
-    """Bản sao `source.pdf` dùng cho một lần gọi rồi xoá ngay"""
-    with tempfile.TemporaryDirectory(prefix="toc_pdf_") as tmp:
-        try:
-            yield repo.files_for(document_id).local_copy("source.pdf", Path(tmp) / "source.pdf")
-        except FileNotFoundError as exc:
-            raise FileNotFoundError("Không tìm thấy file PDF của tài liệu.") from exc
 
 
 class DocumentService:
@@ -206,8 +196,7 @@ class DocumentService:
         if cached:
             return int(cached)
         try:
-            with copy_temp_pdf(self._repo, document_id) as pdf:
-                n = self._count_pages(pdf)
+            n = self._count_pages(get_local_pdf(self._repo, document_id))
         except FileNotFoundError:
             return None
         if n is None:
@@ -307,29 +296,13 @@ class DocumentService:
         with tempfile.TemporaryDirectory(prefix="toc_page_") as tmp_dir:
             out = Path(tmp_dir) / "page"
             try:
-                with copy_temp_pdf(self._repo, document_id) as pdf:
-                    subprocess.run(
-                        [
-                            "pdftoppm",
-                            "-f",
-                            str(page),
-                            "-l",
-                            str(page),
-                            "-r",
-                            str(PAGE_IMAGE_DPI),
-                            "-png",
-                            "-singlefile",
-                            str(pdf),
-                            str(out),
-                        ],
-                        check=True,
-                        capture_output=True,
-                        timeout=120,
-                    )
+                subprocess.run(
+                    ["pdftoppm", "-f", str(page), "-l", str(page), "-r", str(PAGE_IMAGE_DPI), "-png", "-singlefile",
+                     str(get_local_pdf(self._repo, document_id)), str(out)],
+                    check=True, capture_output=True, timeout=120,
+                )
             except (OSError, subprocess.SubprocessError) as exc:
-                raise InvalidError(
-                    f"Không hiển thị được hình ảnh trang {page}: {exc}"
-                ) from exc
+                raise InvalidError(f"Không hiển thị được hình ảnh trang {page}: {exc}") from exc
             data = out.with_suffix(".png").read_bytes()
         files.put_bytes(name, data)
         return data
@@ -424,8 +397,25 @@ class DocumentService:
             ov.pop("_offset", None)
         self._repo.overrides.write(document_id, "toc", ov)
 
-    def list_figures(self, document_id: str) -> list[dict[str, Any]]:
-        return self._repo.files_for(document_id).read_json("figures.json", []) or []
+    def list_figures(
+        self, document_id: str, q: str, page: int, page_size: int
+    ) -> FigureListOutput:
+        rows = self._repo.files_for(document_id).read_json("figures.json", []) or []
+        ql = q.strip().lower()
+        picked = [
+            f
+            for f in rows
+            if not ql or ql in (f.get("caption") or "").lower() or ql == str(f["page"])
+        ]
+        return FigureListOutput(
+            items=[
+                FigureOutput.model_validate(f)
+                for f in _paginate(picked, page, page_size)
+            ],
+            total=len(picked),
+            page=page,
+            page_size=page_size,
+        )
 
     def figure_image(self, document_id: str, figure_id: str) -> bytes:
         files = self._repo.files_for(document_id)

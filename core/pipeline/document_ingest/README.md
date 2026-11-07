@@ -14,7 +14,7 @@ PDF → ingest (chữ từng trang) → toc (LLM đọc mục lục, người du
 | toc | `stages/step2_toc.py` + `mapping.py` | `toc.auto.json` (máy), `toc.json` (đã áp override + độ lệch + neo) | đọc vài chục trang mục lục |
 | chunks | `stages/step3_chunks.py` | `chunks.jsonl`, `review/chunks.json` | không |
 | index | `stages/step4_index.py` (+ `DocumentService`) | `index.json` + các point trong Qdrant | không (embedding qua OpenRouter) |
-| graph | `stages/step5_graph.py` + `graph_schema.py` + `graph_link.py` | `graph/topics.json`, `graph/unmapped.json`, `triples.auto.jsonl` (máy), `triples.jsonl` (đã áp override) | phân loại mục, trích theo ô, chọn nút khớp |
+| graph | `stages/step5_graph.py` + `graph_schema.py` + `graph_link.py` | `graph/units.json`, `graph/unmapped.json`, `triples.auto.jsonl` (máy), `triples.jsonl` (đã áp override) | chia lô theo mục nhỏ nhất, AI nêu chủ thể và trích theo ô, chọn nút khớp |
 | graph_index | `stages/step6_graph_index.py` (+ `DocumentGraphService`) | `graph_index.json` + cạnh `source='DOC'` trong Neo4j | không |
 
 - `graph` chỉ trích quan hệ có trong PrimeKG/DermO (registry `graph_schema.py`, cộng loại / quan hệ bác sĩ định nghĩa trong bảng `graph_entity_types`, `graph_relations`),
@@ -44,7 +44,8 @@ nằm ở `app/` theo quy ước của Core:
 | Client + capability generic: MinIO (`MinioClient`), Qdrant (`QdrantVectorClient`), Redis + khoá phân tán (`RedisClient`), LLM trả JSON (`LLMClient`), Docling (`DoclingClient`), embedding (`EmbeddingClient`) | `app/infra/*_client.py` |
 | Nghiệp vụ sách trên client generic: CRUD sách, cài đặt, mục lục, chunk, ảnh trang, nhật ký, profile; chunk trong Qdrant (`DocumentService`) | `app/services/document_service.py` |
 | Truy cập dữ liệu sách: `DocumentRepository`, các bước + phụ thuộc, trạng thái, override, nhật ký, xoá sách | `app/repositories/document_repository.py` |
-| Điều khiển pipeline (`DocumentIngestPipelineService`: kiểm tra, ghi `running` + publish queue, chạy bước, dừng, duyệt, áp lại override) | `app/services/document_ingest_pipeline_service.py` |
+| Chạy từng bước: đọc/ghi MinIO, kiểm tra LLM/Docling/embedding/Neo4j, gọi hàm thuần (`DocumentStageRunner`, `StageRunState`) | `app/services/document_stage_runner.py` |
+| Điều khiển pipeline (`DocumentIngestPipelineService`: kiểm tra, ghi `running` + publish queue, chạy bước, dừng, duyệt, áp lại override; bảng dispatch `_runners`/`_reappliers`) | `app/services/document_ingest_pipeline_service.py` |
 | Tiến trình chạy bước (consume `document_ingest_queue`) | `app/workers/document_ingest_worker.py` |
 | Đồ thị sách: tìm nút, danh sách / sửa quan hệ, ghi Neo4j | `app/services/document_graph_service.py`, `app/infra/neo4j_client.py` |
 | API / DTO | `app/api/document_api.py`, `app/dto/request/document.py`, `app/dto/response/document.py` |
@@ -52,27 +53,29 @@ nằm ở `app/` theo quy ước của Core:
 | Schema cấu hình sách (`Profile`, Pydantic) | `app/models/document_profile.py` |
 | MinIO giả cho test | `tests/memory_infra.py` |
 
-Runner nhận client qua constructor và truyền cho từng bước qua `StageContext` (`ctx.llm`, `ctx.docling`, `ctx.embedding`, `ctx.vectors`); bước chỉ
-biến đổi dữ liệu, không tự tạo client. Test dựng runner bằng `MemoryMinio` + SQLite file tạm (thay Postgres) + `QdrantClient(":memory:")` + embedding giả (không cần dịch vụ nào chạy).
+`DocumentStageRunner` nhận client qua constructor; mỗi hàm `run_*` đọc đầu vào từ MinIO, gọi **hàm thuần** trong `stages/` rồi ghi đầu ra. Hàm thuần nhận dữ liệu thường
+(hoặc model trong `types.py`), trả dữ liệu, báo tiến độ/nhật ký qua hai callback `on_progress(done, total, message)` và `on_log(message)`; dừng = callback ném `StageCancelled`.
+Test gọi thẳng hàm thuần (`tests/test_pure_stages.py`, không cần dịch vụ nào) và chạy cả luồng qua service bằng `MemoryMinio` + SQLite file tạm (thay Postgres) + `QdrantClient(":memory:")` + embedding giả.
 
-Trong `pipeline/document_ingest/`: `stages/` (step1_ingest, step2_toc, step3_chunks, step4_index, step5_graph, step6_graph_index — mỗi bước đọc đầu vào, biến đổi, ghi đầu ra qua `ctx.store`),
-`mapping.py` (độ lệch + neo, hàm thuần `build_toc`), `hierarchy.py`, `graph_schema.py` (loại thực thể + quan hệ), `graph_link.py` (khớp tên vào từ điển PrimeKG + DermO), `textutil.py`, `profile.py` (parse/dump cấu hình sách).
+Trong `pipeline/document_ingest/`: `stages/` (step1_ingest `extract_pages`, step2_toc `read_toc`, step3_chunks `cut_chunks`, step4_index `embed_chunks`, step5_graph `extract_triples`, step6_graph_index `build_graph_payload`),
+`mapping.py` (độ lệch + neo, `build_toc`, `build_tree`), `types.py` (model dữ liệu giữa các hàm: `PageRow`, `TocEntry`, `TocAuto`, `TocDoc`, `TocNode`... mọi field có `description`), `graph_schema.py` (loại thực thể + quan hệ),
+`graph_link.py` (khớp tên vào từ điển PrimeKG + DermO), `textutil.py`, `profile.py` (cấu hình sách mặc định).
 
 ## Lưu trữ (không còn workspace trên đĩa)
 
 Mọi thứ nằm trong **MinIO**, bucket `MINIO_DOCUMENTS_BUCKET` (mặc định `derma-documents`), dưới `document/<document_id>/`: `source.pdf`, `page_img/p<N>.png`,
 `pages.jsonl`, `toc.auto.json`, `toc.json`, `chunks.jsonl`, `index.json`, `triples.auto.jsonl`, `triples.jsonl`, `graph/`, `graph_index.json`, `review/`, `logs/`, `docling_parts/`
 (điểm lưu để OCR tiếp tục được). Cache LLM ở `_cache/llm/`. Chunk được embed (`EMBEDDING_MODEL`, mặc định `qwen/qwen3-embedding-8b` qua OpenRouter, 4096 chiều) và nạp vào **Qdrant** collection
-`QDRANT_DOCUMENT_COLLECTION` (mặc định `derma_document_chunks_v4`; vector dense + sparse `bm25`, IDF do Qdrant tính — Qdrant không thêm sparse vector vào collection đã tạo nên bản cũ `derma_document_chunks` cần index lại sang collection mới), payload có `document_id`, part/section/topic, trang, `source_pdf`.
+`QDRANT_DOCUMENT_COLLECTION` (mặc định `derma_document_chunks_v4`; vector dense + sparse `bm25`, IDF do Qdrant tính — Qdrant không thêm sparse vector vào collection đã tạo nên bản cũ `derma_document_chunks` cần index lại sang collection mới), payload có `document_id`, `toc_path`, trang, `source_pdf`.
 
 Tiền xử lý cho tìm từ khoá (`app/infra/bm25/`): làm sạch chữ OCR (`text_clean`), tách từ ghép tiếng Việt bằng underthesea, bỏ stopword (giữ phủ định và đơn vị liều), stem tiếng Anh bằng Snowball (nltk). Mỗi tài liệu chọn `text_language` (vi / en / mixed) trong cài đặt; giá trị này được ghi vào payload `bm25_mode` để câu hỏi được mã hoá đúng cách cho từng nhóm. Đổi ngôn ngữ hoặc tokenizer thì phải làm lại bước Lưu vào kho.
 
 - Chỉ backend (Core) chạm MinIO/Qdrant; FE chỉ gọi API (ảnh trang được Core đọc từ MinIO rồi trả về).
 - Trạng thái bước nằm ở bảng `document_stages` (Postgres) và override ở `document_overrides`; MinIO không còn `status.json` / `overrides/`. Thư mục tạm chỉ chứa bản sao PDF cho
-  pdftotext/Docling/pdftoppm (`/tmp/document_ingest_tmp/<document_id>/`, xoá cùng sách).
+  pdftotext/Docling/pdftoppm (`/tmp/document_ingest_tmp/<document_id>/`, xoá cùng sách; không có job dọn bản sao của sách không bị xoá).
 - Xoá sách xoá cả đối tượng MinIO lẫn point Qdrant của sách. Chạy lại bước `index` thay thế toàn bộ point cũ của sách.
 
 Test dùng `MemoryMinio` + SQLite + Qdrant in-memory + embedding giả (không cần dịch vụ nào chạy).
 
 Giao diện: `/doctor/documents` (API `/api/v1/admin/documents/*`).
-Test: `python -m unittest pipeline.document_ingest.tests.test_document_pipeline pipeline.document_ingest.tests.test_api pipeline.document_ingest.tests.test_storage_index pipeline.document_ingest.tests.test_graph pipeline.document_ingest.tests.test_graph_schema pipeline.document_ingest.tests.test_text_preprocess`.
+Test: `python -m unittest pipeline.document_ingest.tests.test_document_pipeline pipeline.document_ingest.tests.test_api pipeline.document_ingest.tests.test_storage_index pipeline.document_ingest.tests.test_graph pipeline.document_ingest.tests.test_graph_schema pipeline.document_ingest.tests.test_text_preprocess pipeline.document_ingest.tests.test_pure_stages` và `tests/test_reindex_qdrant.py`.

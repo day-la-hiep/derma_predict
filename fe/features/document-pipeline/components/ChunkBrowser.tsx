@@ -100,7 +100,7 @@ const FLAG = "rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] whitespace-nowra
 
 function ChunkRow({ c, onPreview, previewPage }: { c: Chunk; onPreview: (p: number) => void; previewPage: number }) {
   const [open, setOpen] = useState(false);
-  const crumbs = [c.part, c.section, c.topic, c.subtopic].filter(Boolean);
+  const crumbs = c.toc_path;
   const words = Math.round(c.tokens / 1.3);
   const lengthWarn = Boolean(c.review_reason && /dài|ngắn/.test(c.review_reason));
   return (

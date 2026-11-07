@@ -1,5 +1,5 @@
 % Chương 1
-\chapter[\MakeUppercase{Giới thiệu chung}]{Giới thiệu chung}
+\chapter[\MakeUppercase{Tổng quan hệ thống hỗ trợ tiền chẩn đoán bệnh về da dựa trên Multi-scale CNN, Knowledge Graph và RAG}]{Tổng quan hệ thống hỗ trợ tiền chẩn đoán bệnh về da dựa trên Multi-scale CNN, Knowledge Graph và RAG}
 \label{ch:chuong1}
 
 \section{Đặt vấn đề và phạm vi bài toán}
@@ -57,6 +57,8 @@ Hệ thống không để mô hình ngôn ngữ lớn (LLM) trả lời trực t
 
 \begin{table}[H]
 \centering
+\caption{Khó khăn và thành phần xử lý tương ứng}
+\label{tab:giai-phap}
 \small
 \begin{tabular}{|p{4.2cm}|p{4.3cm}|p{5.2cm}|}
 \hline
@@ -67,9 +69,20 @@ Lệch từ vựng giữa mô tả đời thường và thuật ngữ y khoa & �
 Bệnh sử thiếu, chưa chuẩn hóa & Tác nhân hội thoại (LangGraph) & Hỏi bổ sung; trích dữ kiện lâm sàng \\ \hline
 Bác sĩ hỏi lại bệnh sử từ đầu & Báo cáo tiền tư vấn; kênh tư vấn trực tiếp & Chuyển nội dung hội thoại cho bác sĩ; chat và video \\ \hline
 \end{tabular}
-\caption{Khó khăn và thành phần xử lý tương ứng}
-\label{tab:giai-phap}
 \end{table}
+
+\subsection{Đặc điểm của giải pháp}
+
+\begin{itemize}
+  \item \textbf{Đa phương thức:} văn bản và ảnh trong cùng một hội thoại.
+  \item \textbf{Có nguồn:} câu trả lời dựa trên đoạn giáo trình, quan hệ trong đồ thị hoặc ca bệnh đã xác nhận, không chỉ dựa vào kiến thức nội tại của LLM.
+  \item \textbf{Lập luận hiển thị:} công cụ đã gọi và bước suy luận được hiển thị, lưu cùng tin nhắn.
+  \item \textbf{Có người duyệt:} người duyệt xác nhận nội dung kho tri thức. Bác sĩ đưa ra kết luận cuối.
+  \item \textbf{Tách tiến trình:} LLM và số hóa tài liệu chạy ở worker riêng, giao diện nhận kết quả qua SSE.
+\end{itemize}
+
+\section{Kiến trúc hệ thống}
+\label{sec:kien-truc-he-thong}
 
 \subsection{Kiến trúc tổng quan}
 
@@ -92,16 +105,6 @@ Bác sĩ hỏi lại bệnh sử từ đầu & Báo cáo tiền tư vấn; kênh
   \item Khi cần khám chuyên sâu, bệnh nhân gửi yêu cầu tư vấn. Hệ thống tổng hợp báo cáo tiền tư vấn cho bác sĩ. Sau buổi tư vấn, bác sĩ chốt báo cáo kết luận và ca được nạp vào kho tri thức.
 \end{enumerate}
 
-\subsection{Đặc điểm của giải pháp}
-
-\begin{itemize}
-  \item \textbf{Đa phương thức:} văn bản và ảnh trong cùng một hội thoại.
-  \item \textbf{Có nguồn:} câu trả lời dựa trên đoạn giáo trình, quan hệ trong đồ thị hoặc ca bệnh đã xác nhận, không chỉ dựa vào kiến thức nội tại của LLM.
-  \item \textbf{Lập luận hiển thị:} công cụ đã gọi và bước suy luận được hiển thị, lưu cùng tin nhắn.
-  \item \textbf{Có người duyệt:} người duyệt xác nhận nội dung kho tri thức. Bác sĩ đưa ra kết luận cuối.
-  \item \textbf{Tách tiến trình:} LLM và số hóa tài liệu chạy ở worker riêng, giao diện nhận kết quả qua SSE.
-\end{itemize}
-
 \section{Các công nghệ phát triển ứng dụng}
 
 Hệ thống gồm các khối công nghệ sau. Mỗi khối đảm nhận một vai trò riêng.
@@ -123,17 +126,17 @@ Hệ thống gồm các khối công nghệ sau. Mỗi khối đảm nhận mộ
 
 \subsection{Phân loại ảnh da liễu bằng CNN}
 
-\textbf{AdaptiveCNN} xây dựng trên ResNet-18, thêm hai cơ chế: tích chập đa kernel (AMKC) lấy đặc trưng ở nhiều phạm vi không gian. Mô hình huấn luyện bằng PyTorch, đầu ra gồm 22 lớp bệnh và độ tin cậy. Agent gọi mô hình như một công cụ; kết quả là giả thuyết hỗ trợ. Chi tiết ở Chương~\ref{ch:chuong2}.
+\textbf{AdaptiveCNN} xây dựng trên ResNet-18, thêm hai cơ chế: tích chập đa kernel (AMKC) lấy đặc trưng ở nhiều phạm vi không gian. Mô hình huấn luyện bằng PyTorch, đầu ra gồm 22 lớp bệnh và độ tin cậy. Agent gọi mô hình như một công cụ; kết quả là giả thuyết hỗ trợ. Chi tiết ở Chương~\ref{ch:chuong3}.
 
 \subsection{Truy xuất tăng cường sinh văn bản (RAG)}
 \begin{itemize}
-  \item \textbf{Số hóa giáo trình:} Docling đọc PDF thành chữ theo trang; LLM đọc trang mục lục để dựng cây mục; văn bản được cắt thành đoạn theo mục lục. Người duyệt xác nhận từng bước.
+  \item \textbf{Số hóa giáo trình:} Docling (công cụ mã nguồn mở nhận dạng chữ trên ảnh trang PDF, giữ cả bảng và hình) đọc PDF thành chữ theo trang; LLM đọc trang mục lục để dựng cây mục; văn bản được cắt thành đoạn theo mục lục. Người duyệt xác nhận từng bước.
   \item \textbf{Tìm kiếm ngữ nghĩa:} mô hình embedding đổi mỗi đoạn thành vector, lưu vào Qdrant; câu hỏi được so khớp theo độ tương đồng vector.
   \item \textbf{Tìm kiếm từ khóa:} BM25 trên vector sparse. Tiền xử lý tiếng Việt gồm tách từ ghép (underthesea), loại stopword, thêm token bỏ dấu. Cách này khớp đúng tên thuốc và thuật ngữ.
   \item \textbf{Tìm kiếm hỗn hợp và xếp hạng lại:} kết hợp kết quả ngữ nghĩa, từ khóa và đồ thị tri thức; mô hình reranker (Qwen3-Reranker) xếp hạng lại; kết quả trả về kèm tên sách, mục, số trang.
 \end{itemize}
 
-Chi tiết ở Chương~\ref{ch:chuong3}.
+Chi tiết ở Chương~\ref{ch:chuong4}.
 
 \subsection{Đồ thị tri thức}
 \begin{itemize}
@@ -152,7 +155,31 @@ Chi tiết ở Chương~\ref{ch:chuong3}.
   \item \textbf{Tổng hợp lâm sàng:} LLM trích dữ kiện bệnh nhân từ hội thoại và sinh báo cáo tiền tư vấn.
 \end{itemize}
 
-Chi tiết ở Chương~\ref{ch:chuong4}.
+Chi tiết ở Chương~\ref{ch:chuong5}.
+
+\subsection{Các mô hình sử dụng trong hệ thống}
+\label{sec:cac-mo-hinh}
+
+Hệ thống dùng sáu mô hình, mỗi mô hình đảm nhận một vai trò riêng (bảng~\ref{tab:cac-mo-hinh}). Chỉ AdaptiveCNN chạy trong Agent Worker. Các LLM, embedding và reranker được gọi qua OpenRouter; MedGemma chạy cục bộ qua Ollama.
+
+\begin{table}[H]
+\centering
+\caption{Các mô hình sử dụng trong hệ thống}
+\label{tab:cac-mo-hinh}
+\small
+\begin{tabular}{|p{3.9cm}|p{5.1cm}|p{2.9cm}|p{2.3cm}|}
+\hline
+\textbf{Mô hình} & \textbf{Vai trò} & \textbf{Cách chạy} & \textbf{Chi tiết} \\ \hline
+AdaptiveCNN (ResNet-18, AMKC) & Phân loại ảnh tổn thương thành 22 lớp bệnh, kèm độ tin cậy & Trong Agent Worker (PyTorch) & Chương~\ref{ch:chuong3} \\ \hline
+Gemma 4 26B A4B & LLM chính: tác nhân hội thoại, đọc trang mục lục, trích quan hệ từ giáo trình, trích dữ kiện lâm sàng và sinh báo cáo tiền tư vấn. Mô hình hỗn hợp chuyên gia, 26 tỷ tham số, khoảng 4 tỷ tham số kích hoạt mỗi lượt & OpenRouter; đổi được theo từng hội thoại (thêm DeepSeek V4 Pro và V4 Flash) & Chương~\ref{ch:chuong4} và~\ref{ch:chuong5} \\ \hline
+Gemma 3 12B & Lọc ý định ở đầu mỗi lượt: chào hỏi, câu ngoài phạm vi, câu hỏi y khoa & OpenRouter & Chương~\ref{ch:chuong5} \\ \hline
+Qwen3-Embedding-8B & Mã hóa đoạn giáo trình, ca bệnh và câu hỏi thành vector dense 4096 chiều & OpenRouter & Chương~\ref{ch:chuong4} \\ \hline
+Qwen3-Reranker-8B & Xếp hạng lại kết quả truy xuất; khi lỗi, hệ thống dùng thứ tự gộp RRF & OpenRouter & Chương~\ref{ch:chuong4} \\ \hline
+MedGemma 4B (tùy chọn) & Mô tả ảnh tổn thương bằng lời, bổ sung cho kết quả CNN & Cục bộ qua Ollama & Chương~\ref{ch:chuong5} \\ \hline
+\end{tabular}
+\end{table}
+
+Đầu ra của các mô hình là gợi ý hỗ trợ, không phải chẩn đoán y khoa.
 
 \section{Kết luận}
 

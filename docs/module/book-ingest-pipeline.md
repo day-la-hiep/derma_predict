@@ -44,7 +44,7 @@ PDF ──▶ toc ─────────────────┘   (cắ
 | `toc` | Mục lục | — | **có** | `toc.auto.json` (máy), `toc.json` (đã áp override + độ lệch + neo) |
 | `chunks` | Chia đoạn | `ingest`, `toc` | không | `chunks.jsonl`, `review/chunks.json` |
 | `index` | Lưu vào kho tri thức | `chunks` | không | `index.json` + point trong Qdrant |
-| `graph` | Trích quan hệ | `chunks` | **có** | `graph/topics.json`, `triples.auto.jsonl` (máy), `triples.jsonl` (đã áp override) |
+| `graph` | Trích quan hệ | `chunks` | **có** | `graph/units.json`, `triples.auto.jsonl` (máy), `triples.jsonl` (đã áp override) |
 | `graph_index` | Lưu vào đồ thị tri thức | `graph` | không | `graph_index.json` + cạnh `source='DOC'` trong Neo4j |
 
 ### `ingest`
@@ -65,20 +65,20 @@ không phải OCR lại). Header lặp và số trang in được tách khỏi `
 ### `chunks`
 Mỗi mục là một vùng `[đầu mục → đầu mục kế tiếp)`, trong vùng cắt tự do theo đoạn/câu tới `max_tokens`
 (mặc định 400). Chunk không vượt ranh giới mục có cấp ≤ `boundary_level`. Mỗi chunk mang metadata của mục:
-`part`, `section`, `topic`, `subtopic`, `toc_path`, trang PDF / trang in, `boundary` (mục chưa neo được dòng).
+`toc_path` (đường dẫn mục lục, cấp bất kỳ), trang PDF / trang in, `boundary` (mục chưa neo được dòng).
 Chữ ngoài mọi mục (bìa, lời nói đầu) không thành chunk nhưng được đếm trong summary. Chunk quá dài/ngắn,
 `boundary`, mục `suspect` vào hàng đợi xem lại.
 
 ### `index`
 Embed `context_text` (đường dẫn mục lục + nội dung) bằng embedding qua OpenRouter, nạp vào Qdrant
-`derma_document_chunks_v4` (dense + sparse `bm25` cho tìm từ khoá; payload có `document_id`, part/section/topic, trang, vị trí PDF nguồn). Chạy lại
+`derma_document_chunks_v4` (dense + sparse `bm25` cho tìm từ khoá; payload có `document_id`, `toc_path`, trang, vị trí PDF nguồn). Chạy lại
 xoá toàn bộ point cũ của tài liệu trước.
 
 Tiền xử lý cho tìm từ khoá (`app/infra/bm25/`): làm sạch chữ OCR (`text_clean`), tách từ ghép tiếng Việt bằng underthesea, bỏ stopword (giữ phủ định và đơn vị liều), stem tiếng Anh bằng Snowball (nltk). Mỗi tài liệu chọn `text_language` (vi / en / mixed) trong cài đặt; giá trị này được ghi vào payload `bm25_mode` để câu hỏi được mã hoá đúng cách cho từng nhóm. Có thêm token bỏ dấu (`~vay`) trọng số thấp để câu hỏi không dấu vẫn khớp. Đổi ngôn ngữ hoặc tokenizer thì phải làm lại bước Lưu vào kho.
 
 ### `graph`
-1. LLM phân loại từng mục của sách: bài về một **bệnh**, một **thuốc**, hay mục khác (`graph/topics.json`).
-2. Với mỗi bệnh / thuốc, LLM trích các thực thể theo **ô quan hệ** (triệu chứng, thuốc điều trị, chống chỉ định...), kèm câu trích nguyên văn và `chunk_id`.
+1. Chia chunk thành **lô** (tối đa `chunks_per_call` chunk liền nhau, không vượt ranh giới mục nhỏ nhất của mục lục) — `graph/units.json`. Không còn bước phân loại mục là bệnh/thuốc, nên sách có mục lục thô (chỉ cấp chương) vẫn trích được.
+2. Với mỗi lô, LLM tự nêu **chủ thể** (bệnh hoặc thuốc) từ nội dung rồi trích các thực thể theo **ô quan hệ** (triệu chứng, thuốc điều trị, chống chỉ định...), kèm câu trích nguyên văn và `chunk_id`. Loại chủ thể suy ra từ ô. Chạy thử: tuỳ chọn `limit_calls` chỉ đọc N lô, chọn rải đều khắp sách.
    Chỉ trích những quan hệ có trong schema PrimeKG + DermO (`graph_schema.py`); loại thực thể và quan hệ bổ sung do bác sĩ định nghĩa ở `/doctor/graph-schema` (bảng `graph_entity_types`, `graph_relations`).
 3. Khớp tên thực thể vào từ điển PrimeKG + DermO (`graph_link.py`); chưa khớp đủ hai đầu thì `status != ok`.
 Người duyệt xem / sửa quan hệ ở `TripleBrowser` (`GET|PATCH /documents/{id}/triples`, tìm nút bằng `GET /graph/nodes`); sửa tay lưu trong `document_overrides`.
