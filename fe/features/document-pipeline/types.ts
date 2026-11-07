@@ -136,15 +136,18 @@ export interface Figure {
   caption: string;
 }
 
+export interface FigureList {
+  items: Figure[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
 export interface Chunk {
   chunk_id: string;
   seq: number;
   text: string;
   context_text: string;
-  part: string;
-  section: string;
-  topic: string;
-  subtopic: string;
   toc_path: string[];
   toc_node_ids: string[];
   /** ảnh nằm trong khoảng trang của chunk */

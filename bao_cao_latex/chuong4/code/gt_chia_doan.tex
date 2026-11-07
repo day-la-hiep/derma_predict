@@ -1,0 +1,20 @@
+\begin{Verbatim}[commandchars=\\\{\},numbers=left,numbersep=5pt,frame=single,framesep=4pt,breaklines=true,breakanywhere=true,fontsize=\fontsize{9pt}{10.5pt}\selectfont]
+\PY{k}{def} \PY{n+nf}{cut\PYZus{}chunks}\PY{p}{(}\PY{n}{doc}\PY{p}{:} \PY{n}{TocDoc}\PY{p}{,} \PY{n}{rows}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n}{PageRow}\PY{p}{]}\PY{p}{,} \PY{n}{cfg}\PY{p}{:} \PY{n}{ChunkingConfig}\PY{p}{,} \PY{o}{*}\PY{p}{,} \PY{n}{document\PYZus{}id}\PY{p}{:} \PY{n+nb}{str}\PY{p}{,} \PY{n}{document\PYZus{}title}\PY{p}{:} \PY{n+nb}{str}\PY{p}{,}
+               \PY{n}{figure\PYZus{}pages}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{tuple}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n+nb}{int}\PY{p}{]}\PY{p}{]}\PY{p}{,} \PY{n}{on\PYZus{}progress}\PY{p}{:} \PY{n}{OnProgress}\PY{p}{)} \PY{o}{\PYZhy{}}\PY{o}{\PYZgt{}} \PY{n+nb}{tuple}\PY{p}{[}\PY{n+nb}{list}\PY{p}{[}\PY{n}{DocumentChunk}\PY{p}{]}\PY{p}{,} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{dict}\PY{p}{]}\PY{p}{,} \PY{n+nb}{dict}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n}{Any}\PY{p}{]}\PY{p}{]}\PY{p}{:}
+\PY{+w}{    }\PY{l+s+sd}{\PYZdq{}\PYZdq{}\PYZdq{}`toc.json` + các trang (đã bỏ trang nhiễu) \PYZhy{}\PYZgt{} (chunks, danh sách chunk cần soát, summary).\PYZdq{}\PYZdq{}\PYZdq{}}
+    \PY{k}{if} \PY{n}{doc}\PY{o}{.}\PY{n}{offset} \PY{o+ow}{is} \PY{k+kc}{None}\PY{p}{:}
+        \PY{k}{raise} \PY{n}{StageError}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{Chưa xác định được độ chênh lệch số trang — hãy nhập tay ở bước Mục lục rồi làm lại.}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{c+c1}{\PYZsh{} Bước 1: mục lục \PYZhy{}\PYZgt{} các nút có điểm bắt đầu; thân sách \PYZhy{}\PYZgt{} các dòng chữ (bỏ trang mục lục)}
+    \PY{n}{nodes} \PY{o}{=} \PY{n}{build\PYZus{}toc\PYZus{}nodes}\PY{p}{(}\PY{n}{doc}\PY{p}{,} \PY{n+nb}{max}\PY{p}{(}\PY{n}{r}\PY{o}{.}\PY{n}{page} \PY{k}{for} \PY{n}{r} \PY{o+ow}{in} \PY{n}{rows}\PY{p}{)}\PY{p}{)}
+    \PY{k}{if} \PY{o+ow}{not} \PY{n}{nodes}\PY{p}{:}
+        \PY{k}{raise} \PY{n}{StageError}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{Không mục nào của mục lục nằm trong các trang đã đọc — hãy kiểm tra độ chênh lệch số trang.}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{n}{skip} \PY{o}{=} \PY{n+nb}{set}\PY{p}{(}\PY{n}{doc}\PY{o}{.}\PY{n}{toc\PYZus{}pages}\PY{p}{)}
+    \PY{n}{units} \PY{o}{=} \PY{p}{[}\PY{p}{(}\PY{n}{r}\PY{o}{.}\PY{n}{page}\PY{p}{,} \PY{n}{i}\PY{p}{,} \PY{n}{ln}\PY{p}{)} \PY{k}{for} \PY{n}{r} \PY{o+ow}{in} \PY{n}{rows} \PY{k}{if} \PY{n}{r}\PY{o}{.}\PY{n}{page} \PY{o+ow}{not} \PY{o+ow}{in} \PY{n}{skip} \PY{k}{for} \PY{n}{i}\PY{p}{,} \PY{n}{ln} \PY{o+ow}{in} \PY{n+nb}{enumerate}\PY{p}{(}\PY{n}{r}\PY{o}{.}\PY{n}{text}\PY{o}{.}\PY{n}{split}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+se}{\PYZbs{}n}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}\PY{p}{)}\PY{p}{]}
+    \PY{c+c1}{\PYZsh{} Bước 2: cắt chunk theo khung mục lục}
+    \PY{n}{on\PYZus{}progress}\PY{p}{(}\PY{l+m+mi}{1}\PY{p}{,} \PY{l+m+mi}{2}\PY{p}{,} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{cắt chunk}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{n}{chunks}\PY{p}{,} \PY{n}{outside} \PY{o}{=} \PY{n}{build\PYZus{}chunks}\PY{p}{(}\PY{n}{nodes}\PY{p}{,} \PY{n}{units}\PY{p}{,} \PY{n}{cfg}\PY{p}{,} \PY{n}{document\PYZus{}id}\PY{o}{=}\PY{n}{document\PYZus{}id}\PY{p}{,} \PY{n}{document\PYZus{}title}\PY{o}{=}\PY{n}{document\PYZus{}title}\PY{p}{,}
+                                   \PY{n}{printed\PYZus{}offset}\PY{o}{=}\PY{n}{doc}\PY{o}{.}\PY{n}{offset}\PY{p}{,} \PY{n}{figure\PYZus{}pages}\PY{o}{=}\PY{n}{figure\PYZus{}pages}\PY{p}{)}
+    \PY{k}{if} \PY{o+ow}{not} \PY{n}{chunks}\PY{p}{:}
+        \PY{k}{raise} \PY{n}{StageError}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{Không tạo được đoạn nào (nội dung sách có thể đang trống).}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{k}{return} \PY{n}{chunks}\PY{p}{,} \PY{n}{build\PYZus{}review}\PY{p}{(}\PY{n}{chunks}\PY{p}{,} \PY{n}{cfg}\PY{p}{)}\PY{p}{,} \PY{n}{\PYZus{}summarize}\PY{p}{(}\PY{n}{chunks}\PY{p}{,} \PY{n}{nodes}\PY{p}{,} \PY{n}{doc}\PY{p}{,} \PY{n}{outside}\PY{p}{,} \PY{n}{cfg}\PY{p}{)}
+\end{Verbatim}

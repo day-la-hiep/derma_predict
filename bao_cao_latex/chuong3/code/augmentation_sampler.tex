@@ -1,0 +1,28 @@
+\begin{Verbatim}[commandchars=\\\{\},numbers=left,numbersep=5pt,frame=single,framesep=4pt,breaklines=true,breakanywhere=true,fontsize=\fontsize{9pt}{10.5pt}\selectfont]
+\PY{n}{train\PYZus{}tf} \PY{o}{=} \PY{n}{transforms}\PY{o}{.}\PY{n}{Compose}\PY{p}{(}\PY{p}{[}
+    \PY{n}{transforms}\PY{o}{.}\PY{n}{Resize}\PY{p}{(}\PY{p}{(}\PY{l+m+mi}{244}\PY{p}{,} \PY{l+m+mi}{244}\PY{p}{)}\PY{p}{)}\PY{p}{,}
+    \PY{n}{transforms}\PY{o}{.}\PY{n}{RandomCrop}\PY{p}{(}\PY{l+m+mi}{224}\PY{p}{)}\PY{p}{,}
+    \PY{n}{transforms}\PY{o}{.}\PY{n}{RandomHorizontalFlip}\PY{p}{(}\PY{p}{)}\PY{p}{,}
+    \PY{n}{transforms}\PY{o}{.}\PY{n}{RandomVerticalFlip}\PY{p}{(}\PY{p}{)}\PY{p}{,}
+    \PY{n}{transforms}\PY{o}{.}\PY{n}{RandomRotation}\PY{p}{(}\PY{l+m+mi}{15}\PY{p}{)}\PY{p}{,}
+    \PY{n}{transforms}\PY{o}{.}\PY{n}{ColorJitter}\PY{p}{(}
+        \PY{n}{brightness}\PY{o}{=}\PY{l+m+mf}{0.15}\PY{p}{,} \PY{n}{contrast}\PY{o}{=}\PY{l+m+mf}{0.15}\PY{p}{,}
+        \PY{n}{saturation}\PY{o}{=}\PY{l+m+mf}{0.15}\PY{p}{,} \PY{n}{hue}\PY{o}{=}\PY{l+m+mf}{0.04}
+    \PY{p}{)}\PY{p}{,}
+    \PY{n}{transforms}\PY{o}{.}\PY{n}{ToTensor}\PY{p}{(}\PY{p}{)}\PY{p}{,}
+    \PY{n}{transforms}\PY{o}{.}\PY{n}{Normalize}\PY{p}{(}
+        \PY{n}{mean}\PY{o}{=}\PY{p}{[}\PY{l+m+mf}{0.485}\PY{p}{,} \PY{l+m+mf}{0.456}\PY{p}{,} \PY{l+m+mf}{0.406}\PY{p}{]}\PY{p}{,}
+        \PY{n}{std}\PY{o}{=}\PY{p}{[}\PY{l+m+mf}{0.229}\PY{p}{,} \PY{l+m+mf}{0.224}\PY{p}{,} \PY{l+m+mf}{0.225}\PY{p}{]}
+    \PY{p}{)}\PY{p}{,}
+\PY{p}{]}\PY{p}{)}
+
+\PY{c+c1}{\PYZsh{} Lay mau theo trong so nguoc tan suat lop}
+\PY{n}{counts} \PY{o}{=} \PY{n}{np}\PY{o}{.}\PY{n}{bincount}\PY{p}{(}
+    \PY{n}{train\PYZus{}df}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{label}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]}\PY{o}{.}\PY{n}{values}\PY{p}{,} \PY{n}{minlength}\PY{o}{=}\PY{l+m+mi}{7}
+\PY{p}{)}\PY{o}{.}\PY{n}{astype}\PY{p}{(}\PY{n+nb}{float}\PY{p}{)}
+\PY{n}{weights} \PY{o}{=} \PY{p}{(}\PY{l+m+mf}{1.0} \PY{o}{/} \PY{n}{counts}\PY{p}{)}\PY{p}{[}\PY{n}{train\PYZus{}df}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{label}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]}\PY{o}{.}\PY{n}{values}\PY{p}{]}
+\PY{n}{sampler} \PY{o}{=} \PY{n}{WeightedRandomSampler}\PY{p}{(}
+    \PY{n}{torch}\PY{o}{.}\PY{n}{as\PYZus{}tensor}\PY{p}{(}\PY{n}{weights}\PY{p}{,} \PY{n}{dtype}\PY{o}{=}\PY{n}{torch}\PY{o}{.}\PY{n}{double}\PY{p}{)}\PY{p}{,}
+    \PY{n}{num\PYZus{}samples}\PY{o}{=}\PY{n+nb}{len}\PY{p}{(}\PY{n}{train\PYZus{}df}\PY{p}{)}\PY{p}{,} \PY{n}{replacement}\PY{o}{=}\PY{k+kc}{True}
+\PY{p}{)}
+\end{Verbatim}

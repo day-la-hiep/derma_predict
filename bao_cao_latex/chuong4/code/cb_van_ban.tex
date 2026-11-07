@@ -1,0 +1,31 @@
+\begin{Verbatim}[commandchars=\\\{\},numbers=left,numbersep=5pt,frame=single,framesep=4pt,breaklines=true,breakanywhere=true,fontsize=\fontsize{9pt}{10.5pt}\selectfont]
+\PY{k}{def} \PY{n+nf}{build\PYZus{}report\PYZus{}text}\PY{p}{(}
+    \PY{n+nb+bp}{self}\PY{p}{,}
+    \PY{n}{report}\PY{p}{:} \PY{n}{FinalizeReport}\PY{p}{,}
+    \PY{n}{profile}\PY{p}{:} \PY{n}{PatientProfile} \PY{o}{|} \PY{k+kc}{None} \PY{o}{=} \PY{k+kc}{None}\PY{p}{,}
+    \PY{n}{images}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{tuple}\PY{p}{[}\PY{n}{Any}\PY{p}{,} \PY{n}{Any}\PY{p}{]}\PY{p}{]} \PY{o}{|} \PY{k+kc}{None} \PY{o}{=} \PY{k+kc}{None}\PY{p}{,}
+\PY{p}{)} \PY{o}{\PYZhy{}}\PY{o}{\PYZgt{}} \PY{n+nb}{tuple}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n+nb}{dict}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n}{Any}\PY{p}{]}\PY{p}{]}\PY{p}{:}
+\PY{+w}{    }\PY{l+s+sd}{\PYZdq{}\PYZdq{}\PYZdq{}Tổng hợp thông tin ca bệnh lâm sàng (đã ẩn danh họ tên, sđt) thành văn bản để embedding và payload.\PYZdq{}\PYZdq{}\PYZdq{}}
+    \PY{n}{snapshot} \PY{o}{=} \PY{n}{report}\PY{o}{.}\PY{n}{snapshot} \PY{o+ow}{or} \PY{p}{\PYZob{}}\PY{p}{\PYZcb{}}
+    \PY{c+c1}{\PYZsh{} ... (ghép giới tính, tuổi, tiền sử, dị ứng, dữ kiện lâm sàng, nhận định, dặn dò, nhãn ảnh thành các dòng văn bản)}
+    \PY{n}{text} \PY{o}{=} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+se}{\PYZbs{}n}\PY{l+s+s2}{\PYZdq{}}\PY{o}{.}\PY{n}{join}\PY{p}{(}\PY{n}{lines}\PY{p}{)}
+
+    \PY{n}{payload}\PY{p}{:} \PY{n+nb}{dict}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n}{Any}\PY{p}{]} \PY{o}{=} \PY{p}{\PYZob{}}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{case\PYZus{}id}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{report}\PY{o}{.}\PY{n}{id}\PY{p}{,}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{diagnosis}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{report}\PY{o}{.}\PY{n}{diagnosis}\PY{p}{,}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{notes}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{report}\PY{o}{.}\PY{n}{notes} \PY{o+ow}{or} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{\PYZdq{}}\PY{p}{,}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{gender}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{gender}\PY{p}{,}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{age}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{age}\PY{p}{,}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{allergies}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{allergies}\PY{p}{,}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{medical\PYZus{}history}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{medical\PYZus{}history}\PY{p}{,}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{clinical\PYZus{}facts}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{facts}\PY{p}{,}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{reasoning}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{reasoning}\PY{p}{,}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{urgency}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{urgency}\PY{p}{,}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{instructions}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{instructions}\PY{p}{,}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{is\PYZus{}reference\PYZus{}case}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n+nb}{bool}\PY{p}{(}\PY{n}{report}\PY{o}{.}\PY{n}{is\PYZus{}reference\PYZus{}case}\PY{p}{)}\PY{p}{,}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{text}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{text}\PY{p}{,}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{created\PYZus{}at}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{report}\PY{o}{.}\PY{n}{created\PYZus{}at}\PY{o}{.}\PY{n}{isoformat}\PY{p}{(}\PY{p}{)} \PY{k}{if} \PY{n}{report}\PY{o}{.}\PY{n}{created\PYZus{}at} \PY{k}{else} \PY{k+kc}{None}\PY{p}{,}
+        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{images}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{image\PYZus{}infos}\PY{p}{,}
+    \PY{p}{\PYZcb{}}
+    \PY{k}{return} \PY{n}{text}\PY{p}{,} \PY{n}{payload}
+\end{Verbatim}

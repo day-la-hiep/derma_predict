@@ -1,0 +1,19 @@
+\begin{Verbatim}[commandchars=\\\{\},numbers=left,numbersep=5pt,frame=single,framesep=4pt,breaklines=true,breakanywhere=true,fontsize=\fontsize{9pt}{10.5pt}\selectfont]
+\PY{k}{def} \PY{n+nf}{build\PYZus{}toc}\PY{p}{(}\PY{n}{auto}\PY{p}{:} \PY{n}{TocAuto}\PY{p}{,} \PY{n}{overrides}\PY{p}{:} \PY{n+nb}{dict}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n}{Any}\PY{p}{]}\PY{p}{,} \PY{n}{rows}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n}{PageRow}\PY{p}{]}\PY{p}{,} \PY{n}{total\PYZus{}pages}\PY{p}{:} \PY{n+nb}{int}\PY{p}{)} \PY{o}{\PYZhy{}}\PY{o}{\PYZgt{}} \PY{n}{TocDoc}\PY{p}{:}
+\PY{+w}{    }\PY{l+s+sd}{\PYZdq{}\PYZdq{}\PYZdq{}Áp override lên kết quả AI (`toc.auto.json`), dựng cây + độ lệch + neo \PYZhy{}\PYZgt{} nội dung `toc.json` (hàm thuần, không ghi file).\PYZdq{}\PYZdq{}\PYZdq{}}
+    \PY{n}{entries} \PY{o}{=} \PY{n}{apply\PYZus{}overrides}\PY{p}{(}\PY{n}{auto}\PY{o}{.}\PY{n}{entries}\PY{p}{,} \PY{n}{overrides}\PY{p}{)}
+    \PY{n}{skip} \PY{o}{=} \PY{n+nb}{set}\PY{p}{(}\PY{n}{auto}\PY{o}{.}\PY{n}{toc\PYZus{}pages}\PY{p}{)}
+    \PY{k}{if} \PY{n}{overrides}\PY{o}{.}\PY{n}{get}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{\PYZus{}offset}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)} \PY{o+ow}{is} \PY{o+ow}{not} \PY{k+kc}{None}\PY{p}{:}
+        \PY{n}{off}\PY{p}{,} \PY{n}{info} \PY{o}{=} \PY{n+nb}{int}\PY{p}{(}\PY{n}{overrides}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{\PYZus{}offset}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]}\PY{p}{)}\PY{p}{,} \PY{p}{\PYZob{}}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{source}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{user}\PY{l+s+s2}{\PYZdq{}}\PY{p}{\PYZcb{}}
+    \PY{k}{else}\PY{p}{:}
+        \PY{n}{off}\PY{p}{,} \PY{n}{info} \PY{o}{=} \PY{n}{estimate\PYZus{}offset}\PY{p}{(}\PY{n}{rows}\PY{p}{,} \PY{n}{entries}\PY{p}{,} \PY{n}{skip}\PY{p}{)}
+        \PY{n}{info}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{source}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]} \PY{o}{=} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{auto}\PY{l+s+s2}{\PYZdq{}}
+    \PY{n}{build\PYZus{}tree}\PY{p}{(}\PY{n}{entries}\PY{p}{)}
+    \PY{n}{anchored} \PY{o}{=} \PY{n}{anchor\PYZus{}entries}\PY{p}{(}\PY{n}{entries}\PY{p}{,} \PY{n}{rows}\PY{p}{,} \PY{n}{off}\PY{p}{,} \PY{n}{skip}\PY{p}{,} \PY{n}{total\PYZus{}pages}\PY{p}{)} \PY{k}{if} \PY{n}{off} \PY{o+ow}{is} \PY{o+ow}{not} \PY{k+kc}{None} \PY{k}{else} \PY{l+m+mi}{0}
+    \PY{n}{warnings} \PY{o}{=} \PY{n+nb}{list}\PY{p}{(}\PY{n}{auto}\PY{o}{.}\PY{n}{meta}\PY{o}{.}\PY{n}{warnings}\PY{p}{)}
+    \PY{k}{if} \PY{n}{off} \PY{o+ow}{is} \PY{k+kc}{None}\PY{p}{:}
+        \PY{n}{warnings}\PY{o}{.}\PY{n}{append}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{Chưa xác định được độ chênh lệch giữa số trang in và số trang trong file PDF: hãy nhập tay, }\PY{l+s+s2}{\PYZdq{}}
+                        \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{hoặc làm bước Đọc nội dung để hệ thống tự tính.}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{k}{return} \PY{n}{TocDoc}\PY{p}{(}\PY{n}{toc\PYZus{}pages}\PY{o}{=}\PY{n}{auto}\PY{o}{.}\PY{n}{toc\PYZus{}pages}\PY{p}{,} \PY{n}{pages\PYZus{}source}\PY{o}{=}\PY{n}{auto}\PY{o}{.}\PY{n}{pages\PYZus{}source}\PY{p}{,} \PY{n}{entries}\PY{o}{=}\PY{n}{entries}\PY{p}{,} \PY{n}{offset}\PY{o}{=}\PY{n}{off}\PY{p}{,} \PY{n}{offset\PYZus{}info}\PY{o}{=}\PY{n}{info}\PY{p}{,}
+                  \PY{n}{total\PYZus{}pages}\PY{o}{=}\PY{n}{total\PYZus{}pages}\PY{p}{,} \PY{n}{anchored}\PY{o}{=}\PY{n}{anchored}\PY{p}{,} \PY{n}{warnings}\PY{o}{=}\PY{n}{warnings}\PY{p}{)}
+\end{Verbatim}

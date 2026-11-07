@@ -1,0 +1,40 @@
+\begin{Verbatim}[commandchars=\\\{\},numbers=left,numbersep=5pt,frame=single,framesep=4pt,breaklines=true,breakanywhere=true,fontsize=\fontsize{9pt}{10.5pt}\selectfont]
+\PY{k}{async} \PY{k}{def} \PY{n+nf}{graph\PYZus{}search}\PY{p}{(}
+    \PY{n}{entities}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n}{ExtractedEntity}\PY{p}{]}\PY{p}{,}
+    \PY{n}{limit}\PY{p}{:} \PY{n+nb}{int}\PY{p}{,}
+    \PY{n}{corpus}\PY{p}{:} \PY{n}{RetrievalCorpus} \PY{o}{=} \PY{n}{DOCUMENT\PYZus{}CORPUS}\PY{p}{,}
+\PY{p}{)} \PY{o}{\PYZhy{}}\PY{o}{\PYZgt{}} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{dict}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n}{Any}\PY{p}{]}\PY{p}{]}\PY{p}{:}
+\PY{+w}{    }\PY{l+s+sd}{\PYZdq{}\PYZdq{}\PYZdq{}Payload chunk theo số cạnh trỏ tới giảm dần; rỗng khi không phải corpus sách, không có thực thể y khoa hoặc chưa có cạnh DOC.\PYZdq{}\PYZdq{}\PYZdq{}}
+    \PY{k}{if} \PY{n}{corpus}\PY{o}{.}\PY{n}{name} \PY{o}{!=} \PY{n}{DOCUMENT\PYZus{}CORPUS}\PY{o}{.}\PY{n}{name}\PY{p}{:}
+        \PY{k}{return} \PY{p}{[}\PY{p}{]}
+    \PY{n}{names} \PY{o}{=} \PY{p}{[}
+        \PY{n}{t} \PY{k}{for} \PY{n}{e} \PY{o+ow}{in} \PY{n}{entities} \PY{k}{if} \PY{n}{e}\PY{o}{.}\PY{n}{type} \PY{o}{!=} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{other}\PY{l+s+s2}{\PYZdq{}} \PY{k}{for} \PY{n}{t} \PY{o+ow}{in} \PY{p}{(}\PY{n}{e}\PY{o}{.}\PY{n}{text}\PY{p}{,} \PY{n}{e}\PY{o}{.}\PY{n}{vi}\PY{p}{)} \PY{k}{if} \PY{n}{t}
+    \PY{p}{]}
+    \PY{n}{chunk\PYZus{}ids} \PY{o}{=} \PY{k}{await} \PY{n}{get\PYZus{}document\PYZus{}graph\PYZus{}service}\PY{p}{(}\PY{p}{)}\PY{o}{.}\PY{n}{chunks\PYZus{}for\PYZus{}entities}\PY{p}{(}
+        \PY{n}{names}\PY{p}{,} \PY{n}{limit}
+    \PY{p}{)}
+    \PY{k}{return} \PY{k}{await} \PY{n}{get\PYZus{}retrieval\PYZus{}service}\PY{p}{(}\PY{p}{)}\PY{o}{.}\PY{n}{fetch}\PY{p}{(}\PY{n}{corpus}\PY{p}{,} \PY{n}{chunk\PYZus{}ids}\PY{p}{)}
+
+\PY{k}{async} \PY{k}{def} \PY{n+nf}{chunks\PYZus{}for\PYZus{}entities}\PY{p}{(}\PY{n+nb+bp}{self}\PY{p}{,} \PY{n}{names}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{str}\PY{p}{]}\PY{p}{,} \PY{n}{limit}\PY{p}{:} \PY{n+nb}{int} \PY{o}{=} \PY{l+m+mi}{20}\PY{p}{)} \PY{o}{\PYZhy{}}\PY{o}{\PYZgt{}} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{str}\PY{p}{]}\PY{p}{:}
+\PY{+w}{    }\PY{l+s+sd}{\PYZdq{}\PYZdq{}\PYZdq{}`chunk\PYZus{}id` mà cạnh DOC của các thực thể trỏ tới, nhiều cạnh nhất trước. Khớp tên chính xác trước, không có mới khớp chứa.\PYZdq{}\PYZdq{}\PYZdq{}}
+    \PY{n}{names} \PY{o}{=} \PY{p}{[}\PY{n}{n}\PY{o}{.}\PY{n}{strip}\PY{p}{(}\PY{p}{)}\PY{o}{.}\PY{n}{lower}\PY{p}{(}\PY{p}{)} \PY{k}{for} \PY{n}{n} \PY{o+ow}{in} \PY{n+nb}{dict}\PY{o}{.}\PY{n}{fromkeys}\PY{p}{(}\PY{n}{names}\PY{p}{)} \PY{k}{if} \PY{n}{n} \PY{o+ow}{and} \PY{n}{n}\PY{o}{.}\PY{n}{strip}\PY{p}{(}\PY{p}{)}\PY{p}{]}
+    \PY{k}{if} \PY{o+ow}{not} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{configured} \PY{o+ow}{or} \PY{o+ow}{not} \PY{n}{names}\PY{p}{:}
+        \PY{k}{return} \PY{p}{[}\PY{p}{]}
+    \PY{n}{query} \PY{o}{=} \PY{l+s+s2}{\PYZdq{}\PYZdq{}\PYZdq{}}
+\PY{l+s+s2}{        MATCH (n) WHERE (n:Entity OR n:DermoTerm) AND }\PY{l+s+si}{\PYZob{}match\PYZcb{}}
+\PY{l+s+s2}{        WITH n LIMIT 10}
+\PY{l+s+s2}{        MATCH (n)\PYZhy{}[r]\PYZhy{}()}
+\PY{l+s+s2}{        WHERE r.source = }\PY{l+s+s2}{\PYZsq{}}\PY{l+s+s2}{DOC}\PY{l+s+s2}{\PYZsq{}}
+\PY{l+s+s2}{        UNWIND coalesce(r.chunk\PYZus{}ids, []) AS chunk\PYZus{}id}
+\PY{l+s+s2}{        RETURN chunk\PYZus{}id, count(DISTINCT r) AS weight}
+\PY{l+s+s2}{        ORDER BY weight DESC, chunk\PYZus{}id}
+\PY{l+s+s2}{        LIMIT \PYZdl{}lim}
+\PY{l+s+s2}{    }\PY{l+s+s2}{\PYZdq{}\PYZdq{}\PYZdq{}}
+    \PY{n}{exact} \PY{o}{=} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{(toLower(coalesce(n.name,}\PY{l+s+s2}{\PYZsq{}}\PY{l+s+s2}{\PYZsq{}}\PY{l+s+s2}{)) IN \PYZdl{}names OR any(s IN coalesce(n.synonyms, []) WHERE toLower(s) IN \PYZdl{}names))}\PY{l+s+s2}{\PYZdq{}}
+    \PY{n}{contains} \PY{o}{=} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{any(q IN \PYZdl{}names WHERE toLower(coalesce(n.name,}\PY{l+s+s2}{\PYZsq{}}\PY{l+s+s2}{\PYZsq{}}\PY{l+s+s2}{)) CONTAINS q OR any(s IN coalesce(n.synonyms, []) WHERE toLower(s) CONTAINS q))}\PY{l+s+s2}{\PYZdq{}}
+    \PY{k}{for} \PY{n}{match} \PY{o+ow}{in} \PY{p}{(}\PY{n}{exact}\PY{p}{,} \PY{n}{contains}\PY{p}{)}\PY{p}{:}
+        \PY{n}{rows} \PY{o}{=} \PY{k}{await} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{neo4j}\PY{o}{.}\PY{n}{run}\PY{p}{(}\PY{n}{\PYZus{}cypher}\PY{p}{(}\PY{n}{query}\PY{o}{.}\PY{n}{replace}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+si}{\PYZob{}match\PYZcb{}}\PY{l+s+s2}{\PYZdq{}}\PY{p}{,} \PY{n}{match}\PY{p}{)}\PY{p}{)}\PY{p}{,} \PY{n}{names}\PY{o}{=}\PY{n}{names}\PY{p}{,} \PY{n}{lim}\PY{o}{=}\PY{n}{limit}\PY{p}{)}
+        \PY{k}{if} \PY{n}{rows}\PY{p}{:}
+            \PY{k}{return} \PY{p}{[}\PY{n+nb}{str}\PY{p}{(}\PY{n}{r}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{chunk\PYZus{}id}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]}\PY{p}{)} \PY{k}{for} \PY{n}{r} \PY{o+ow}{in} \PY{n}{rows}\PY{p}{]}
+    \PY{k}{return} \PY{p}{[}\PY{p}{]}
+\end{Verbatim}

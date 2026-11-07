@@ -14,8 +14,9 @@ from app.services.document_ingest_pipeline_service import DocumentIngestPipeline
 from app.services.document_service import read_profile
 
 from pipeline.document_ingest.graph_link import EntityLexicon, LexEntry
+from app.dto.base.document import DocumentChunk
 from pipeline.document_ingest.stages import StageError
-from pipeline.document_ingest.stages.step5_graph import EXTRACT_PROMPT, PICK_PROMPT, TOPIC_PROMPT
+from pipeline.document_ingest.stages.step5_graph import EXTRACT_PROMPT, PICK_PROMPT, pick_units, split_units
 from pipeline.document_ingest.tests.test_document_pipeline import Base, FakeEmbedding
 
 IMPETIGO = ("Chốc là bệnh nhiễm khuẩn nông của da. Tổn thương ban đầu là bọng nước nông, dễ vỡ, để lại vảy tiết màu vàng mật ong. "
@@ -23,17 +24,17 @@ IMPETIGO = ("Chốc là bệnh nhiễm khuẩn nông của da. Tổn thương ba
 MUPIROCIN = "Mupirocin là kháng sinh bôi. Tác dụng không mong muốn: ngứa, cảm giác bỏng rát tại chỗ."
 
 
-def _chunk(cid: str, path: list[str], topic: str, text: str, page: int) -> dict[str, Any]:
-    return {"chunk_id": cid, "seq": int(cid[-1]), "document_id": "tbook", "text": text, "context_text": text, "part": "", "section": path[0],
-            "topic": topic, "subtopic": "", "toc_path": path, "toc_node_ids": [], "figure_ids": [], "level": 2, "pages_hint": [page],
+def _chunk(cid: str, path: list[str], text: str, page: int) -> dict[str, Any]:
+    return {"chunk_id": cid, "seq": int(cid[-1]), "document_id": "tbook", "text": text, "context_text": text,
+            "toc_path": path, "toc_node_ids": [], "figure_ids": [], "level": 2, "pages_hint": [page],
             "boundary": False, "suspect": False, "page_start": page, "page_end": page, "page_printed_start": page - 3,
             "page_printed_end": page - 3, "tokens": 50, "chars": len(text)}
 
 
 CHUNKS = [
-    _chunk("tbook:c00001", ["Nhiễm khuẩn da", "Chốc"], "Chốc", IMPETIGO, 10),
-    _chunk("tbook:c00002", ["Thuốc bôi", "Mupirocin"], "Mupirocin", MUPIROCIN, 40),
-    _chunk("tbook:c00003", ["Giải phẫu da"], "", "Da gồm ba lớp: thượng bì, trung bì, hạ bì.", 2),
+    _chunk("tbook:c00001", ["Nhiễm khuẩn da", "Chốc"], IMPETIGO, 10),
+    _chunk("tbook:c00002", ["Thuốc bôi", "Mupirocin"], MUPIROCIN, 40),
+    _chunk("tbook:c00003", ["Giải phẫu da"], "Da gồm ba lớp: thượng bì, trung bì, hạ bì.", 2),
 ]
 
 
@@ -51,24 +52,25 @@ def lexicon() -> EntityLexicon:
 
 def graph_llm(system: str, user: str) -> str:
     data = json.loads(user.split("(JSON):\n", 1)[1])
-    if system == TOPIC_PROMPT:
-        kinds = {"Chốc": ("disease", "impetigo"), "Mupirocin": ("drug", "mupirocin")}
-        return json.dumps({"topics": [{"id": t["id"], "kind": kinds.get(t["title"], ("other", ""))[0],
-                                       "en": kinds.get(t["title"], ("", ""))[1]} for t in data]})
     if system == EXTRACT_PROMPT:
         cid = data["chunks"][0]["chunk_id"]
-        if data["topic"]["kind"] == "disease":
+        impetigo = {"text": "Chốc", "en": "impetigo"}
+        if data["context"].endswith("Chốc"):
             return json.dumps({"slots": {
-                "phenotypes_present": [{"text": "bọng nước nông", "en": "bulla", "evidence": "bọng nước nông, dễ vỡ", "chunk_id": cid},
-                                       {"text": "sốt cao", "en": "high fever", "evidence": "sốt cao liên tục", "chunk_id": cid}],
-                "drugs_indicated": [{"text": "mupirocin bôi", "en": "mupirocin", "evidence": "Điều trị bằng mupirocin bôi", "chunk_id": cid}],
-                "complications": [{"text": "viêm cầu thận cấp", "en": "acute glomerulonephritis", "evidence": "gây viêm cầu thận cấp", "chunk_id": cid}],
-                "not_a_slot": [{"text": "x", "en": "x", "evidence": "Chốc", "chunk_id": cid}],
+                "phenotypes_present": [{"subject": impetigo, "text": "bọng nước nông", "en": "bulla", "evidence": "bọng nước nông, dễ vỡ", "chunk_id": cid},
+                                       {"subject": impetigo, "text": "sốt cao", "en": "high fever", "evidence": "sốt cao liên tục", "chunk_id": cid}],
+                "drugs_indicated": [{"subject": impetigo, "text": "mupirocin bôi", "en": "mupirocin", "evidence": "Điều trị bằng mupirocin bôi", "chunk_id": cid}],
+                "complications": [{"subject": impetigo, "text": "viêm cầu thận cấp", "en": "acute glomerulonephritis", "evidence": "gây viêm cầu thận cấp", "chunk_id": cid}],
+                "genes": [{"text": "FLG", "en": "FLG", "evidence": "Chốc", "chunk_id": cid}],  # thiếu chủ thể -> bị bỏ
+                "not_a_slot": [{"subject": impetigo, "text": "x", "en": "x", "evidence": "Chốc", "chunk_id": cid}],
             }, "unmapped": [{"kind": "risk_factor", "text": "trẻ nhỏ"}]})
-        return json.dumps({"slots": {
-            "side_effects": [{"text": "ngứa", "en": "pruritus", "evidence": "ngứa", "chunk_id": cid},
-                             {"text": "bỏng rát", "en": "burning skin", "evidence": "cảm giác bỏng rát tại chỗ", "chunk_id": cid}],
-        }})
+        if data["context"].endswith("Mupirocin"):
+            mupirocin = {"text": "Mupirocin", "en": "mupirocin"}
+            return json.dumps({"slots": {
+                "side_effects": [{"subject": mupirocin, "text": "ngứa", "en": "pruritus", "evidence": "ngứa", "chunk_id": cid},
+                                 {"subject": mupirocin, "text": "bỏng rát", "en": "burning skin", "evidence": "cảm giác bỏng rát tại chỗ", "chunk_id": cid}],
+            }})
+        return json.dumps({"slots": {}})
     if system == PICK_PROMPT:
         choices = []
         for it in data:
@@ -127,11 +129,21 @@ class GraphBase(Base):
 
 
 class GraphStageTest(GraphBase):
-    def test_topics_are_classified_and_only_disease_drug_sections_are_extracted(self) -> None:
+    def test_subjects_come_from_the_text_not_from_toc_classification(self) -> None:
         out = self.run_graph()
-        kinds = {t["title"]: t["kind"] for t in self.files.read_json("graph/topics.json")}
-        self.assertEqual(kinds, {"Chốc": "disease", "Mupirocin": "drug", "Giải phẫu da": "other"})
-        self.assertEqual(out["topics_used"], {"disease": 1, "drug": 1, "other": 1})
+        self.assertEqual((out["units"], out["units_total"]), (3, 3))
+        self.assertEqual(out["subjects"], {"disease": 1, "drug": 1})
+        self.assertEqual(out["warnings"], ["1 quan hệ bị bỏ vì AI không nêu chủ thể (xem nhật ký)."])
+        self.assertEqual(len(self.files.read_json("graph/units.json")), 3)
+
+    def test_trial_run_reads_only_the_requested_number_of_units(self) -> None:
+        out = self.runner.run_stage("tbook", "graph", {"limit_calls": "1"}, force=True, llm=self.gllm)
+        self.assertEqual((out["units"], out["units_total"]), (1, 3))
+        self.assertEqual(out["subjects"], {"disease": 1})  # lô đầu sách
+
+    def test_call_limit_must_be_an_integer(self) -> None:
+        with self.assertRaises(StageError):
+            self.runner.run_stage("tbook", "graph", {"limit_calls": "100-120"}, force=True, llm=self.gllm)
 
     def test_triples_follow_edge_direction_and_link_exactly(self) -> None:
         self.run_graph()
@@ -203,6 +215,24 @@ class GraphStageTest(GraphBase):
         self.graph.set_lexicon(EntityLexicon())
         with self.assertRaises(StageError):
             self.run_graph()
+
+
+class SplitUnitsTest(unittest.TestCase):
+    @staticmethod
+    def _chunks(paths: list[list[str]]) -> list[DocumentChunk]:
+        return [DocumentChunk.model_validate(_chunk(f"tbook:c{i + 1:05d}", p, "x", i + 1)) for i, p in enumerate(paths)]
+
+    def test_units_never_cross_the_smallest_toc_node_and_respect_size(self) -> None:
+        chunks = self._chunks([["A", "a1"]] * 5 + [["A", "a2"]] * 2 + [["B"]])
+        units = split_units(chunks, 3)
+        self.assertEqual([(u["path"], len(u["chunk_ids"])) for u in units],
+                         [(["A", "a1"], 3), (["A", "a1"], 2), (["A", "a2"], 2), (["B"], 1)])
+
+    def test_trial_units_are_spread_evenly(self) -> None:
+        units = [{"id": f"u{i}"} for i in range(10)]
+        self.assertEqual([u["id"] for u in pick_units(units, 4)], ["u0", "u2", "u5", "u7"])  # type: ignore[arg-type]
+        self.assertEqual(len(pick_units(units, 0)), 10)  # type: ignore[arg-type]
+        self.assertEqual(len(pick_units(units, 99)), 10)  # type: ignore[arg-type]
 
 
 class GraphIndexTest(GraphBase):

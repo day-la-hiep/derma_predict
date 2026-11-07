@@ -27,6 +27,7 @@ from app.services.document_ingest_pipeline_service import DocumentIngestPipeline
 from pipeline.document_ingest.profile import default_profile
 from pipeline.document_ingest.stages import StageError
 from pipeline.document_ingest.stages import step2_toc as T
+from pipeline.document_ingest.types import TocDoc, TocEntry
 from pipeline.document_ingest.stages.step3_chunks import build_chunks, est_tokens, build_toc_nodes
 from pipeline.document_ingest.tests.memory_infra import MemoryMinio
 from sqlalchemy import create_engine, event
@@ -350,10 +351,10 @@ class TocStageTest(Base):
         self.assertEqual(out["entries"], 4)
 
     def test_flag_suspects_keeps_the_longest_increasing_run(self) -> None:
-        ents = [{"printed_page": p} for p in (1, 2, 3, 99, 4, 5, 2, 6)]
+        ents = [TocEntry(id=f"t{i}", level=2, kind="topic", title=f"e{i}", printed_page=p) for i, p in enumerate((1, 2, 3, 99, 4, 5, 2, 6))]
         T.flag_suspects(ents)
         self.assertEqual(
-            [i for i, e in enumerate(ents) if e["suspect"]], [3, 6]
+            [i for i, e in enumerate(ents) if e.suspect], [3, 6]
         )
 
 
@@ -373,10 +374,10 @@ class ChunksTest(Base):
                 for c in chunks
             )
         )
-        atopic = next(c for c in chunks if c["topic"] == "Atopic Dermatitis")
+        atopic = next(c for c in chunks if c["toc_path"][-1] == "Atopic Dermatitis")
         self.assertEqual(
-            (atopic["part"], atopic["section"]),
-            ("PART I GENERAL DERMATOLOGY", "SECTION 1 ECZEMA"),
+            atopic["toc_path"],
+            ["PART I GENERAL DERMATOLOGY", "SECTION 1 ECZEMA", "Atopic Dermatitis"],
         )
         self.assertEqual(
             (atopic["page_start"], atopic["page_end"]), (6, 7)
@@ -386,14 +387,14 @@ class ChunksTest(Base):
         )
         self.assertEqual(atopic["pages_hint"], [6, 8])
         self.assertEqual(atopic["toc_path"][-1], "Atopic Dermatitis")
-        pust = next(c for c in chunks if c["topic"] == "Pustular Psoriasis")
-        self.assertEqual(pust["section"], "SECTION 2 PSORIASIS")
+        pust = next(c for c in chunks if c["toc_path"][-1] == "Pustular Psoriasis")
+        self.assertEqual(pust["toc_path"][1], "SECTION 2 PSORIASIS")
         self.assertIn("running text", pust["text"])
 
     def test_no_chunk_crosses_a_toc_boundary(self) -> None:
         for c in self.chunks():
             self.assertEqual(len(c["toc_node_ids"]), 1)
-        text = {c["topic"]: c["text"] for c in self.chunks() if c["topic"]}
+        text = {c["toc_path"][-1]: c["text"] for c in self.chunks() if c["toc_path"]}
         self.assertNotIn(
             "Body paragraph of page 8", text["Atopic Dermatitis"]
         )  # trang 8 thuộc Section 2
@@ -438,16 +439,16 @@ class ChunksTest(Base):
         self.files.write_jsonl("pages.jsonl", long)
         chunks = self.chunks()
         self.assertTrue(all(c["tokens"] <= 60 for c in chunks))
-        pust = [c for c in chunks if c["topic"] == "Pustular Psoriasis"]
+        pust = [c for c in chunks if c["toc_path"][-1] == "Pustular Psoriasis"]
         self.assertGreater(len(pust), 1)
-        self.assertEqual({c["section"] for c in pust}, {"SECTION 2 PSORIASIS"})
+        self.assertEqual({c["toc_path"][1] for c in pust}, {"SECTION 2 PSORIASIS"})
 
     def test_boundary_level_merges_deep_entries_into_their_parent_region(
         self,
     ) -> None:
         self.run_toc({"pages": "2-3"})
         self.fix_pustular()
-        doc = self.files.read_json("toc.json")
+        doc = TocDoc.model_validate(self.files.read_json("toc.json"))
         prof = default_profile("tbook")
         prof.chunking.boundary_level = 1  # chỉ part/section là ranh giới: các mục bệnh trong cùng section được gom
         units = [
@@ -464,16 +465,16 @@ class ChunksTest(Base):
             document_title="Test",
             printed_offset=3,
         )
-        merged = next(c for c in chunks if c["section"] == "SECTION 1 ECZEMA")
-        self.assertGreaterEqual(len(merged["toc_node_ids"]), 2)
+        merged = next(c for c in chunks if "SECTION 1 ECZEMA" in c.toc_path)
+        self.assertGreaterEqual(len(merged.toc_node_ids), 2)
         self.assertEqual(
-            merged["toc_path"][-1], "SECTION 1 ECZEMA"
+            merged.toc_path[-1], "SECTION 1 ECZEMA"
         )  # tiền tố chung của các mục gom lại
         self.assertTrue(
             all(
-                c["section"] == "SECTION 1 ECZEMA"
+                "SECTION 1 ECZEMA" in c.toc_path
                 for c in chunks
-                if "SECTION 1 ECZEMA" in c["text"]
+                if "SECTION 1 ECZEMA" in c.text
             )
         )
 

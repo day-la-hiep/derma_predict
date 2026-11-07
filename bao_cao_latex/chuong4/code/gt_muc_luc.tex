@@ -1,0 +1,25 @@
+\begin{Verbatim}[commandchars=\\\{\},numbers=left,numbersep=5pt,frame=single,framesep=4pt,breaklines=true,breakanywhere=true,fontsize=\fontsize{9pt}{10.5pt}\selectfont]
+\PY{k}{def} \PY{n+nf}{read\PYZus{}toc}\PY{p}{(}\PY{n}{pdf}\PY{p}{:} \PY{n}{Callable}\PY{p}{[}\PY{p}{[}\PY{p}{]}\PY{p}{,} \PY{n}{Path}\PY{p}{]}\PY{p}{,} \PY{n}{rows}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n}{PageRow}\PY{p}{]}\PY{p}{,} \PY{n}{ext}\PY{p}{:} \PY{n}{ExtractionConfig}\PY{p}{,} \PY{n}{llm}\PY{p}{:} \PY{n}{LLMClient}\PY{p}{,}
+             \PY{n}{docling}\PY{p}{:} \PY{n}{DoclingClient} \PY{o}{|} \PY{k+kc}{None}\PY{p}{,} \PY{n}{pages\PYZus{}opt}\PY{p}{:} \PY{n+nb}{object} \PY{o}{=} \PY{k+kc}{None}\PY{p}{,} \PY{n}{on\PYZus{}progress}\PY{p}{:} \PY{n}{OnProgress} \PY{o}{=} \PY{k}{lambda} \PY{o}{*}\PY{n}{\PYZus{}}\PY{p}{:} \PY{k+kc}{None}\PY{p}{,}
+             \PY{n}{on\PYZus{}log}\PY{p}{:} \PY{n}{OnLog} \PY{o}{=} \PY{k}{lambda} \PY{n}{\PYZus{}msg}\PY{p}{:} \PY{k+kc}{None}\PY{p}{)} \PY{o}{\PYZhy{}}\PY{o}{\PYZgt{}} \PY{n}{TocAuto}\PY{p}{:}
+\PY{+w}{    }\PY{l+s+sd}{\PYZdq{}\PYZdq{}\PYZdq{}Trang mục lục + chữ trang \PYZhy{}\PYZgt{} kết quả máy `toc.auto.json` (chưa áp override/độ lệch).\PYZdq{}\PYZdq{}\PYZdq{}}
+    \PY{n}{total} \PY{o}{=} \PY{n}{count\PYZus{}pages}\PY{p}{(}\PY{n}{rows}\PY{p}{,} \PY{n}{pdf}\PY{p}{)}
+    \PY{c+c1}{\PYZsh{} Bước 1: xác định trang mục lục (người dùng nhập hoặc LLM tìm)}
+    \PY{n}{on\PYZus{}progress}\PY{p}{(}\PY{l+m+mi}{0}\PY{p}{,} \PY{l+m+mi}{3}\PY{p}{,} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{xác định trang mục lục}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{n}{pages}\PY{p}{,} \PY{n}{source}\PY{p}{,} \PY{n}{reason} \PY{o}{=} \PY{n}{\PYZus{}locate\PYZus{}toc\PYZus{}pages}\PY{p}{(}\PY{n}{llm}\PY{p}{,} \PY{n}{rows}\PY{p}{,} \PY{n}{total}\PY{p}{,} \PY{n}{pages\PYZus{}opt}\PY{p}{,} \PY{n}{pdf}\PY{p}{)}
+    \PY{n}{on\PYZus{}log}\PY{p}{(}\PY{l+s+sa}{f}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{trang mục lục (}\PY{l+s+si}{\PYZob{}}\PY{n}{source}\PY{l+s+si}{\PYZcb{}}\PY{l+s+s2}{): }\PY{l+s+si}{\PYZob{}}\PY{n}{pages}\PY{p}{[}\PY{l+m+mi}{0}\PY{p}{]}\PY{l+s+si}{\PYZcb{}}\PY{l+s+s2}{\PYZhy{}}\PY{l+s+si}{\PYZob{}}\PY{n}{pages}\PY{p}{[}\PY{o}{\PYZhy{}}\PY{l+m+mi}{1}\PY{p}{]}\PY{l+s+si}{\PYZcb{}}\PY{l+s+s2}{ (}\PY{l+s+si}{\PYZob{}}\PY{n+nb}{len}\PY{p}{(}\PY{n}{pages}\PY{p}{)}\PY{l+s+si}{\PYZcb{}}\PY{l+s+s2}{ trang) — }\PY{l+s+si}{\PYZob{}}\PY{n}{reason}\PY{l+s+si}{\PYZcb{}}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{c+c1}{\PYZsh{} Bước 2: lấy chữ các trang mục lục}
+    \PY{n}{on\PYZus{}progress}\PY{p}{(}\PY{l+m+mi}{1}\PY{p}{,} \PY{l+m+mi}{3}\PY{p}{,} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{đọc chữ các trang mục lục}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{n}{texts} \PY{o}{=} \PY{n}{get\PYZus{}page\PYZus{}texts}\PY{p}{(}\PY{n}{pages}\PY{p}{,} \PY{n}{rows}\PY{p}{,} \PY{n}{ext}\PY{p}{,} \PY{n}{pdf}\PY{p}{,} \PY{n}{docling}\PY{p}{,} \PY{n}{on\PYZus{}progress}\PY{p}{)}
+    \PY{k}{if} \PY{o+ow}{not} \PY{n+nb}{any}\PY{p}{(}\PY{n}{t}\PY{o}{.}\PY{n}{strip}\PY{p}{(}\PY{p}{)} \PY{k}{for} \PY{n}{t} \PY{o+ow}{in} \PY{n}{texts}\PY{o}{.}\PY{n}{values}\PY{p}{(}\PY{p}{)}\PY{p}{)}\PY{p}{:}
+        \PY{k}{raise} \PY{n}{StageError}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{Các trang mục lục không có chữ — hãy kiểm tra lại số trang, hoặc chọn cách đọc “nhận dạng chữ từ ảnh” trong Cài đặt.}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{c+c1}{\PYZsh{} Bước 3: LLM chuyển chữ thành cây mục}
+    \PY{n}{entries}\PY{p}{,} \PY{n}{warnings} \PY{o}{=} \PY{n}{parse\PYZus{}entries}\PY{p}{(}\PY{n}{llm}\PY{p}{,} \PY{n}{texts}\PY{p}{,} \PY{n}{on\PYZus{}progress}\PY{p}{,} \PY{n}{on\PYZus{}log}\PY{p}{)}
+    \PY{k}{if} \PY{o+ow}{not} \PY{n}{entries}\PY{p}{:}
+        \PY{k}{raise} \PY{n}{StageError}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{AI không đọc ra mục nào từ các trang mục lục.}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{c+c1}{\PYZsh{} Bước 4: đánh dấu mục có số trang đáng ngờ}
+    \PY{n}{flagged} \PY{o}{=} \PY{n}{flag\PYZus{}suspects}\PY{p}{(}\PY{n}{entries}\PY{p}{)}
+    \PY{k}{if} \PY{n}{flagged}\PY{p}{:}
+        \PY{n}{warnings}\PY{o}{.}\PY{n}{append}\PY{p}{(}\PY{l+s+sa}{f}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+si}{\PYZob{}}\PY{n}{flagged}\PY{l+s+si}{\PYZcb{}}\PY{l+s+s2}{ mục có số trang không tăng dần theo thứ tự mục lục (thường do đọc sai chữ số) — vui lòng kiểm tra các mục được tô vàng.}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{k}{return} \PY{n}{TocAuto}\PY{p}{(}\PY{n}{toc\PYZus{}pages}\PY{o}{=}\PY{n}{pages}\PY{p}{,} \PY{n}{pages\PYZus{}source}\PY{o}{=}\PY{n}{source}\PY{p}{,} \PY{n}{entries}\PY{o}{=}\PY{n}{entries}\PY{p}{,} \PY{n}{meta}\PY{o}{=}\PY{n}{TocMeta}\PY{p}{(}\PY{n}{warnings}\PY{o}{=}\PY{n}{warnings}\PY{p}{,} \PY{n}{reason}\PY{o}{=}\PY{n}{reason}\PY{p}{)}\PY{p}{)}
+\end{Verbatim}

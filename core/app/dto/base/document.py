@@ -18,10 +18,6 @@ class DocumentChunk(BaseModel):
     document_id: str
     text: str
     context_text: str
-    part: str = ""
-    section: str = ""
-    topic: str = ""
-    subtopic: str = ""
     toc_path: list[str] = []
     toc_node_ids: list[str] = []
     figure_ids: list[

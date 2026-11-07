@@ -11,6 +11,7 @@ from app.models.document_profile import ExtractionConfig
 
 from .. import mapping
 from ..textutil import BODY_LABELS, parse_page_ranges, pdftotext_pages
+from ..types import PageRow, TocAuto, TocDoc, TocEntry, TocMeta
 from . import StageError
 
 logger = logging.getLogger(__name__)
@@ -43,9 +44,9 @@ Trả về DUY NHẤT JSON hợp lệ: {"entries": [{"level": 1, "title": "...",
 
 
 # ---------------------------------------------------------------- đọc chữ các trang
-def count_pages(rows: list[dict[str, Any]], pdf: Callable[[], Path]) -> int:
+def count_pages(rows: list[PageRow], pdf: Callable[[], Path]) -> int:
     if rows:
-        return max(r["page"] for r in rows)
+        return max(r.page for r in rows)
     try:
         from pypdf import PdfReader
 
@@ -66,18 +67,18 @@ def read_pdftotext_pages(pdf: Path, first: int, last: int) -> dict[int, str]:
     return {first + i: t for i, t in enumerate(out[: last - first + 1])}
 
 
-def build_digests(rows: list[dict[str, Any]], total: int, pdf: Callable[[], Path]) -> list[dict[str, Any]]:
+def build_digests(rows: list[PageRow], total: int, pdf: Callable[[], Path]) -> list[dict[str, Any]]:
     wanted = sorted(set(range(1, min(total, DIGEST_HEAD_PAGES) + 1)) | set(range(max(1, total - DIGEST_TAIL_PAGES + 1), total + 1)))
-    texts = {r["page"]: r["text"] for r in rows}
+    texts = {r.page: r.text for r in rows}
     if not texts:
         texts = read_pdftotext_pages(pdf(), 1, total)  # chưa ingest: lớp text ẩn của PDF (có thể kém) đủ để nhận ra trang mục lục
     return [{"page": n, "chars": len(texts.get(n, "")), "head": " ".join(texts.get(n, "").split())[:220]} for n in wanted]
 
 
-def get_page_texts(pages: list[int], rows: list[dict[str, Any]], ext: ExtractionConfig, pdf: Callable[[], Path],
+def get_page_texts(pages: list[int], rows: list[PageRow], ext: ExtractionConfig, pdf: Callable[[], Path],
                docling: DoclingClient | None, on_progress: OnProgress) -> dict[int, str]:
     """Chữ các trang mục lục: lấy từ `pages.jsonl` nếu có, không thì đọc thẳng từ PDF."""
-    have = {r["page"]: r["text"] for r in rows}
+    have = {r.page: r.text for r in rows}
     if all(p in have for p in pages):
         return {p: have[p] for p in pages}
     if ext.engine == "docling":
@@ -115,7 +116,7 @@ def find_toc_pages(llm: LLMClient, digests: list[dict[str, Any]]) -> tuple[list[
     return pages, str((data or {}).get("reason") or "")[:160]
 
 
-def _clean_entry(it: Any) -> dict[str, Any] | None:
+def _clean_entry(it: Any) -> TocEntry | None:
     if not isinstance(it, dict):
         return None
     title = " ".join(str(it.get("title") or "").split()).strip(" |-.")
@@ -127,11 +128,11 @@ def _clean_entry(it: Any) -> dict[str, Any] | None:
         level = 2
     page = it.get("printed_page")
     page = int(page) if isinstance(page, (int, float)) or (isinstance(page, str) and page.strip().isdigit()) else None
-    return {"level": level, "kind": mapping.KINDS[level], "title": title, "printed_page": page}
+    return TocEntry(id="", level=level, kind=mapping.KINDS[level], title=title, printed_page=page)  # id gán sau khi gom đủ mục
 
 
 def parse_entries(llm: LLMClient, texts: dict[int, str], on_progress: OnProgress,
-                  on_log: OnLog) -> tuple[list[dict[str, Any]], list[str]]:
+                  on_log: OnLog) -> tuple[list[TocEntry], list[str]]:
     """LLM đọc các trang mục lục theo nhóm, tuần tự (nhóm sau cần part/section cuối của nhóm trước)."""
     warnings: list[str] = []
     groups: list[list[int]] = []
@@ -145,10 +146,10 @@ def parse_entries(llm: LLMClient, texts: dict[int, str], on_progress: OnProgress
             groups.append([])
         groups[-1].append(p)
         size += n
-    entries: list[dict[str, Any]] = []
+    entries: list[TocEntry] = []
     context: dict[str, str] = {}
 
-    def ask(pages: list[int]) -> list[dict[str, Any]]:
+    def ask(pages: list[int]) -> list[TocEntry]:
         payload = {"context": context, "pages": [{"page": p, "text": texts[p][:7000]} for p in pages]}
         try:
             data = llm.complete_json(PARSE_PROMPT, "Dữ liệu (JSON):\n" + json.dumps(payload, ensure_ascii=False), name="toc_parse")
@@ -164,7 +165,7 @@ def parse_entries(llm: LLMClient, texts: dict[int, str], on_progress: OnProgress
         for it in items or []:
             e = _clean_entry(it)
             if e is not None:
-                e["toc_page"] = pages[0] if len(pages) == 1 else None
+                e.toc_page = pages[0] if len(pages) == 1 else None
                 out.append(e)
         return out
 
@@ -172,20 +173,20 @@ def parse_entries(llm: LLMClient, texts: dict[int, str], on_progress: OnProgress
         on_progress(i - 1, len(groups), f"LLM đọc mục lục: trang {g[0]}-{g[-1]}")
         got = ask(g)
         for e in got:
-            if e["level"] == 0:
-                context = {"part": e["title"]}
-            elif e["level"] == 1:
-                context = {**context, "section": e["title"]}
+            if e.level == 0:
+                context = {"part": e.title}
+            elif e.level == 1:
+                context = {**context, "section": e.title}
         entries += got
     for n, e in enumerate(entries, 1):
-        e["id"] = f"t{n:04d}"
+        e.id = f"t{n:04d}"
     return entries, warnings
 
 
-def flag_suspects(entries: list[dict[str, Any]]) -> int:
+def flag_suspects(entries: list[TocEntry]) -> int:
     """Số trang in phải tăng dần. Giữ dãy không giảm dài nhất; mục ngoài dãy đó (hay là chữ số bị OCR sai) bị đánh dấu."""
-    idx = [i for i, e in enumerate(entries) if e.get("printed_page") is not None]
-    pages = [entries[i]["printed_page"] for i in idx]
+    idx = [i for i, e in enumerate(entries) if e.printed_page is not None]
+    pages = [p for p in (e.printed_page for e in entries) if p is not None]
     n = len(pages)
     best = [1] * n
     prev = [-1] * n
@@ -201,15 +202,15 @@ def flag_suspects(entries: list[dict[str, Any]]) -> int:
     flagged = 0
     for pos, i in enumerate(idx):
         bad = pos not in keep
-        entries[i]["suspect"] = bad
+        entries[i].suspect = bad
         if bad:
-            entries[i]["suspect_reason"] = "số trang không tăng dần (có thể đọc sai chữ số)"
+            entries[i].suspect_reason = "số trang không tăng dần (có thể đọc sai chữ số)"
             flagged += 1
     return flagged
 
 
 # ---------------------------------------------------------------- chạy / tổng kết
-def _locate_toc_pages(llm: LLMClient, rows: list[dict[str, Any]], total: int, pages_opt: object,
+def _locate_toc_pages(llm: LLMClient, rows: list[PageRow], total: int, pages_opt: object,
                       pdf: Callable[[], Path]) -> tuple[list[int], str, str]:
     explicit = str(pages_opt or "").strip()
     if explicit:
@@ -221,9 +222,9 @@ def _locate_toc_pages(llm: LLMClient, rows: list[dict[str, Any]], total: int, pa
     return pages, "llm", reason
 
 
-def read_toc(pdf: Callable[[], Path], rows: list[dict[str, Any]], ext: ExtractionConfig, llm: LLMClient,
+def read_toc(pdf: Callable[[], Path], rows: list[PageRow], ext: ExtractionConfig, llm: LLMClient,
              docling: DoclingClient | None, pages_opt: object = None, on_progress: OnProgress = lambda *_: None,
-             on_log: OnLog = lambda _msg: None) -> dict[str, Any]:
+             on_log: OnLog = lambda _msg: None) -> TocAuto:
     """Trang mục lục + chữ trang -> kết quả máy `toc.auto.json` (chưa áp override/độ lệch)."""
     total = count_pages(rows, pdf)
     # Bước 1: xác định trang mục lục (người dùng nhập hoặc LLM tìm)
@@ -243,18 +244,17 @@ def read_toc(pdf: Callable[[], Path], rows: list[dict[str, Any]], ext: Extractio
     flagged = flag_suspects(entries)
     if flagged:
         warnings.append(f"{flagged} mục có số trang không tăng dần theo thứ tự mục lục (thường do đọc sai chữ số) — vui lòng kiểm tra các mục được tô vàng.")
-    return {"toc_pages": pages, "pages_source": source, "entries": entries, "meta": {"warnings": warnings, "reason": reason}}
+    return TocAuto(toc_pages=pages, pages_source=source, entries=entries, meta=TocMeta(warnings=warnings, reason=reason))
 
 
-def summarize_toc(doc: dict[str, Any]) -> dict[str, Any]:
-    """Summary hiển thị cho người duyệt, tính từ nội dung `toc.json`."""
-    ents = doc["entries"]
-    by_level = Counter(e["level"] for e in ents)
+def summarize_toc(doc: TocDoc) -> dict[str, Any]:
+    """Summary hiển thị cho người duyệt, tính từ `toc.json`."""
+    by_level = Counter(e.level for e in doc.entries)
     summary: dict[str, Any] = {
-        "toc_pages": f"{doc['toc_pages'][0]}-{doc['toc_pages'][-1]}", "pages_source": doc["pages_source"], "entries": len(ents),
+        "toc_pages": f"{doc.toc_pages[0]}-{doc.toc_pages[-1]}", "pages_source": doc.pages_source, "entries": len(doc.entries),
         "parts": by_level.get(0, 0), "sections": by_level.get(1, 0), "topics": by_level.get(2, 0) + by_level.get(3, 0),
-        "suspect": sum(1 for e in ents if e.get("suspect")), "offset": doc["offset"], "anchored": doc["anchored"],
+        "suspect": sum(1 for e in doc.entries if e.suspect), "offset": doc.offset, "anchored": doc.anchored,
     }
-    if doc["warnings"]:
-        summary["warnings"] = doc["warnings"]
+    if doc.warnings:
+        summary["warnings"] = doc.warnings
     return summary

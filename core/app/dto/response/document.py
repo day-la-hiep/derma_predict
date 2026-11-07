@@ -127,6 +127,13 @@ class FigureOutput(BaseModel):
     caption: str = ""
 
 
+class FigureListOutput(BaseModel):
+    items: list[FigureOutput]
+    total: int
+    page: int
+    page_size: int
+
+
 class ChunkListOutput(BaseModel):
     items: list[ChunkOutput]
     total: int

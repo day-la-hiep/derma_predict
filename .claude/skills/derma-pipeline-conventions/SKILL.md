@@ -1,6 +1,6 @@
 ---
 name: derma-pipeline-conventions
-description: Conventions for the Derma document-ingest pipeline (`core/pipeline/document_ingest/` — PDF document → table-of-contents-anchored chunks → Qdrant, admin UI at /admin/documents) — the 6-stage model (ingest/toc/chunks/index + graph/graph_index → Neo4j), the StageContext contract, the `app/dto/base/document.py` business entities (`Document`/`DocumentChunk`/`DocumentTriple`/`DocumentStage`/`DocumentStageOverride`), where transformation logic vs infra clients vs persistence go, and how to add or modify a stage. Use whenever the user asks to add/modify a pipeline stage, touches `pipeline/document_ingest/`, `app/services/document_*.py`, `app/repositories/document_repository.py`, asks about document/book/TOC/chunk ingestion, or asks where document-ingest code should live — even if they don't say "pipeline" or "convention".
+description: Conventions for the Derma document-ingest pipeline (`core/pipeline/document_ingest/` — PDF document → table-of-contents-anchored chunks → Qdrant, admin UI at /admin/documents) — the 6-stage model (ingest/toc/chunks/index + graph/graph_index → Neo4j), the pure-function stage contract, the `app/dto/base/document.py` business entities (`Document`/`DocumentChunk`/`DocumentTriple`/`DocumentStage`/`DocumentStageOverride`), where transformation logic vs infra clients vs persistence go, and how to add or modify a stage. Use whenever the user asks to add/modify a pipeline stage, touches `pipeline/document_ingest/`, `app/services/document_*.py`, `app/repositories/document_repository.py`, asks about document/book/TOC/chunk ingestion, or asks where document-ingest code should live — even if they don't say "pipeline" or "convention".
 ---
 
 # Derma document-ingest pipeline (`pipeline/document_ingest/`) — conventions
@@ -29,11 +29,11 @@ PDF → ingest (text/page)  → toc (LLM reads TOC, human reviews) → mapping (
 | `toc` | `stages/step2_toc.py` + `mapping.py` | `toc.auto.json` (machine), `toc.json` (+ overrides + offset + anchor) | reads a few dozen TOC pages |
 | `chunks` | `stages/step3_chunks.py` | `chunks.jsonl`, `review/chunks.json` | no |
 | `index` | `stages/step4_index.py` (+ `DocumentService`) | `index.json` + points in Qdrant | no (embedding via OpenRouter) |
-| `graph` | `stages/step5_graph.py` + `graph_schema.py` + `graph_link.py` | `graph/topics.json`, `graph/unmapped.json`, `triples.auto.jsonl` (machine), `triples.jsonl` (+ overrides) | classify TOC topics, slot-filling, pick among match candidates |
+| `graph` | `stages/step5_graph.py` + `graph_schema.py` + `graph_link.py` | `graph/units.json`, `graph/unmapped.json`, `triples.auto.jsonl` (machine), `triples.jsonl` (+ overrides) | split chunks into units by the smallest TOC node, LLM names the subject and fills slots, pick among match candidates |
 | `graph_index` | `stages/step6_graph_index.py` (+ `DocumentGraphService`) | `graph_index.json` + edges `source='DOC'` in Neo4j | no |
 
 `graph`/`graph_index` run parallel to `index` (both depend on `chunks`). Core relation types are PrimeKG/DermO; admins add their own via `/admin/graph-schema` (`GraphSchemaService`, tables
-`graph_relations`/`graph_entity_types`, `kg="doc"`) — the stage reads the merged `ctx.schema` (`GraphSchema`, CORE_SCHEMA by default;
+`graph_relations`/`graph_entity_types`, `kg="doc"`) — the runner passes the merged `schema` (`GraphSchema`, CORE_SCHEMA by default;
 `graph` gets enabled relations only, `graph_index` all). The registry `pipeline/document_ingest/graph_schema.py` (`ENTITY_TYPES`, `SLOTS`) drives the prompt,
 entity matching, Neo4j loading and the FE labels — **to add an entity type or relation, add it there** (plus
 `RELATION_LABELS`/`ENTITY_LABELS` in FE `constants.ts`). Names are matched against `EntityLexicon` (the nodes of the base
@@ -79,57 +79,59 @@ so there's no clash there, but if a future change needs both in one file, alias 
 
 | Layer | Owns | Lives in |
 |---|---|---|
-| **Transform** (pure-ish, takes `StageContext`, returns a summary dict) | read input → transform → write output via `ctx.files`/`ctx.meta`/`ctx.overrides`/`ctx.log`/`ctx.progress` | `pipeline/document_ingest/stages/{ingest,toc,chunks,index}.py`, `mapping.py` (rule-based offset+anchor, pure function `build_toc`), `hierarchy.py`, `textutil.py`, `profile.py` |
+| **Transform** (pure functions: plain data in, plain data out) | `extract_pages`, `read_toc`, `build_toc`, `cut_chunks`, `embed_chunks`, `extract_triples`, `build_graph_payload`, `summarize_*`; typed data objects (`types.py`) | `pipeline/document_ingest/stages/step<N>_*.py`, `mapping.py` (offset+anchor, `build_toc`, `build_tree`), `types.py`, `textutil.py`, `profile.py` |
 | **Infra clients** (generic, no document logic, one class per service) | MinIO (`app/infra/minio_client.py`), Qdrant (`qdrant_client.py`), LLM-returns-JSON (`llm_client.py`), Docling OCR (`docling_client.py`), embedding (`embedding_client.py`) | `app/infra/*_client.py` |
-| **Persistence + control** | `DocumentRepository` (stateless — every method takes `document_id`; Postgres CRUD for `documents`/`document_stages`, file access via `files_for(document_id)`), `DocumentOverrideRepository` (override CRUD for `document_overrides`, composed as `DocumentRepository.overrides`), `DocumentService` (CRUD + chunk/Qdrant business logic, builds `dto/base` entities), `DocumentIngestPipelineService` (run/stop/approve/reapply, builds `StageContext`, owns the background threads) | `app/repositories/document_repository.py`, `app/repositories/document_override_repository.py`, `app/services/document_service.py`, `app/services/document_ingest_pipeline_service.py` |
+| **Stage IO** (read inputs from MinIO, call the pure function, write outputs, check dependencies) | `DocumentStageRunner` (`run_ingest`, `run_toc`, `run_chunks`, `index_document_chunks`, `run_graph`, `run_graph_index`, `reapply_toc`, `reapply_graph`), `StageRunState` (one run's document_id/options/profile/files/llm/progress/log) | `app/services/document_stage_runner.py` |
+| **Persistence + control** | `DocumentRepository` (stateless — every method takes `document_id`), `DocumentOverrideRepository` (`DocumentRepository.overrides`), `DocumentService` (CRUD + chunk/Qdrant business logic; free functions `read_profile`, `get_local_pdf`), `DocumentIngestPipelineService` (state machine: check_runnable/begin/execute, queue, cancel, approve, reapply; dispatch tables `_runners`/`_reappliers`) | `app/repositories/document_repository.py`, `app/repositories/document_override_repository.py`, `app/services/document_service.py`, `app/services/document_ingest_pipeline_service.py` |
 | **API/DTO** | `/admin/documents/*` routes, Pydantic contracts | `app/api/document_api.py`, `app/dto/request/document.py`, `app/dto/response/document.py` |
 | **Instance lifecycle** | `get_document_service()`, `get_document_ingest_pipeline_service()` — lazy singleton per process | `app/api/deps.py` |
 
-A stage module only ever touches `ctx: StageContext` — it never imports `app.infra`/`app.services`
-directly (the clients it needs arrive pre-built through the context). That's what keeps
-`pipeline/` swappable/testable in isolation (tests use `MemoryMinio` + SQLite + in-memory Qdrant +
-a fake embedder, no real service running — see Testing below).
+A pipeline module never imports `app.services`/`app.repositories` and never touches MinIO/Postgres;
+`grep -rn "app\.services\|app\.repositories" pipeline/` (excluding tests) must stay empty. Tests call the
+pure functions directly (`tests/test_pure_stages.py`) and drive the whole flow through the service with
+`MemoryMinio` + SQLite + in-memory Qdrant + a fake embedder (no real service running — see Testing).
 
-## `StageContext` (`pipeline/document_ingest/stages/__init__.py`)
+## Pure stage functions (`pipeline/document_ingest/stages/`)
 
-Every stage is a module with `run(ctx: StageContext) -> dict` (a summary dict shown to the
-reviewer) and, if it supports re-applying overrides without an LLM call, `reapply(ctx) -> dict`.
+Each `step<N>_*.py` exposes verb-named functions; there is no `run(ctx)` and no `StageContext`.
 
-- `ctx.document_id: str` / `ctx.files: FileStoreService` — the id and a `FileStoreService` already
-  scoped to `document/<document_id>/` (`DocumentRepository.files_for`) — no stateful "handle" object,
-  `DocumentIngestPipelineService.make_ctx()` builds these fresh per run.
-- `ctx.meta() -> dict` / `ctx.overrides(stage_id) -> dict` — bound callables reading Postgres
-  (`DocumentRepository.meta`/`DocumentOverrideRepository.get`) for this `document_id`.
-- `ctx.profile: Profile` — this document's settings (`app/models/document_profile.py`).
-- `ctx.lexicon` / `ctx.graph` — `EntityLexicon` and the `GraphStore` protocol (Neo4j, implemented by
-  `DocumentGraphService`), only wired for the graph stages; `ctx.require_lexicon()` / `ctx.require_graph()`.
-- `ctx.llm` / `ctx.docling` / `ctx.embedding` / `ctx.vectors` — injected clients, `None` if not
-  configured for this run; use `ctx.require_llm()` etc. to get-or-raise `StageError` with a
-  reviewer-facing message.
-- `ctx.local_pdf()` — materializes `source.pdf` to a local temp path for tools that need a real
-  file (pdftotext, Docling, pypdf); cleaned up with the document.
-- `ctx.progress(done, total, message)` — rate-limited (~2/s) write to `document_stages.progress`;
-  also calls `ctx.check_cancel()`, so put it inside any loop you want Stop/cancel to interrupt.
-- `ctx.log(message)` — appends to the stage's log (`logs/` in MinIO), shown in the UI's "xem log".
-- Raise `StageError(msg)` for anything the reviewer can fix themselves (bad option, missing file) —
-  shown verbatim in the UI. Anything else propagates as an unhandled exception → stage `failed`.
+- Input/output are plain values or the typed models in `pipeline/document_ingest/types.py`
+  (`PageRow`, `DoclingBlock`, `FigureDraft`, `TocEntry`, `TocAuto`, `TocDoc`, `TocNode`, `ChunkUnit`) and
+  `app/dto/base/document.py` (`DocumentChunk`, `DocumentTriple`). Every `types.py` field has a
+  `Field(description=...)` — add one for each new field. Models use `extra="ignore"` + defaults so old JSON
+  in MinIO still loads; output files keep their names/format (`model_dump()` when writing, `model_validate()` when reading).
+- Progress/log: optional callables `on_progress(done, total, message)` and `on_log(message)`. Cancel is the
+  service's `on_progress` raising `StageCancelled` — the pipeline knows nothing about Redis.
+- Missing dependency (LLM, Docling, embedding, lexicon, Neo4j): the runner checks and raises `StageError`;
+  a pure function only raises `StageError` for bad data/options. Raise `StageError(msg)` for anything the
+  reviewer can fix (shown verbatim in the UI); anything else becomes stage `failed`.
+- Inputs that need a real file get a `Callable[[], Path]` (`run.get_pdf`) so the PDF is only downloaded when needed.
+- Pure files use no logger-less `except`: every skipped/failed branch calls `logger.warning(...)`.
+
+## `StageRunState` (service side, `app/services/document_stage_runner.py`)
+
+`DocumentStageRunner.make_state(document_id, stage_id, options, llm, cancel)` builds the per-run object:
+`document_id`, `stage_id`, `options`, `profile`, `files` (`FileStoreService` scoped to `document/<id>/`),
+`llm` (None if the stage doesn't use it or `profile.llm.enabled=false`), `progress` (checks cancel, then writes
+`document_stages.progress`, ~2/s), `log` (appends to `logs/`), `get_pdf`.
+Overrides come from `repo.overrides.get(document_id, stage)`; the title from `repo.meta(document_id)`.
 
 ## Recipes
 
-**Modify an existing stage** — edit the stage module only if the change is pure
+**Modify an existing stage** — change the pure function in `stages/step<N>_*.py` if it is
 transformation (parsing, chunking rule, mapping logic). If it needs a new external capability
-(another LLM call shape, a new file format), add/extend the matching `app/infra/*_client.py`
-first, thread it through `StageContext` (add the field in `stages/__init__.py`, wire it in
-`DocumentIngestPipelineService.make_ctx()`), then use `ctx.require_x()` in the stage.
+(another LLM call shape, a new file format), add/extend the matching `app/infra/*_client.py`, inject it
+into `DocumentStageRunner.__init__` (wired in `DocumentIngestPipelineService.__init__` / `app/api/deps.py`),
+add a dependency check in the runner, and pass the client into the pure function as a parameter.
 
-**Add a stage** — add an entry to `STAGES` in `app/models/document_stage.py` (id, `module`, title, `deps`,
-`llm`, `outputs`) — this is what drives dependency gating and the UI stepper. Add
-`pipeline/document_ingest/stages/step<N>_<id>.py` with `run(ctx)` (+ `reapply(ctx)` if applicable). No
-other registration needed — `DocumentIngestPipelineService` resolves the module by `importlib`
-from the `module` field of `STAGES`.
+**Add a stage** — add an entry to `STAGES` in `app/models/document_stage.py` (id, title, `deps`, `llm`,
+`outputs`) — this drives dependency gating and the UI stepper. Add `stages/step<N>_<id>.py` with the pure
+function(s), a `run_<id>` (+ `reapply_<id>` if it has overrides) on `DocumentStageRunner` that reads inputs,
+calls the function and writes outputs, and register them in `_runners` / `_reappliers` in
+`DocumentIngestPipelineService.__init__`. No `importlib`/`module` field any more.
 
 **Add a document setting** — field in `Profile` (`app/models/document_profile.py`, Pydantic), read
-it via `ctx.profile.<section>.<field>` in the stage; surface it in the settings UI
+it via `run.profile.<section>.<field>` in the runner and pass the value into the pure function; surface it in the settings UI
 (`derma-fe-conventions`'s `features/document-pipeline/components/SettingsDialog.tsx` + `types.ts`).
 
 **Add/change a `dto/base` field** (`Document`/`DocumentChunk`/`DocumentStage`/`DocumentStageOverride`)
@@ -140,7 +142,7 @@ mapping (`_stage_output()`) → `app/dto/request|response/document.py` if the AP
 
 **Add an admin-pipeline API field/endpoint** — DTO in `app/dto/request/document.py` (input) or
 `app/dto/response/document.py` (output) → method on
-`DocumentService`/`DocumentIngestPipelineService`/`DocumentRepository` (whichever owns that data)
+`DocumentService`/`DocumentIngestPipelineService`/`DocumentStageRunner`/`DocumentRepository` (whichever owns that data)
 → route in `app/api/document_api.py`.
 Mirror in FE's `features/document-pipeline/api.ts` + `hooks.ts` (see `derma-fe-conventions`).
 
@@ -151,15 +153,17 @@ embedded figures — see below), `pages.jsonl`, `toc.auto.json`, `toc.json`, `ch
 `index.json`, `status.json`, `overrides/`, `review/`, `logs/`, `docling_parts/` (OCR checkpoint —
 lets a killed `ingest` resume without re-OCRing finished pages). LLM cache: `_cache/llm/`. Chunks
 are embedded via OpenRouter (qwen/qwen3-embedding-8b, 4096-dim) and upserted into Qdrant collection `derma_document_chunks_v4` (unnamed dense vector + sparse vector `bm25` encoded by `app/infra/bm25/` (tokenizer + stopwords + sparse; `text_language` per document in `Profile.indexing`, stored as payload `bm25_mode`) in `DocumentService.upsert_chunks`; Qdrant applies IDF, so the agent's keyword leg queries Qdrant directly — no in-memory index)
-(`settings.QDRANT_DOCUMENT_COLLECTION`), payload carries `document_id`, part/section/topic, page,
+(`settings.QDRANT_DOCUMENT_COLLECTION`), payload carries `document_id`, `toc_path`, page,
 `source_pdf`. Deleting a document deletes both the MinIO objects and the Qdrant points; rerunning
 `index` replaces all of a document's points.
 
-**No embedded-figure extraction**: `ingest`'s docling branch keeps only
-`{heading, text, list, caption, table, toc}` labelled blocks (`stages/step1_ingest.py`'s
-`_BODY_LABELS`) — any `picture`/`figure` block Docling detects is dropped. If asked to add image
-extraction, that's new work in `stages/step1_ingest.py`'s docling branch (keep `picture` blocks, crop
-and write to MinIO, e.g. `document/<document_id>/figures/`), not something already wired up.
+**Figures**: with the docling engine `ingest` keeps `figure` blocks, the runner stores each crop under
+`figures/p<page>_<n>.png` and writes `figures.json` (entries match `DocumentFigure`; the pure function returns `FigureDraft`
+with a relative `image_key`, the runner adds `image_file.storage_key`). `pdftotext` extracts no images and clears `figures/`.
+Body-text block labels live in `textutil.BODY_LABELS`.
+
+**Temp files**: PDF scratch copy at `/tmp/document_ingest_tmp/<document_id>/source.pdf` (`get_local_pdf`, reused while the size matches,
+deleted with the document, never cleaned otherwise); `pdftoppm` page previews also use it.
 
 ## Concurrency & control flow
 
@@ -167,7 +171,7 @@ Chạy bước nằm ở **Ingest Worker** (`app/workers/document_ingest_worker.
 Worker. `start_stage` (Core, async) chạy `check_runnable` + `begin` (ghi `running`) rồi publish `document_ingest_queue`
 (`{document_id, stage_id, options}`); worker consume, chạy `execute` trong thread (một bước một lần, semaphore) và tự ghi
 kết quả/log. FE vẫn poll `GET /documents/{id}`. Dừng: `cancel_stage` đặt key Redis `document:ingest:cancel:{doc}:{stage}` +
-publish channel `document:ingest:cancel`; worker set `threading.Event` (`ctx.check_cancel()`/`ctx.progress`) hoặc đọc key
+publish channel `document:ingest:cancel`; worker set `threading.Event` (callback `progress` của `StageRunState` ném `StageCancelled`) hoặc đọc key
 khi nhận message nếu bước còn nằm trong queue. Khởi động worker: purge queue + `DocumentService.fail_orphaned_runs()`
 đánh dấu mọi bước `running` là `failed` (Core không còn biết bước nào thật sự chạy); `docling_parts/` giúp retry không OCR
 lại. `run_stage` (đồng bộ) vẫn dùng cho test/script. `document_stages`/`document_overrides` ghi dưới Postgres row lock
@@ -175,8 +179,8 @@ lại. `run_stage` (đồng bộ) vẫn dùng cho test/script. `document_stages`
 
 ## Testing
 
-`python -m unittest pipeline.document_ingest.tests.test_document_pipeline pipeline.document_ingest.tests.test_api pipeline.document_ingest.tests.test_storage_index pipeline.document_ingest.tests.test_graph`
-— verified 2026-10-04, 37 tests pass. Uses `tests/memory_infra.py`'s `MemoryMinio` + a temp SQLite
+`python -m unittest pipeline.document_ingest.tests.test_document_pipeline pipeline.document_ingest.tests.test_api pipeline.document_ingest.tests.test_storage_index pipeline.document_ingest.tests.test_graph pipeline.document_ingest.tests.test_graph_schema pipeline.document_ingest.tests.test_pure_stages` + `tests/test_reindex_qdrant.py`
+— verified 2026-11-05, 89 tests pass. Uses `tests/memory_infra.py`'s `MemoryMinio` + a temp SQLite
 file (in place of Postgres) + `QdrantClient(":memory:")` + a fake embedder — no real
 MinIO/Postgres/Qdrant service needs to be running for these tests.
 

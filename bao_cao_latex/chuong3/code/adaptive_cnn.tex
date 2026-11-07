@@ -1,0 +1,56 @@
+\begin{Verbatim}[commandchars=\\\{\},numbers=left,numbersep=5pt,frame=single,framesep=4pt,breaklines=true,breakanywhere=true,fontsize=\fontsize{9pt}{10.5pt}\selectfont]
+\PY{k}{def} \PY{n+nf}{standard\PYZus{}head}\PY{p}{(}
+    \PY{n}{feat\PYZus{}dim}\PY{p}{,} \PY{n}{num\PYZus{}classes}\PY{p}{,} \PY{n}{hidden}\PY{o}{=}\PY{l+m+mi}{512}\PY{p}{,} \PY{n}{dropout}\PY{o}{=}\PY{l+m+mf}{0.4}
+\PY{p}{)}\PY{p}{:}
+    \PY{k}{return} \PY{n}{nn}\PY{o}{.}\PY{n}{Sequential}\PY{p}{(}
+        \PY{n}{nn}\PY{o}{.}\PY{n}{BatchNorm1d}\PY{p}{(}\PY{n}{feat\PYZus{}dim}\PY{p}{)}\PY{p}{,}
+        \PY{n}{nn}\PY{o}{.}\PY{n}{Dropout}\PY{p}{(}\PY{n}{dropout}\PY{p}{)}\PY{p}{,}
+        \PY{n}{nn}\PY{o}{.}\PY{n}{Linear}\PY{p}{(}\PY{n}{feat\PYZus{}dim}\PY{p}{,} \PY{n}{hidden}\PY{p}{)}\PY{p}{,}
+        \PY{n}{nn}\PY{o}{.}\PY{n}{ReLU}\PY{p}{(}\PY{n}{inplace}\PY{o}{=}\PY{k+kc}{True}\PY{p}{)}\PY{p}{,}
+        \PY{n}{nn}\PY{o}{.}\PY{n}{BatchNorm1d}\PY{p}{(}\PY{n}{hidden}\PY{p}{)}\PY{p}{,}
+        \PY{n}{nn}\PY{o}{.}\PY{n}{Dropout}\PY{p}{(}\PY{n}{dropout} \PY{o}{*} \PY{l+m+mf}{0.5}\PY{p}{)}\PY{p}{,}
+        \PY{n}{nn}\PY{o}{.}\PY{n}{Linear}\PY{p}{(}\PY{n}{hidden}\PY{p}{,} \PY{n}{num\PYZus{}classes}\PY{p}{)}\PY{p}{,}
+    \PY{p}{)}
+
+\PY{k}{class} \PY{n+nc}{ResNet18Variant}\PY{p}{(}\PY{n}{nn}\PY{o}{.}\PY{n}{Module}\PY{p}{)}\PY{p}{:}
+    \PY{k}{def} \PY{n+nf+fm}{\PYZus{}\PYZus{}init\PYZus{}\PYZus{}}\PY{p}{(}
+        \PY{n+nb+bp}{self}\PY{p}{,} \PY{n}{num\PYZus{}classes}\PY{p}{,} \PY{n}{use\PYZus{}amkc}\PY{o}{=}\PY{k+kc}{False}\PY{p}{,}
+        \PY{n}{pretrained}\PY{o}{=}\PY{k+kc}{True}\PY{p}{,} \PY{n}{hidden}\PY{o}{=}\PY{l+m+mi}{512}\PY{p}{,} \PY{n}{dropout}\PY{o}{=}\PY{l+m+mf}{0.4}\PY{p}{,}
+        \PY{n}{lambda\PYZus{}scale}\PY{o}{=}\PY{l+m+mf}{0.10}\PY{p}{,} \PY{n}{kernels}\PY{o}{=}\PY{k+kc}{None}
+    \PY{p}{)}\PY{p}{:}
+        \PY{n+nb}{super}\PY{p}{(}\PY{p}{)}\PY{o}{.}\PY{n+nf+fm}{\PYZus{}\PYZus{}init\PYZus{}\PYZus{}}\PY{p}{(}\PY{p}{)}
+        \PY{k}{if} \PY{n}{use\PYZus{}amkc}\PY{p}{:}
+            \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{amkc} \PY{o}{=} \PY{n}{AdaptiveMultiKernelConv}\PY{p}{(}
+                \PY{l+m+mi}{3}\PY{p}{,} \PY{l+m+mi}{3}\PY{p}{,} \PY{n}{lambda\PYZus{}scale}\PY{o}{=}\PY{n}{lambda\PYZus{}scale}\PY{p}{,}
+                \PY{n}{kernels}\PY{o}{=}\PY{n}{kernels}
+            \PY{p}{)}
+        \PY{n}{weights} \PY{o}{=} \PY{p}{(}
+            \PY{n}{models}\PY{o}{.}\PY{n}{ResNet18\PYZus{}Weights}\PY{o}{.}\PY{n}{IMAGENET1K\PYZus{}V1}
+            \PY{k}{if} \PY{n}{pretrained} \PY{k}{else} \PY{k+kc}{None}
+        \PY{p}{)}
+        \PY{n}{backbone} \PY{o}{=} \PY{n}{models}\PY{o}{.}\PY{n}{resnet18}\PY{p}{(}\PY{n}{weights}\PY{o}{=}\PY{n}{weights}\PY{p}{)}
+        \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{stem} \PY{o}{=} \PY{n}{nn}\PY{o}{.}\PY{n}{Sequential}\PY{p}{(}
+            \PY{n}{backbone}\PY{o}{.}\PY{n}{conv1}\PY{p}{,} \PY{n}{backbone}\PY{o}{.}\PY{n}{bn1}\PY{p}{,}
+            \PY{n}{backbone}\PY{o}{.}\PY{n}{relu}\PY{p}{,} \PY{n}{backbone}\PY{o}{.}\PY{n}{maxpool}
+        \PY{p}{)}
+        \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{layer1} \PY{o}{=} \PY{n}{backbone}\PY{o}{.}\PY{n}{layer1}
+        \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{layer2} \PY{o}{=} \PY{n}{backbone}\PY{o}{.}\PY{n}{layer2}
+        \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{layer3} \PY{o}{=} \PY{n}{backbone}\PY{o}{.}\PY{n}{layer3}
+        \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{layer4} \PY{o}{=} \PY{n}{backbone}\PY{o}{.}\PY{n}{layer4}
+        \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{pool} \PY{o}{=} \PY{n}{nn}\PY{o}{.}\PY{n}{AdaptiveAvgPool2d}\PY{p}{(}\PY{l+m+mi}{1}\PY{p}{)}  \PY{c+c1}{\PYZsh{} GAP}
+        \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{head} \PY{o}{=} \PY{n}{standard\PYZus{}head}\PY{p}{(}
+            \PY{n}{backbone}\PY{o}{.}\PY{n}{fc}\PY{o}{.}\PY{n}{in\PYZus{}features}\PY{p}{,}
+            \PY{n}{num\PYZus{}classes}\PY{p}{,} \PY{n}{hidden}\PY{p}{,} \PY{n}{dropout}
+        \PY{p}{)}
+
+    \PY{k}{def} \PY{n+nf}{forward}\PY{p}{(}\PY{n+nb+bp}{self}\PY{p}{,} \PY{n}{x}\PY{p}{)}\PY{p}{:}
+        \PY{k}{if} \PY{n+nb}{hasattr}\PY{p}{(}\PY{n+nb+bp}{self}\PY{p}{,} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{amkc}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}\PY{p}{:}
+            \PY{n}{x} \PY{o}{=} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{amkc}\PY{p}{(}\PY{n}{x}\PY{p}{)}
+        \PY{n}{x} \PY{o}{=} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{stem}\PY{p}{(}\PY{n}{x}\PY{p}{)}
+        \PY{n}{x} \PY{o}{=} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{layer1}\PY{p}{(}\PY{n}{x}\PY{p}{)}
+        \PY{n}{x} \PY{o}{=} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{layer2}\PY{p}{(}\PY{n}{x}\PY{p}{)}
+        \PY{n}{x} \PY{o}{=} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{layer3}\PY{p}{(}\PY{n}{x}\PY{p}{)}
+        \PY{n}{x} \PY{o}{=} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{layer4}\PY{p}{(}\PY{n}{x}\PY{p}{)}
+        \PY{n}{x} \PY{o}{=} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{pool}\PY{p}{(}\PY{n}{x}\PY{p}{)}
+        \PY{k}{return} \PY{n+nb+bp}{self}\PY{o}{.}\PY{n}{head}\PY{p}{(}\PY{n}{x}\PY{o}{.}\PY{n}{flatten}\PY{p}{(}\PY{l+m+mi}{1}\PY{p}{)}\PY{p}{)}
+\end{Verbatim}

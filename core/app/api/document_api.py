@@ -20,7 +20,7 @@ from app.dto.response.document import (
     DocumentOutput,
     DocumentSummary,
     ChunkListOutput,
-    FigureOutput,
+    FigureListOutput,
     GraphNodeOutput,
     TripleListOutput,
 )
@@ -239,14 +239,19 @@ async def list_chunks(
 # ------------------------------------------------------------------ hình ảnh trong sách
 @router.get(
     "/documents/{document_id}/figures",
-    response_model=ApiResponse[list[FigureOutput]],
+    response_model=ApiResponse[FigureListOutput],
     operation_id="listTocFigures",
 )
 async def list_figures(
-    document_id: str, documents: Documents
-) -> ApiResponse[list[FigureOutput]]:
-    rows = await _call(documents.list_figures, document_id)
-    return ApiResponse(data=[FigureOutput.model_validate(r) for r in rows])
+    document_id: str,
+    documents: Documents,
+    q: str = "",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 12,
+) -> ApiResponse[FigureListOutput]:
+    return ApiResponse(
+        data=await _call(documents.list_figures, document_id, q, page, page_size)
+    )
 
 
 @router.get(

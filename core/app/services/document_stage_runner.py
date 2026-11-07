@@ -10,7 +10,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from app.dto.base.document import DocumentTriple
+from app.dto.base.document import DocumentChunk, DocumentTriple
 from app.infra.docling_client import DoclingClient
 from app.infra.embedding_client import EmbeddingClient
 from app.infra.llm_client import LLMClient
@@ -24,6 +24,7 @@ from app.services.graph_schema_service import GraphSchemaService
 from pipeline.document_ingest import mapping
 from pipeline.document_ingest.graph_link import EntityLexicon, LexEntry
 from pipeline.document_ingest.graph_schema import CORE_SCHEMA, GraphSchema
+from pipeline.document_ingest.types import DoclingBlock, PageRow, TocAuto, TocDoc
 from pipeline.document_ingest.stages import (
     StageCancelled,
     StageError,
@@ -49,6 +50,16 @@ class StageRunState:
     progress: Callable[[int, int, str], None]  # ném StageCancelled khi người dùng bấm Dừng
     log: Callable[[str], None]
     get_pdf: Callable[[], Path]  # bản sao PDF trên đĩa, chỉ tải khi stage cần
+
+
+def get_call_limit(raw: Any) -> int:
+    try:
+        n = int(raw or 0)
+    except (TypeError, ValueError):
+        raise StageError(f"Số lượt thử phải là một số nguyên (vd 20), nhận được {raw!r}.") from None
+    if n < 0:
+        raise StageError("Số lượt thử không được âm.")
+    return n
 
 
 def _save_figures(files: Any, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -135,13 +146,13 @@ class DocumentStageRunner:
             files.delete_prefix("figures/")
         files.put_text("docling_parts/key.txt", key)
 
-        def convert(first: int, last: int) -> list[dict[str, Any]]:
+        def convert(first: int, last: int) -> list[DoclingBlock]:
             part = f"docling_parts/part_{first:05d}_{last:05d}.json"
             if files.exists(part):  # đã đọc ở lần chạy trước (dừng/làm lại không mất)
-                return files.read_json(part, [])
-            blocks = docling.convert_pages(pdf, first, last, force_ocr=ext.docling_force_ocr, tables=ext.docling_tables)
-            files.write_json(part, _save_figures(files, blocks))
-            return blocks
+                return [DoclingBlock.model_validate(b) for b in files.read_json(part, [])]
+            blocks = _save_figures(files, docling.convert_pages(pdf, first, last, force_ocr=ext.docling_force_ocr, tables=ext.docling_tables))
+            files.write_json(part, blocks)
+            return [DoclingBlock.model_validate(b) for b in blocks]
 
         return convert
 
@@ -156,33 +167,38 @@ class DocumentStageRunner:
             run.get_pdf(), ext, document_id=run.document_id, pages_opt=run.options.get("pages"),
             convert=convert, on_progress=run.progress, on_log=run.log,
         )
-        files.write_jsonl("pages.jsonl", rows)
-        for f in figures:
-            key = f.pop("image_key")
-            f["image_file"] = {"file_name": key.split("/")[-1], "storage_key": files.key(key), "content_type": "image/png"}
-        files.write_json("figures.json", figures)
+        files.write_jsonl("pages.jsonl", [r.model_dump() for r in rows])
+        files.write_json("figures.json", [
+            {**f.model_dump(exclude={"image_key"}),
+             "image_file": {"file_name": f.image_key.split("/")[-1], "storage_key": files.key(f.image_key), "content_type": "image/png"}}
+            for f in figures
+        ])
         return summary
 
     def run_toc(self, run: StageRunState) -> dict[str, Any]:
         llm = self._need_llm(run)
         auto = step2_toc.read_toc(
-            run.get_pdf, run.files.read_jsonl("pages.jsonl"), run.profile.extraction, llm, self._docling,
+            run.get_pdf, self._read_pages(run), run.profile.extraction, llm, self._docling,
             run.options.get("pages"), run.progress, run.log,
         )
-        run.files.write_json("toc.auto.json", auto)
+        run.files.write_json("toc.auto.json", auto.model_dump())
         return self.reapply_toc(run)
 
-    def _build_toc_file(self, run: StageRunState, rows: list[dict[str, Any]], total: int) -> dict[str, Any]:
+    @staticmethod
+    def _read_pages(run: StageRunState) -> list[PageRow]:
+        return [PageRow.model_validate(r) for r in run.files.read_jsonl("pages.jsonl")]
+
+    def _build_toc_file(self, run: StageRunState, rows: list[PageRow], total: int) -> TocDoc:
         """Áp override + tính độ lệch/neo từ `toc.auto.json`, ghi `toc.json` (dùng cho bước Mục lục và Chia đoạn)."""
-        auto = run.files.read_json("toc.auto.json", None)
-        if auto is None:
+        raw = run.files.read_json("toc.auto.json", None)
+        if raw is None:
             raise StageError("Chưa đọc mục lục — hãy làm bước Mục lục trước.")
-        doc = mapping.build_toc(auto, self._repo.overrides.get(run.document_id, "toc"), rows, total)
-        run.files.write_json("toc.json", doc)
+        doc = mapping.build_toc(TocAuto.model_validate(raw), self._repo.overrides.get(run.document_id, "toc"), rows, total)
+        run.files.write_json("toc.json", doc.model_dump())
         return doc
 
     def reapply_toc(self, run: StageRunState) -> dict[str, Any]:
-        rows = run.files.read_jsonl("pages.jsonl")
+        rows = self._read_pages(run)
         has_text = bool(rows) or run.files.exists("source.pdf")
         doc = self._build_toc_file(run, rows, step2_toc.count_pages(rows, run.get_pdf) if has_text else 0)
         summary = step2_toc.summarize_toc(doc)
@@ -192,19 +208,19 @@ class DocumentStageRunner:
 
     def run_chunks(self, run: StageRunState) -> dict[str, Any]:
         files = run.files
-        all_rows = files.read_jsonl("pages.jsonl")
-        rows = [r for r in all_rows if not r.get("noise")]
+        all_rows = self._read_pages(run)
+        rows = [r for r in all_rows if not r.noise]
         if not rows:
             raise StageError("Chưa đọc nội dung sách — hãy làm bước Đọc nội dung trước.")
         if not files.exists("toc.auto.json"):
             raise StageError("Chưa có mục lục — hãy làm bước Mục lục trước.")
         run.progress(0, 2, "tính lại độ lệch + neo")
-        doc = self._build_toc_file(run, all_rows, max(r["page"] for r in rows))  # dữ liệu trang có thể mới hơn lần duyệt mục lục
+        doc = self._build_toc_file(run, all_rows, max(r.page for r in rows))  # dữ liệu trang có thể mới hơn lần duyệt mục lục
         chunks, review, summary = step3_chunks.cut_chunks(
             doc, rows, run.profile.chunking, document_id=run.document_id, document_title=self._repo.meta(run.document_id).get("title", ""),
-            figures=files.read_json("figures.json", []) or [], on_progress=run.progress,
+            figure_pages=[(f["figure_id"], f["page"]) for f in files.read_json("figures.json", []) or []], on_progress=run.progress,
         )
-        files.write_jsonl("chunks.jsonl", chunks)
+        files.write_jsonl("chunks.jsonl", [c.model_dump() for c in chunks])
         files.write_json("review/chunks.json", review)
         return summary
 
@@ -243,15 +259,15 @@ class DocumentStageRunner:
         files, schema = run.files, self._get_schema(run.stage_id)
         llm = self._need_llm(run)
         lexicon = self._get_lexicon(schema)
-        chunks = files.read_jsonl("chunks.jsonl")
+        chunks = [DocumentChunk.model_validate(c) for c in files.read_jsonl("chunks.jsonl")]
         if not chunks:
             raise StageError("Chưa có đoạn nội dung nào — hãy làm bước Chia đoạn trước.")
-        triples, topics, unmapped, stats = step5_graph.extract_triples(
+        triples, units, unmapped, stats = step5_graph.extract_triples(
             chunks, llm, lexicon, schema, document_id=run.document_id,
             allow_new=run.profile.graph.allow_new_entities, chunks_per_call=run.profile.graph.chunks_per_call,
-            limit_topics=int(run.options.get("limit_topics") or 0), on_progress=run.progress, on_log=run.log,
+            limit_calls=get_call_limit(run.options.get("limit_calls")), on_progress=run.progress, on_log=run.log,
         )
-        files.write_json("graph/topics.json", topics)
+        files.write_json("graph/units.json", units)
         files.write_json("graph/unmapped.json", unmapped)
         files.write_json("graph/stats.json", {**stats, "llm": llm.stats})
         files.write_jsonl("triples.auto.jsonl", [x.model_dump() for x in triples])
@@ -265,7 +281,7 @@ class DocumentStageRunner:
         triples = step5_graph.apply_overrides(auto, self._repo.overrides.get(run.document_id, "graph"), schema)
         files.write_jsonl("triples.jsonl", [t.model_dump() for t in triples])
         return step5_graph.summarize_triples(
-            triples, files.read_json("graph/topics.json", []) or [], files.read_json("graph/unmapped.json", []) or [],
+            triples, files.read_json("graph/units.json", []) or [], files.read_json("graph/unmapped.json", []) or [],
             files.read_json("graph/stats.json", {}) or {}, schema,
         )
 
@@ -278,7 +294,7 @@ class DocumentStageRunner:
         ok = [t for t in (DocumentTriple.model_validate(x) for x in files.read_jsonl("triples.jsonl")) if t.status == "ok"]
         if not ok:
             raise StageError("Chưa có quan hệ nào đã khớp đủ hai đầu để lưu — hãy duyệt bước Trích quan hệ trước.")
-        printed = {c["chunk_id"]: c["page_printed_start"] for c in files.read_jsonl("chunks.jsonl")}
+        printed = {c["chunk_id"]: c["page_printed_start"] for c in files.read_jsonl("chunks.jsonl")}  # chỉ cần 2 field: không dựng cả DocumentChunk
         run.progress(0, 3, "kiểm tra nút trong đồ thị")
         existing = graph.existing_nodes(step6_graph_index.get_primekg_pairs(ok))
         nodes, edges, skipped, merged = step6_graph_index.build_graph_payload(

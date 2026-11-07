@@ -1,0 +1,47 @@
+\begin{Verbatim}[commandchars=\\\{\},numbers=left,numbersep=5pt,frame=single,framesep=4pt,breaklines=true,breakanywhere=true,fontsize=\fontsize{9pt}{10.5pt}\selectfont]
+\PY{k}{async} \PY{k}{def} \PY{n+nf}{run\PYZus{}hybrid}\PY{p}{(}
+    \PY{n}{query}\PY{p}{:} \PY{n+nb}{str}\PY{p}{,}
+    \PY{o}{*}\PY{p}{,}
+    \PY{n}{corpus}\PY{p}{:} \PY{n}{RetrievalCorpus} \PY{o}{=} \PY{n}{DOCUMENT\PYZus{}CORPUS}\PY{p}{,}
+    \PY{n+nb}{filter}\PY{p}{:} \PY{n}{RetrievalFilter} \PY{o}{|} \PY{k+kc}{None} \PY{o}{=} \PY{k+kc}{None}\PY{p}{,}
+    \PY{n}{semantic\PYZus{}fn}\PY{p}{:} \PY{n}{Callable}\PY{p}{[}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n+nb}{int}\PY{p}{]}\PY{p}{,} \PY{n}{Awaitable}\PY{p}{[}\PY{n}{Payloads}\PY{p}{]}\PY{p}{]} \PY{o}{|} \PY{k+kc}{None} \PY{o}{=} \PY{k+kc}{None}\PY{p}{,}
+    \PY{n}{bm25\PYZus{}fn}\PY{p}{:} \PY{n}{Callable}\PY{p}{[}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n+nb}{int}\PY{p}{]}\PY{p}{,} \PY{n}{Awaitable}\PY{p}{[}\PY{n}{Payloads}\PY{p}{]}\PY{p}{]} \PY{o}{|} \PY{k+kc}{None} \PY{o}{=} \PY{k+kc}{None}\PY{p}{,}
+    \PY{n}{entities\PYZus{}fn}\PY{p}{:} \PY{n}{Callable}\PY{p}{[}\PY{p}{[}\PY{n+nb}{str}\PY{p}{]}\PY{p}{,} \PY{n}{Awaitable}\PY{p}{[}\PY{n+nb}{list}\PY{p}{[}\PY{n}{ExtractedEntity}\PY{p}{]}\PY{p}{]}\PY{p}{]} \PY{o}{|} \PY{k+kc}{None} \PY{o}{=} \PY{k+kc}{None}\PY{p}{,}
+    \PY{n}{graph\PYZus{}fn}\PY{p}{:} \PY{n}{Callable}\PY{p}{[}\PY{p}{[}\PY{n+nb}{list}\PY{p}{[}\PY{n}{ExtractedEntity}\PY{p}{]}\PY{p}{,} \PY{n+nb}{int}\PY{p}{]}\PY{p}{,} \PY{n}{Awaitable}\PY{p}{[}\PY{n}{Payloads}\PY{p}{]}\PY{p}{]} \PY{o}{|} \PY{k+kc}{None} \PY{o}{=} \PY{k+kc}{None}\PY{p}{,}
+    \PY{n}{rerank\PYZus{}fn}\PY{p}{:} \PY{n}{Callable}\PY{p}{[}\PY{p}{[}\PY{n+nb}{str}\PY{p}{,} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{str}\PY{p}{]}\PY{p}{]}\PY{p}{,} \PY{n}{Awaitable}\PY{p}{[}\PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{float}\PY{p}{]} \PY{o}{|} \PY{k+kc}{None}\PY{p}{]}\PY{p}{]} \PY{o}{|} \PY{k+kc}{None} \PY{o}{=} \PY{k+kc}{None}\PY{p}{,}
+\PY{p}{)} \PY{o}{\PYZhy{}}\PY{o}{\PYZgt{}} \PY{n}{HybridResult}\PY{p}{:}
+    \PY{n}{notes}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{str}\PY{p}{]} \PY{o}{=} \PY{p}{[}\PY{p}{]}
+    \PY{n}{semantic\PYZus{}fn} \PY{o}{=} \PY{n}{semantic\PYZus{}fn} \PY{o+ow}{or} \PY{p}{(}\PY{k}{lambda} \PY{n}{q}\PY{p}{,} \PY{n}{n}\PY{p}{:} \PY{n}{semantic\PYZus{}leg}\PY{p}{(}\PY{n}{q}\PY{p}{,} \PY{n}{n}\PY{p}{,} \PY{n}{corpus}\PY{p}{,} \PY{n+nb}{filter}\PY{p}{)}\PY{p}{)}
+    \PY{n}{bm25\PYZus{}fn} \PY{o}{=} \PY{n}{bm25\PYZus{}fn} \PY{o+ow}{or} \PY{p}{(}\PY{k}{lambda} \PY{n}{q}\PY{p}{,} \PY{n}{n}\PY{p}{:} \PY{n}{bm25\PYZus{}search}\PY{p}{(}\PY{n}{q}\PY{p}{,} \PY{n}{n}\PY{p}{,} \PY{n}{corpus}\PY{p}{,} \PY{n+nb}{filter}\PY{p}{)}\PY{p}{)}
+    \PY{n}{graph\PYZus{}fn} \PY{o}{=} \PY{n}{graph\PYZus{}fn} \PY{o+ow}{or} \PY{p}{(}\PY{k}{lambda} \PY{n}{e}\PY{p}{,} \PY{n}{n}\PY{p}{:} \PY{n}{graph\PYZus{}search}\PY{p}{(}\PY{n}{e}\PY{p}{,} \PY{n}{n}\PY{p}{,} \PY{n}{corpus}\PY{p}{)}\PY{p}{)}
+    \PY{c+c1}{\PYZsh{} trích thực thể một lần để mở rộng query BM25 (Việt–Anh)}
+    \PY{k}{try}\PY{p}{:}
+        \PY{n}{entities} \PY{o}{=} \PY{k}{await} \PY{p}{(}\PY{n}{entities\PYZus{}fn} \PY{o+ow}{or} \PY{n}{extract\PYZus{}entities}\PY{p}{)}\PY{p}{(}\PY{n}{query}\PY{p}{)}
+    \PY{k}{except} \PY{n+ne}{Exception} \PY{k}{as} \PY{n}{exc}\PY{p}{:}  \PY{c+c1}{\PYZsh{} noqa: BLE001}
+        \PY{n}{logger}\PY{o}{.}\PY{n}{error}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{[hybrid] không trích được thực thể để mở rộng query: }\PY{l+s+si}{\PYZpc{}s}\PY{l+s+s2}{\PYZdq{}}\PY{p}{,} \PY{n}{exc}\PY{p}{,} \PY{n}{exc\PYZus{}info}\PY{o}{=}\PY{k+kc}{True}\PY{p}{)}
+        \PY{n}{entities} \PY{o}{=} \PY{p}{[}\PY{p}{]}
+        \PY{n}{notes}\PY{o}{.}\PY{n}{append}\PY{p}{(}\PY{l+s+sa}{f}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{Không mở rộng được query Việt–Anh (}\PY{l+s+si}{\PYZob{}}\PY{n+nb}{type}\PY{p}{(}\PY{n}{exc}\PY{p}{)}\PY{o}{.}\PY{n+nv+vm}{\PYZus{}\PYZus{}name\PYZus{}\PYZus{}}\PY{l+s+si}{\PYZcb{}}\PY{l+s+s2}{) — BM25 dùng query gốc.}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{n}{bm25\PYZus{}query} \PY{o}{=} \PY{n}{expand\PYZus{}query}\PY{p}{(}\PY{n}{query}\PY{p}{,} \PY{n}{entities}\PY{p}{)}
+    \PY{n}{semantic\PYZus{}r}\PY{p}{,} \PY{n}{bm25\PYZus{}r}\PY{p}{,} \PY{n}{graph\PYZus{}r} \PY{o}{=} \PY{k}{await} \PY{n}{asyncio}\PY{o}{.}\PY{n}{gather}\PY{p}{(}
+        \PY{n}{semantic\PYZus{}fn}\PY{p}{(}\PY{n}{query}\PY{p}{,} \PY{n}{LEG\PYZus{}LIMIT}\PY{p}{)}\PY{p}{,} \PY{n}{bm25\PYZus{}fn}\PY{p}{(}\PY{n}{bm25\PYZus{}query}\PY{p}{,} \PY{n}{LEG\PYZus{}LIMIT}\PY{p}{)}\PY{p}{,} \PY{n}{graph\PYZus{}fn}\PY{p}{(}\PY{n}{entities}\PY{p}{,} \PY{n}{LEG\PYZus{}LIMIT}\PY{p}{)}\PY{p}{,} \PY{n}{return\PYZus{}exceptions}\PY{o}{=}\PY{k+kc}{True}
+    \PY{p}{)}
+    \PY{n}{semantic} \PY{o}{=} \PY{n}{\PYZus{}unwrap}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{semantic}\PY{l+s+s2}{\PYZdq{}}\PY{p}{,} \PY{n}{semantic\PYZus{}r}\PY{p}{,} \PY{n}{notes}\PY{p}{)}
+    \PY{n}{bm25} \PY{o}{=} \PY{n}{\PYZus{}unwrap}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{bm25}\PY{l+s+s2}{\PYZdq{}}\PY{p}{,} \PY{n}{bm25\PYZus{}r}\PY{p}{,} \PY{n}{notes}\PY{p}{)}
+    \PY{n}{graph} \PY{o}{=} \PY{n}{\PYZus{}unwrap}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{graph}\PY{l+s+s2}{\PYZdq{}}\PY{p}{,} \PY{n}{graph\PYZus{}r}\PY{p}{,} \PY{n}{notes}\PY{p}{)}
+
+    \PY{c+c1}{\PYZsh{} trộn các nhánh theo RRF, khử trùng theo id của nguồn}
+    \PY{n}{candidates} \PY{o}{=} \PY{n}{to\PYZus{}candidates}\PY{p}{(}\PY{n}{merge\PYZus{}by\PYZus{}id}\PY{p}{(}\PY{n}{semantic}\PY{p}{,} \PY{n}{bm25}\PY{p}{,} \PY{n}{graph}\PY{p}{,} \PY{n}{POOL}\PY{p}{,} \PY{n}{corpus}\PY{o}{.}\PY{n}{id\PYZus{}key}\PY{p}{)}\PY{p}{,} \PY{n}{corpus}\PY{p}{)}
+    \PY{n}{from\PYZus{}graph} \PY{o}{=} \PY{p}{\PYZob{}}\PY{n+nb}{str}\PY{p}{(}\PY{n}{p}\PY{o}{.}\PY{n}{get}\PY{p}{(}\PY{n}{corpus}\PY{o}{.}\PY{n}{id\PYZus{}key}\PY{p}{)}\PY{p}{)} \PY{k}{for} \PY{n}{p} \PY{o+ow}{in} \PY{n}{graph}\PY{p}{\PYZcb{}}
+    \PY{n}{candidates} \PY{o}{=} \PY{p}{[}\PY{p}{\PYZob{}}\PY{o}{*}\PY{o}{*}\PY{n}{c}\PY{p}{,} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{via\PYZus{}graph}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{k+kc}{True}\PY{p}{\PYZcb{}} \PY{k}{if} \PY{n}{c}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{\PYZus{}id}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]} \PY{o+ow}{in} \PY{n}{from\PYZus{}graph} \PY{k}{else} \PY{n}{c} \PY{k}{for} \PY{n}{c} \PY{o+ow}{in} \PY{n}{candidates}\PY{p}{]}  \PY{c+c1}{\PYZsh{} agent thấy chunk nào do đồ thị đề xuất}
+    \PY{n}{reranked} \PY{o}{=} \PY{k}{await} \PY{n}{rank\PYZus{}candidates}\PY{p}{(}\PY{n}{query}\PY{p}{,} \PY{n}{candidates}\PY{p}{,} \PY{n}{rerank\PYZus{}fn}\PY{p}{)} \PY{k}{if} \PY{n}{candidates} \PY{k}{else} \PY{k+kc}{None}
+    \PY{k}{return} \PY{n}{HybridResult}\PY{p}{(}
+        \PY{n}{bm25\PYZus{}query}\PY{o}{=}\PY{n}{bm25\PYZus{}query}\PY{p}{,}
+        \PY{n}{notes}\PY{o}{=}\PY{n}{notes}\PY{p}{,}
+        \PY{n}{semantic}\PY{o}{=}\PY{n}{semantic}\PY{p}{,}
+        \PY{n}{bm25}\PY{o}{=}\PY{n}{bm25}\PY{p}{,}
+        \PY{n}{graph}\PY{o}{=}\PY{n}{graph}\PY{p}{,}
+        \PY{n}{candidates}\PY{o}{=}\PY{n}{candidates}\PY{p}{,}
+        \PY{n}{ranked}\PY{o}{=}\PY{n}{reranked} \PY{k}{if} \PY{n}{reranked} \PY{o+ow}{is} \PY{o+ow}{not} \PY{k+kc}{None} \PY{k}{else} \PY{n}{candidates}\PY{p}{,}
+        \PY{n}{reranked}\PY{o}{=}\PY{n}{reranked} \PY{o+ow}{is} \PY{o+ow}{not} \PY{k+kc}{None}\PY{p}{,}
+    \PY{p}{)}
+\end{Verbatim}
