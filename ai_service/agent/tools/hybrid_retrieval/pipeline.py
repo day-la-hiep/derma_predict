@@ -5,13 +5,13 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
 
-from agent.tools.hybrid_retrieval.bm25 import bm25_search
-from agent.tools.hybrid_retrieval.fusion import merge_by_id
-from agent.tools.hybrid_retrieval.graph import graph_search
-from agent.tools.hybrid_retrieval.kg import ExtractedEntity, extract_entities
-from agent.tools.hybrid_retrieval.reranker import rerank
-from agent.tools.hybrid_retrieval.semantic import semantic_search as semantic_leg
+import httpx
+
 from agent.tools.hybrid_retrieval.corpus import DOCUMENT_CORPUS, Corpus
+from agent.tools.hybrid_retrieval.fusion import merge_by_id
+from agent.tools.hybrid_retrieval.kg import ExtractedEntity, extract_entities
+from app.config.settings import settings
+from app.deps import get_knowledge_client
 
 T = TypeVar("T")
 
@@ -34,6 +34,35 @@ class HybridResult:
     candidates: list[dict[str, Any]] = field(default_factory=lambda: list[dict[str, Any]]())  # sau RRF, chưa rerank
     ranked: list[dict[str, Any]] = field(default_factory=lambda: list[dict[str, Any]]())  # sau rerank, hoặc thứ tự RRF nếu không rerank được
     reranked: bool = False
+
+
+async def rerank(query: str, passages: list[str]) -> list[float] | None:
+    """Điểm liên quan 0..1 (Qwen3-Reranker qua OpenRouter) cho từng đoạn, cùng thứ tự `passages`; `None` nếu reranker không dùng được."""
+    if not passages:
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{settings.OPENROUTER_BASE_URL}/rerank",
+                headers={"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}"},
+                json={"model": settings.RERANKER_MODEL, "query": query, "documents": passages},
+            )
+            resp.raise_for_status()
+        scores = [0.0] * len(passages)
+        for r in resp.json()["results"]:
+            scores[r["index"]] = float(r["relevance_score"])
+        return scores
+    except Exception as exc:  # noqa: BLE001  # mất mạng, hết quota, model không có trên OpenRouter...
+        logger.warning("không dùng được %s: %s", settings.RERANKER_MODEL, exc)
+        return None
+
+
+async def graph_search(entities: list[ExtractedEntity], limit: int, corpus: Corpus = DOCUMENT_CORPUS) -> Payloads:
+    """Chunk sách mà cạnh DOC của thực thể trỏ tới; rỗng khi không phải corpus sách hoặc không có thực thể y khoa."""
+    names = [t for e in entities if e.type != "other" for t in (e.text, e.vi) if t]
+    if corpus.name != DOCUMENT_CORPUS.name or not names:
+        return []
+    return await get_knowledge_client().search_by_graph(names, limit)
 
 
 def expand_query(query: str, entities: list[ExtractedEntity]) -> str:
@@ -87,8 +116,8 @@ async def run_hybrid(
     rerank_fn: Callable[[str, list[str]], Awaitable[list[float] | None]] | None = None,
 ) -> HybridResult:
     notes: list[str] = []
-    semantic_fn = semantic_fn or (lambda q, n: semantic_leg(q, n, corpus))
-    bm25_fn = bm25_fn or (lambda q, n: bm25_search(q, n, corpus))
+    semantic_fn = semantic_fn or (lambda q, n: get_knowledge_client().search_semantic(q, n, corpus=corpus.name))
+    bm25_fn = bm25_fn or (lambda q, n: get_knowledge_client().search_bm25(q, n, corpus=corpus.name))
     graph_fn = graph_fn or (lambda e, n: graph_search(e, n, corpus))
     # trích thực thể một lần để mở rộng query BM25 (Việt–Anh)
     try:

@@ -24,7 +24,7 @@ spring:
             - id: consultation
               uri: ${CONSULTATION_URL:http://localhost:3052}
               predicates:
-                - Path=/api/v1/conversations,/api/v1/conversations/**,/api/v1/doctor/consultations,/api/v1/doctor/consultations/**,/api/v1/video-calls/**,/api/v1/uploads,/api/v1/models
+                - Path=/api/v1/conversations,/api/v1/conversations/**,/api/v1/doctor/consultations,/api/v1/doctor/consultations/**,/api/v1/video-calls/**,/api/v1/uploads,/api/v1/files/**,/api/v1/models
             - id: identity
               uri: ${IDENTITY_URL:http://localhost:3051}
               predicates:

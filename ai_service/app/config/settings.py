@@ -1,7 +1,6 @@
 """Cấu hình service ai: kế thừa phần dùng chung từ `derma_shared`, thêm LLM, CNN và địa chỉ các service khác."""
 
 import logging
-from typing import Literal
 from pathlib import Path
 
 from derma_shared.settings import SharedSettings
@@ -37,7 +36,6 @@ class Settings(SharedSettings):
     AGENT_TRIAGE_ENABLED: bool = True
     AGENT_TRIAGE_MODEL: str = ""
     AGENT_FINALIZE_REPORT_SEARCH_ENABLED: bool = True
-    AGENT_GRAPH_VERSION: Literal["v1", "v2"] = "v2"
     AGENT_MEMORY_BATCH_INTERVAL_MIN: int = 60
     AGENT_MEMORY_BATCH_MAX_PENDING: int = 20
     AGENT_MEMORY_CONSOLIDATE_AT: int = 15

@@ -2,9 +2,14 @@ package vn.derma.consultation.controller;
 
 import lombok.AllArgsConstructor;
 import java.io.IOException;
+import java.net.URI;
 import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -52,5 +57,12 @@ public class UploadController {
         saved.contentType = type;
         saved.size = file.getSize();
         return messages.toFileDto(files.save(saved));
+    }
+
+    // FE hiển thị ảnh bằng <img src=/api/v1/files/{id}/view>; chuyển hướng sang URL ký sẵn của MinIO
+    @GetMapping("/files/{id}/view")
+    ResponseEntity<Void> view(@PathVariable String id) {
+        StoredFile file = files.findById(id).orElseThrow(() -> AppException.notFound("tệp"));
+        return ResponseEntity.status(302).header(HttpHeaders.LOCATION, URI.create(store.presignedUrl(file.storageKey)).toString()).build();
     }
 }

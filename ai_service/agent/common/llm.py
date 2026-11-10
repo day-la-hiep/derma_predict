@@ -8,6 +8,7 @@ from langchain_core.language_models import BaseChatModel
 from app.config.settings import settings
 
 
+
 def get_model(model: str | None = None) -> BaseChatModel:
     """`model` rỗng/None -> dùng `settings.AGENT_MODEL` (fallback toàn hệ thống)."""
     return _get_model_cached(model or settings.AGENT_MODEL)
@@ -63,7 +64,7 @@ def _get_model_cached(model: str) -> BaseChatModel:
         # `reasoning`/`extra_body` tắt "thinking mode": model reasoning-hybrid của
         # DeepSeek (R1/V3.x trở lên) mặc định BẬT thinking, xung đột với tool_choice ép
         # cứng mà `with_structured_output(method="function_calling")` dùng (xem
-        # `hybrid_retrieval/kg.py`/`critic_review`, `graph.py`) — lỗi thật đã gặp: "Thinking
+        # `hybrid_retrieval/kg.py`, `reasoning/structured_llm_calls.py`) — lỗi thật đã gặp: "Thinking
         # mode does not support this tool_choice" (400). Agent này LUÔN cần tool-calling
         # đáng tin cậy nên phải tắt thinking, đổi lấy mất phần suy luận sâu của DeepSeek.
         return init_chat_model(
@@ -80,6 +81,6 @@ def _get_model_cached(model: str) -> BaseChatModel:
         # Bắt buộc để provider TRẢ VỀ nội dung "thinking" (Gemini tự tóm tắt suy nghĩ
         # thành các đoạn ngắn) — `thinking_level` chỉ bật suy luận nội bộ, không tự trả
         # về nếu thiếu `include_thoughts`. Dùng làm dòng tóm tắt "đang làm gì" hiển thị
-        # cho người dùng (event `message.thinking`, `graph.py::emit_reasoning_step`).
+        # cho người dùng (event `message.thinking`).
         include_thoughts=True,
     )

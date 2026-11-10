@@ -5,10 +5,8 @@ from typing import Any, Literal, get_args
 
 from langchain_core.tools import tool
 
-from agent.tools.hybrid_retrieval.bm25 import bm25_search
 from agent.tools.hybrid_retrieval.kg import extract_entities
 from agent.tools.hybrid_retrieval.pipeline import LEG_LIMIT, expand_query, rank_candidates, run_hybrid, to_candidates
-from agent.tools.hybrid_retrieval.semantic import semantic_search as semantic_leg
 from app.deps import get_knowledge_client
 
 logger = logging.getLogger(__name__)
@@ -139,7 +137,7 @@ async def semantic_search(query: str, top_k: int = 5) -> str:
     """
     top_k = min(max(top_k, 1), _MAX_TOP_K)
     try:
-        payloads = await semantic_leg(query, LEG_LIMIT)
+        payloads = await get_knowledge_client().search_semantic(query, LEG_LIMIT)
     except Exception as exc:  # noqa: BLE001  # Qdrant / embedding lỗi -> báo cho model thay vì làm hỏng cả lượt
         logger.error("[semantic_search] lỗi: %s", exc, exc_info=True)
         return _dump({"query": query, "evidence_found": False, "results": [], "notes": [f"semantic_search không dùng được: {type(exc).__name__}: {exc}"]})
@@ -165,7 +163,7 @@ async def keyword_search(query: str, top_k: int = 5) -> str:
     bm25_query = query
     try:
         bm25_query = await _bm25_query(query)
-        payloads = await bm25_search(bm25_query, LEG_LIMIT)
+        payloads = await get_knowledge_client().search_bm25(bm25_query, LEG_LIMIT)
     except Exception as exc:  # noqa: BLE001
         logger.error("[keyword_search] lỗi: %s", exc, exc_info=True)
         return _dump({"query": query, "evidence_found": False, "results": [], "notes": [f"keyword_search không dùng được: {type(exc).__name__}: {exc}"]})

@@ -2,20 +2,19 @@
 
 import asyncio
 import logging
-from typing import Any, Literal, cast
+from typing import Any, cast
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from derma_shared.constants import CONVERSATION_EVENTS_STREAM, STREAM_DONE_SENTINEL
-from langgraph.types import Command, Interrupt
 
-from agent.dto.schemas import TurnRequest
-from agent.graph.chat_graph import chat_graph, config_for
-from agent.graph.common import emit
+from agent.dto.turn_request import TurnRequest
+from agent.common.tracing import build_run_config
+from agent.graph.chat_graph import chat_graph
+from agent.middleware.tool_step_events import emit
 from agent.context.agent_context import AgentContext
-from agent.context.builder import build_context
-from agent.tools.memory import after_turn
+from agent.context.turn_context_builder import build_context
+from agent.tools.patient_memory import after_turn
 from app.deps import get_clinical_client, get_consultation_client, get_redis_client
-from app.dto.chat import ChoiceOption, MessageChoice
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +55,14 @@ async def _stream_graph(
     context: AgentContext,
     req: TurnRequest,
     streamed_text: list[str],
-) -> tuple[AIMessage | None, Interrupt | None]:
-    """Chạy chat graph, forward token; trả `(AIMessage cuối, Interrupt nếu tạm dừng)`."""
-    interrupt: Interrupt | None = None
+) -> AIMessage | None:
+    """Chạy chat graph, forward token; trả AIMessage cuối của lượt."""
     final_message: AIMessage | None = None
     streamed = False
 
     async for mode, chunk in chat_graph.astream(  # pyright: ignore[reportUnknownMemberType]
         input_,
-        config=config_for(req.conversation_id),
+        config=build_run_config(req.conversation_id),
         context=context,
         stream_mode=["updates", "custom"],
     ):
@@ -80,12 +78,8 @@ async def _stream_graph(
                 )
             continue
 
-        # mode == "updates": state diff sau mỗi node của chat graph — dùng để phát hiện interrupt (tool `ask_user`) và tóm `AIMessage`
-        # cuối cùng (LangGraph đã gộp sẵn, không cần tự cộng dồn từng chunk). Token không đi qua đây mà qua mode "custom" ở trên.
+        # mode == "updates": state diff sau mỗi node của chat graph — dùng để tóm `AIMessage` cuối cùng (LangGraph đã gộp sẵn, không cần tự cộng dồn từng chunk). Token không đi qua đây mà qua mode "custom" ở trên.
         update = cast(dict[str, Any], chunk)
-        if "__interrupt__" in update:
-            interrupt = cast(tuple[Interrupt, ...], update["__interrupt__"])[0]
-            break
         for node in _ANSWER_NODES:
             node_update = update.get(node)
             if node_update and node_update.get("messages"):
@@ -95,48 +89,13 @@ async def _stream_graph(
 
     # Câu trả lời của triage không đi qua token streaming (nằm trong tham số tool của lần phân loại) — phát một lần để FE hiển thị
     # như các câu trả lời khác.
-    if (
-        interrupt is None
-        and final_message is not None
-        and not streamed
-        and final_message.text
-    ):
+    if final_message is not None and not streamed and final_message.text:
         await emit(
             req.conversation_id,
             {"type": "message.delta", "delta": final_message.text, **base},
         )
 
-    return final_message, interrupt
-
-
-async def _finish_with_question(
-    base: dict[str, Any],
-    req: TurnRequest,
-    interrupt: Interrupt,
-    context: AgentContext,
-) -> None:
-    """Turn tạm dừng ở tool `ask_user`"""
-    raw: Any = interrupt.value
-    payload: dict[str, Any] = (
-        cast("dict[str, Any]", raw) if isinstance(raw, dict) else {}
-    )
-    choice = MessageChoice(
-        question_id=interrupt.id,
-        question=str(payload.get("question", "")),
-        options=[
-            ChoiceOption(id=f"opt-{i}", label=str(label))
-            for i, label in enumerate(payload.get("options") or [])
-        ],
-    )
-    choice_json = choice.model_dump(mode="json")
-    await finish_turn(
-        req,
-        {"type": "message.question", "choice": choice_json, **base},
-        content="",
-        status="question",
-        choice=choice_json,
-        reasoning=context.reasoning_steps,
-    )
+    return final_message
 
 
 async def _drive(req: TurnRequest, input_: object) -> None:
@@ -152,7 +111,7 @@ async def _drive(req: TurnRequest, input_: object) -> None:
 
     streamed_text: list[str] = []
     try:
-        final_message, interrupt = await _stream_graph(
+        final_message = await _stream_graph(
             input_, base, context, req, streamed_text
         )
     except asyncio.CancelledError:
@@ -163,7 +122,6 @@ async def _drive(req: TurnRequest, input_: object) -> None:
             req,
             {"type": "message.done", "content": partial, **base},
             content=partial,
-            status="done",
             reasoning=context.reasoning_steps,
             context=context,
         )
@@ -176,14 +134,9 @@ async def _drive(req: TurnRequest, input_: object) -> None:
             req,
             {"type": "message.done", "content": _ERROR_TEXT, **base},
             content=_ERROR_TEXT,
-            status="done",
             reasoning=context.reasoning_steps,
             context=context,
         )
-        return
-
-    if interrupt is not None:
-        await _finish_with_question(base, req, interrupt, context)
         return
 
     answer = final_message.text if final_message is not None else ""
@@ -191,7 +144,6 @@ async def _drive(req: TurnRequest, input_: object) -> None:
         req,
         {"type": "message.done", "content": answer, **base},
         content=answer,
-        status="done",
         reasoning=context.reasoning_steps,
         context=context,
     )
@@ -200,7 +152,7 @@ async def _drive(req: TurnRequest, input_: object) -> None:
 
 def _schedule_memory_update(req: TurnRequest, context: AgentContext) -> None:
     """Cập nhật memory chạy nền, tách khỏi luồng trả lời: câu trả lời đã gửi xong, lượt không phải chờ bước này."""
-    text = req.content if req.type == "turn" else req.answer
+    text = req.content
     store = chat_graph.store
     if not text or store is None or not context.patient_profile_id:
         return
@@ -217,18 +169,11 @@ async def handle_turn(req: TurnRequest) -> None:
     )
 
 
-async def handle_resume(req: TurnRequest) -> None:
-    """Tiếp tục turn đang dừng ở `ask_user` với câu trả lời của người dùng."""
-    await _drive(req, Command(resume=req.answer))
-
-
 async def finish_turn(
     req: TurnRequest,
     event: dict[str, Any],
     *,
     content: str,
-    status: Literal["done", "question"],
-    choice: dict[str, Any] | None = None,
     reasoning: list[dict[str, Any]] | None = None,
     context: AgentContext | None = None,
 ) -> None:
@@ -242,8 +187,8 @@ async def finish_turn(
     result = {
         "conversation_id": req.conversation_id,
         "content": content,
-        "status": status,
-        "choice": choice,
+        "status": "done",
+        "choice": None,
         "reasoning": reasoning or None,
     }
     try:

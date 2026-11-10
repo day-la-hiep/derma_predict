@@ -8,8 +8,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from agent.graph.chat_graph import chat_graph
-from agent.persistence import postgres_persistence
-from app.api.internal_api import router as internal_router
+from agent.langgraph_postgres_persistence import postgres_persistence
+from app.api import router as internal_router
 from app.config.settings import log_startup_infra, settings
 from app.deps import close_clients
 

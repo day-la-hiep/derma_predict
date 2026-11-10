@@ -6,9 +6,9 @@ from unittest.mock import patch
 
 from langgraph.store.memory import InMemoryStore
 
-from agent.middleware.common.model import load_memory
-from agent.tools import memory as mem
-from agent.tools.memory import (
+from agent.middleware.patient_memory_prompt import load_memory
+from agent.tools import patient_memory as mem
+from agent.tools.patient_memory import (
     ConsolidatedMemory,
     MemoryOp,
     MemoryOps,
@@ -51,7 +51,7 @@ class FakeModel:
 
 def fake_llm(*results: Any) -> tuple[Any, FakeStructured]:
     structured = FakeStructured(list(results))
-    return patch("agent.tools.memory.get_model", return_value=FakeModel(structured)), structured
+    return patch("agent.tools.patient_memory.get_model", return_value=FakeModel(structured)), structured
 
 
 async def seed(store: InMemoryStore, profile: str, *contents: str) -> None:
@@ -193,7 +193,7 @@ class AfterTurnTest(unittest.TestCase):
             async def aget(self, *args: Any, **kwargs: Any) -> Any:
                 raise RuntimeError("down")
 
-        with self.assertLogs("agent.tools.memory", level="ERROR"):
+        with self.assertLogs("agent.tools.patient_memory", level="ERROR"):
             run(after_turn(Broken(), "A", "c1", "tôi dị ứng"))
 
 

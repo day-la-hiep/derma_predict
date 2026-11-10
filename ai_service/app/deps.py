@@ -4,9 +4,7 @@ import httpx
 from derma_shared.minio_client import MinioClient
 from derma_shared.redis_client import RedisClient
 
-from app.clients.clinical_client import ClinicalClient
-from app.clients.consultation_client import ConsultationClient
-from app.clients.knowledge_client import KnowledgeClient
+from app.clients import ClinicalClient, ConsultationClient, KnowledgeClient
 from app.config.settings import settings
 from app.infra.attachment_store import AttachmentStore
 

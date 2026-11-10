@@ -1,7 +1,7 @@
 .PHONY: infra infra-down services-db services-up services-down services-build test \
         identity consultation clinical gateway knowledge knowledge-worker knowledge-migrate ai frontend \
         identity-test consultation-test clinical-test gateway-test knowledge-test ai-test shared-test \
-        reindex-cases data-export data-restore
+        reindex-cases data-export data-restore reseed-users
 
 # ---- hạ tầng (Postgres, Redis, RabbitMQ, Qdrant, Neo4j, MinIO, coturn) ----
 infra:
@@ -13,6 +13,10 @@ infra-down:
 # tạo database identity/consultation/clinical/knowledge/ai trong Postgres đang chạy; chạy lại không sao, không đụng database có sẵn
 services-db:
 	sh scripts/init-service-databases.sh
+
+# xoá dữ liệu người dùng (identity/consultation/clinical) rồi nạp lại seed demo; hỏi xác nhận, thêm ARGS=--yes để bỏ hỏi
+reseed-users:
+	sh scripts/reseed-user-data.sh $(ARGS)
 
 # xuất / khôi phục 4 volume (postgres, minio, qdrant, neo4j) vào scripts/backup; tắt stack trước (make infra-down)
 data-export:
@@ -47,9 +51,9 @@ knowledge-migrate:
 ai:
 	cd ai_service && uv run python main.py
 
-# FE gọi qua gateway (:3040); đổi BACKEND_URL nếu gateway chạy chỗ khác
+# FE gọi qua gateway (:3040, mặc định trong next.config.ts); đổi BACKEND_URL trong fe/.env.local. Không gán biến ở đây vì biến process đè .env.local
 frontend:
-	cd fe && BACKEND_URL=$(or $(BACKEND_URL),http://localhost:3040) pnpm dev
+	cd fe && pnpm dev
 
 # nạp lại Qdrant + đồ thị bệnh nhân từ báo cáo kết luận đã chốt ở clinical (knowledge phải đang chạy)
 reindex-cases:
@@ -82,7 +86,7 @@ knowledge-test:
 	cd knowledge_service && uv run python -m unittest discover -s tests -t . && uv run python -m unittest discover -s pipeline/document_ingest/tests -t .
 
 ai-test:
-	cd ai_service && uv run python -m unittest discover -s tests -t . && uv run python -m unittest discover -s agent/graph/v2/tests -t .
+	cd ai_service && uv run python -m unittest discover -s tests -t . && uv run python -m unittest discover -s agent/graph/tests -t .
 
 shared-test:
 	cd shared && uv run python -m unittest tests.test_shared

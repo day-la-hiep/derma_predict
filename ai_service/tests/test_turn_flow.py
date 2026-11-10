@@ -7,10 +7,10 @@ from fastapi.testclient import TestClient
 
 from agent import turn
 from agent.context.agent_context import AgentContext
-from agent.context.builder import build_context
-from agent.dto.schemas import TurnAttachment, TurnRequest
-from agent.tools.case_search import search_similar_cases
-from app import turn_runner
+from agent.context.turn_context_builder import build_context
+from agent.dto.turn_request import TurnAttachment, TurnRequest
+from agent.tools.similar_case_search import search_similar_cases
+from app import api as turn_runner
 from main import app as main_app
 from app.config.settings import settings
 
@@ -39,14 +39,14 @@ class FinishTurnTest(unittest.TestCase):
             patcher = patch.object(turn, target, lambda v=value: v)
             patcher.start()
             self.addCleanup(patcher.stop)
-        patcher = patch("agent.graph.common.get_redis_client", lambda: self.redis)
+        patcher = patch("agent.middleware.tool_step_events.get_redis_client", lambda: self.redis)
         patcher.start()
         self.addCleanup(patcher.stop)
 
     def test_done_turn_streams_event_then_saves_clinical_then_replies(self) -> None:
         context = AgentContext(user_id="u", conversation_id="c1", patient_profile_id="pp-1")
         context.turn_facts = [{"template_label": "Ngứa"}]
-        asyncio.run(turn.finish_turn(make_request(), {"type": "message.done", "content": "ok"}, content="ok", status="done", context=context))
+        asyncio.run(turn.finish_turn(make_request(), {"type": "message.done", "content": "ok"}, content="ok", context=context))
         self.assertEqual([e[0] for e in self.redis.events], ["conversation:events:c1"] * 2)
         self.assertEqual(self.redis.events[1][1], "[DONE]")
         self.clinical.apply_turn.assert_awaited_once()
@@ -60,13 +60,8 @@ class FinishTurnTest(unittest.TestCase):
         context = AgentContext(user_id="u", conversation_id="c1")
         context.turn_hypotheses = [{"disease": "x"}]
         with self.assertLogs("agent.turn", level="ERROR"):
-            asyncio.run(turn.finish_turn(make_request(), {"type": "message.done"}, content="ok", status="done", context=context))
+            asyncio.run(turn.finish_turn(make_request(), {"type": "message.done"}, content="ok", context=context))
         self.consultation.post_turn_result.assert_awaited_once()
-
-    def test_question_turn_skips_clinical_when_nothing_to_save(self) -> None:
-        asyncio.run(turn.finish_turn(make_request(), {"type": "message.question"}, content="", status="question", choice={"question": "?"}))
-        self.clinical.apply_turn.assert_not_awaited()
-        self.assertEqual(self.consultation.post_turn_result.await_args.args[1]["choice"], {"question": "?"})
 
 
 class BuildContextTest(unittest.TestCase):
@@ -75,7 +70,7 @@ class BuildContextTest(unittest.TestCase):
         consultation.get_conversation.return_value = {"user_id": "u1", "patient_profile_id": "pp-1", "model": "gemma4-26b"}
         clinical.get_patient_context.return_value = {"facts": [{"label": "Ngứa", "fact_type": "symptom", "detail": "đêm", "body_site": "tay"}]}
         req = make_request(attached_files=[TurnAttachment(file_name="a.jpg", content_type="image/jpeg", storage_key="k/a.jpg")])
-        with patch("agent.context.builder.get_consultation_client", lambda: consultation), patch("agent.context.builder.get_clinical_client", lambda: clinical):
+        with patch("agent.context.turn_context_builder.get_consultation_client", lambda: consultation), patch("agent.context.turn_context_builder.get_clinical_client", lambda: clinical):
             context = asyncio.run(build_context(req))
         self.assertEqual((context.user_id, context.patient_profile_id, context.image_keys), ("u1", "pp-1", ["k/a.jpg"]))
         self.assertEqual(context.model, settings.AGENT_MODEL_CHOICES["gemma4-26b"])
@@ -88,13 +83,13 @@ class BuildContextTest(unittest.TestCase):
         self.assertEqual((context.user_id, context.known_facts), ("", []))
         consultation.get_conversation.return_value = {"user_id": "u", "patient_profile_id": "pp-1", "model": "x"}
         clinical.get_patient_context.side_effect = RuntimeError("down")
-        with self.assertLogs("agent.context.builder", level="WARNING"):
+        with self.assertLogs("agent.context.turn_context_builder", level="WARNING"):
             context = asyncio.run(_build_with(consultation, clinical))
         self.assertEqual(context.known_facts, [])
 
 
 async def _build_with(consultation: Any, clinical: Any) -> AgentContext:
-    with patch("agent.context.builder.get_consultation_client", lambda: consultation), patch("agent.context.builder.get_clinical_client", lambda: clinical):
+    with patch("agent.context.turn_context_builder.get_consultation_client", lambda: consultation), patch("agent.context.turn_context_builder.get_clinical_client", lambda: clinical):
         return await build_context(make_request())
 
 
@@ -102,7 +97,7 @@ class CaseSearchTest(unittest.TestCase):
     def test_maps_knowledge_payload_to_case_dict(self) -> None:
         knowledge = AsyncMock()
         knowledge.search_semantic.return_value = [{"case_id": "r1", "diagnosis": "Eczema", "reasoning": "khô da", "instructions": ["bôi kem"], "notes": "n", "images": [{"storage_key": "k"}]}]
-        with patch("agent.tools.case_search.get_knowledge_client", lambda: knowledge):
+        with patch("agent.tools.similar_case_search.get_knowledge_client", lambda: knowledge):
             cases = asyncio.run(search_similar_cases("eczema", 3))
         knowledge.search_semantic.assert_awaited_once_with("eczema", 3, corpus="finalize_report")
         self.assertEqual((cases[0]["doctor_reasoning"], cases[0]["treatment_instructions"], cases[0]["images"]), ("khô da", ["bôi kem"], [{"storage_key": "k"}]))
@@ -119,9 +114,8 @@ class TurnRunnerAndApiTest(unittest.TestCase):
                 started.set()
                 await asyncio.sleep(30)
 
-            with patch.object(turn_runner, "handle_turn", slow_turn), patch.object(turn_runner, "handle_resume", AsyncMock(side_effect=lambda r: calls.append("resume"))), \
+            with patch.object(turn_runner, "handle_turn", slow_turn), \
                     patch.object(turn_runner, "handle_consultation_report", AsyncMock(side_effect=lambda r: calls.append("report"))):
-                await turn_runner.run_turn(make_request(type="resume", message_id="m2", answer="a"))
                 await turn_runner.run_turn(make_request(type="consultation_report", message_id="m3"))
                 task = asyncio.create_task(turn_runner.run_turn(make_request(message_id="m1")))
                 await started.wait()
@@ -132,18 +126,18 @@ class TurnRunnerAndApiTest(unittest.TestCase):
                 return calls, cancelled, turn_runner.cancel_turn("m1")
 
         calls, cancelled, again = asyncio.run(scenario())
-        self.assertEqual(calls, ["resume", "report", "turn"])
+        self.assertEqual(calls, ["report", "turn"])
         self.assertEqual((cancelled, again), (True, False))
 
     def test_api_requires_internal_key_and_accepts_turn(self) -> None:
         client = TestClient(main_app)  # không vào `with`: không chạy lifespan (Postgres)
         body = make_request().model_dump()
         self.assertEqual(client.post("/internal/turns", json=body).status_code, 403)
-        with patch("app.api.internal_api.start_turn") as start:
+        with patch("app.api.start_turn") as start:
             r = client.post("/internal/turns", json=body, headers=HEADERS)
         self.assertEqual((r.status_code, r.json()), (202, {"accepted": True}))
         self.assertEqual(start.call_args.args[0].message_id, "m1")
-        with patch("app.api.internal_api.cancel_turn", return_value=True):
+        with patch("app.api.cancel_turn", return_value=True):
             self.assertEqual(client.post("/internal/turns/m1/cancel", headers=HEADERS).json(), {"cancelled": True})
 
 

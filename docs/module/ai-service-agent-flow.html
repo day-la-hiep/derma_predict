@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ai_service: code và flow của agent</title>
+<style>
+:root{
+  --bg:#fbfaf7; --fg:#1f2328; --muted:#5b6470; --line:#d9d5cc; --card:#ffffff;
+  --accent:#0f6b5c; --accent-soft:#dff1ec; --warn:#9a5b00; --warn-soft:#fbefd9;
+  --code-bg:#f1efe9; --node:#ffffff; --node-line:#7a8a86; --lane-a:#eef6f3; --lane-b:#f4f1fa;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14171a; --fg:#e6e8ea; --muted:#9aa4af; --line:#2c3338; --card:#1b1f23;
+    --accent:#5cc7b0; --accent-soft:#1c3a34; --warn:#f0b35a; --warn-soft:#3a2d17;
+    --code-bg:#20252a; --node:#1b1f23; --node-line:#5d6b68; --lane-a:#18262a; --lane-b:#221f2e;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14171a; --fg:#e6e8ea; --muted:#9aa4af; --line:#2c3338; --card:#1b1f23;
+  --accent:#5cc7b0; --accent-soft:#1c3a34; --warn:#f0b35a; --warn-soft:#3a2d17;
+  --code-bg:#20252a; --node:#1b1f23; --node-line:#5d6b68; --lane-a:#18262a; --lane-b:#221f2e;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:32px 16px 80px}
+h1{font-size:1.9rem;margin:0 0 6px}
+h2{font-size:1.35rem;margin:44px 0 10px;padding-top:10px;border-top:1px solid var(--line)}
+h3{font-size:1.05rem;margin:22px 0 6px}
+p{margin:8px 0}
+.sub{color:var(--muted);margin:0 0 20px}
+code{background:var(--code-bg);padding:1px 6px;border-radius:4px;font:0.88em ui-monospace,Menlo,Consolas,monospace;word-break:break-word}
+pre{background:var(--code-bg);padding:12px 14px;border-radius:8px;overflow-x:auto;font:0.85rem/1.5 ui-monospace,Menlo,Consolas,monospace}
+pre code{background:none;padding:0}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:0.93rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--accent-soft)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:12px 0}
+.note{background:var(--warn-soft);border-left:4px solid var(--warn);padding:10px 14px;border-radius:6px;margin:14px 0}
+.ok{background:var(--accent-soft);border-left:4px solid var(--accent);padding:10px 14px;border-radius:6px;margin:14px 0}
+nav{display:flex;flex-wrap:wrap;gap:6px 14px;margin:14px 0 6px;font-size:0.92rem}
+nav a{color:var(--accent);text-decoration:none}
+nav a:hover{text-decoration:underline}
+svg{width:100%;height:auto;display:block;margin:12px 0}
+svg text{fill:var(--fg);font:13px system-ui,sans-serif}
+svg .box{fill:var(--node);stroke:var(--node-line);stroke-width:1.3}
+svg .hot{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+svg .lane-a{fill:var(--lane-a);stroke:var(--line)}
+svg .lane-b{fill:var(--lane-b);stroke:var(--line)}
+svg .edge{stroke:var(--node-line);stroke-width:1.5;fill:none}
+svg .dash{stroke:var(--node-line);stroke-width:1.4;fill:none;stroke-dasharray:5 4}
+svg .muted{fill:var(--muted);font-size:11.5px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:700px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>ai_service: code và flow của agent</h1>
+<p class="sub">Tài liệu cho bản hiện tại của <code>ai_service/</code> (Python, FastAPI + LangGraph, cổng 3055). Kết quả của agent chỉ là gợi ý hỗ trợ, <b>không phải chẩn đoán y khoa</b>.</p>
+
+<nav>
+  <a href="#overview">1. Tổng quan</a>
+  <a href="#layout">2. Cấu trúc code</a>
+  <a href="#lifecycle">3. Vòng đời một lượt</a>
+  <a href="#chat-graph">4. Chat graph</a>
+  <a href="#pre-graph">5. Graph tiền chẩn đoán</a>
+  <a href="#nodes">6. Các node</a>
+  <a href="#evidence">7. Bằng chứng E#/H#</a>
+  <a href="#image">8. Làn ảnh</a>
+  <a href="#retrieval">9. Tra cứu</a>
+  <a href="#state-ctx">10. State và Context</a>
+  <a href="#memory">11. Memory</a>
+  <a href="#events">12. Event</a>
+  <a href="#limits">13. Giới hạn</a>
+</nav>
+
+<h2 id="overview">1. Tổng quan</h2>
+<p><code>ai_service</code> nhận một lượt chat từ consultation, chạy agent, đẩy từng bước ra Redis Stream để FE hiển thị realtime, rồi trả kết quả cuối về consultation và kết quả lâm sàng về clinical. Nó không ghi bảng của service khác trực tiếp; chỉ gọi HTTP nội bộ (header <code>X-Internal-Key</code>).</p>
+<svg viewBox="0 0 900 170" role="img" aria-label="Sơ đồ ai_service với các service xung quanh">
+  <rect class="box" x="10" y="60" width="140" height="50" rx="8"/><text x="80" y="90" text-anchor="middle">consultation :3052</text>
+  <rect class="hot" x="290" y="45" width="190" height="80" rx="8"/><text x="385" y="80" text-anchor="middle">ai_service :3055</text><text x="385" y="100" text-anchor="middle" class="muted">POST /internal/turns</text>
+  <rect class="box" x="640" y="5" width="130" height="44" rx="8"/><text x="705" y="32" text-anchor="middle">clinical :3053</text>
+  <rect class="box" x="640" y="62" width="130" height="44" rx="8"/><text x="705" y="89" text-anchor="middle">knowledge :3054</text>
+  <rect class="box" x="640" y="119" width="130" height="44" rx="8"/><text x="705" y="146" text-anchor="middle">Redis · Postgres · MinIO</text>
+  <path class="edge" d="M150 85 L290 85"/><text x="220" y="76" text-anchor="middle" class="muted">1. lượt chat (202)</text>
+  <path class="edge" d="M480 70 L640 27"/><text x="565" y="38" text-anchor="middle" class="muted">kết quả lâm sàng</text>
+  <path class="edge" d="M480 85 L640 84"/><text x="560" y="78" text-anchor="middle" class="muted">tra cứu</text>
+  <path class="edge" d="M480 100 L640 140"/><text x="560" y="131" text-anchor="middle" class="muted">event, ảnh, checkpoint</text>
+  <path class="dash" d="M290 115 L150 100"/><text x="215" y="124" text-anchor="middle" class="muted">kết quả cuối</text>
+</svg>
+
+<h2 id="layout">2. Cấu trúc code</h2>
+<table>
+<tr><th>Thư mục / file</th><th>Vai trò</th></tr>
+<tr><td><code>main.py</code></td><td>Khởi tạo FastAPI. Trong <code>lifespan</code> mở Postgres rồi gán <code>store</code> và <code>checkpointer</code> cho <code>chat_graph</code>.</td></tr>
+<tr><td><code>app/api.py</code></td><td>Hai endpoint: <code>POST /internal/turns</code> (trả 202 ngay) và <code>POST /internal/turns/{id}/cancel</code>. Chứa lock theo hội thoại, bản đồ task đang chạy, và <code>require_internal_key</code>.</td></tr>
+<tr><td><code>app/clients.py</code>, <code>app/deps.py</code></td><td>Ba client HTTP (clinical, consultation, knowledge) và các hàm <code>get_*_client</code> có cache.</td></tr>
+<tr><td><code>app/config/settings.py</code></td><td>Cấu hình: model, cờ triage, memory, đường dẫn checkpoint CNN.</td></tr>
+<tr><td><code>agent/turn.py</code></td><td>Điều phối một lượt: dựng context, stream graph, phát event, kết thúc lượt.</td></tr>
+<tr><td><code>agent/graph/</code></td><td>Chỉ lắp graph và node: <code>chat_graph</code>, <code>pre_diagnosis_graph</code>, <code>pre_diagnosis_nodes</code>, <code>skin_image_nodes</code>, <code>intent_triage_node</code>, <code>pre_diagnosis_schemas</code>.</td></tr>
+<tr><td><code>agent/state/</code></td><td>Kiểu state: <code>ChatState</code>, <code>PreDiagnosisState</code>, <code>SkinImageState</code>.</td></tr>
+<tr><td><code>agent/context/</code></td><td><code>AgentContext</code> (dữ liệu một lượt) và <code>turn_context_builder</code>.</td></tr>
+<tr><td><code>agent/reasoning/</code></td><td>Logic suy luận thuần: <code>retrieval_evidence</code>, <code>patient_fact_extractor</code>, <code>structured_llm_calls</code>.</td></tr>
+<tr><td><code>agent/tools/</code></td><td>Tool cho LLM (<code>hybrid_retrieval/</code>, <code>query_document_graph</code>, <code>search_finalize_report</code>), package <code>skin_image/</code>, <code>patient_memory</code>, <code>pre_diagnosis_tool_registry</code>.</td></tr>
+<tr><td><code>agent/prompt/</code></td><td>Prompt và hàm dựng chuỗi đưa vào prompt.</td></tr>
+<tr><td><code>agent/middleware/</code></td><td>Phát event bước tool (<code>tool_step_events</code>) và nạp memory vào prompt (<code>patient_memory_prompt</code>).</td></tr>
+<tr><td><code>agent/common/</code></td><td>Dùng chung: <code>llm</code> (factory model), <code>messages</code>, <code>clinical_codes</code>, <code>tracing</code>, <code>vietnamese_text</code>.</td></tr>
+<tr><td><code>agent/handler/consultation_report.py</code></td><td>Lượt loại <code>consultation_report</code>: sinh báo cáo tiền tư vấn cho bác sĩ, không đi qua graph.</td></tr>
+<tr><td><code>agent/langgraph_postgres_persistence.py</code></td><td>Mở <code>AsyncPostgresStore</code> và <code>AsyncPostgresSaver</code> trong schema <code>langgraph</code>.</td></tr>
+</table>
+
+<h2 id="lifecycle">3. Vòng đời một lượt</h2>
+<svg viewBox="0 0 900 360" role="img" aria-label="Vòng đời một lượt chat">
+  <rect class="box" x="10" y="10" width="270" height="52" rx="8"/><text x="145" y="32" text-anchor="middle">consultation</text><text x="145" y="50" text-anchor="middle" class="muted">POST /internal/turns (TurnRequest)</text>
+  <rect class="hot" x="330" y="10" width="270" height="52" rx="8"/><text x="465" y="32" text-anchor="middle">app/api.py: start_turn</text><text x="465" y="50" text-anchor="middle" class="muted">trả 202, chạy nền bằng asyncio task</text>
+  <rect class="box" x="330" y="90" width="270" height="52" rx="8"/><text x="465" y="112" text-anchor="middle">run_turn</text><text x="465" y="130" text-anchor="middle" class="muted">lock theo conversation_id, request_id log</text>
+  <rect class="box" x="650" y="90" width="240" height="52" rx="8"/><text x="770" y="112" text-anchor="middle">type = consultation_report</text><text x="770" y="130" text-anchor="middle" class="muted">handle_consultation_report</text>
+  <rect class="hot" x="330" y="170" width="270" height="52" rx="8"/><text x="465" y="192" text-anchor="middle">turn._drive (type = turn)</text><text x="465" y="210" text-anchor="middle" class="muted">build_context, phát message.started</text>
+  <rect class="box" x="330" y="250" width="270" height="52" rx="8"/><text x="465" y="272" text-anchor="middle">chat_graph.astream</text><text x="465" y="290" text-anchor="middle" class="muted">token → message.delta, bước → tool_*</text>
+  <rect class="box" x="10" y="250" width="270" height="94" rx="8"/><text x="145" y="272" text-anchor="middle">finish_turn</text><text x="145" y="291" text-anchor="middle" class="muted">1. message.done + sentinel (Redis)</text><text x="145" y="308" text-anchor="middle" class="muted">2. apply_turn → clinical (nếu có dữ liệu)</text><text x="145" y="325" text-anchor="middle" class="muted">3. post_turn_result → consultation</text>
+  <rect class="box" x="650" y="250" width="240" height="52" rx="8"/><text x="770" y="272" text-anchor="middle">_schedule_memory_update</text><text x="770" y="290" text-anchor="middle" class="muted">nền, sau khi đã trả lời</text>
+  <path class="edge" d="M280 36 L330 36"/><path class="edge" d="M465 62 L465 90"/><path class="edge" d="M465 142 L465 170"/><path class="edge" d="M465 222 L465 250"/>
+  <path class="edge" d="M600 116 L650 116"/><path class="edge" d="M330 276 L280 290"/><path class="edge" d="M600 276 L650 276"/>
+</svg>
+<ul>
+<li><b>Không chạy hai lượt cùng hội thoại.</b> <code>run_turn</code> giữ một <code>asyncio.Lock</code> theo <code>conversation_id</code>, vì checkpoint dùng chung <code>thread_id</code>. Consultation cũng đã chặn tin mới khi lượt đang chạy; lock là lớp bảo vệ cuối.</li>
+<li><b>Dừng lượt.</b> <code>cancel_turn(message_id)</code> huỷ đúng task đó. <code>_drive</code> bắt <code>CancelledError</code>, giữ phần đã stream và đóng lượt bình thường.</li>
+<li><b>Lỗi trong graph.</b> Không để lượt treo: coi như xong với nội dung báo lỗi chung.</li>
+<li><b>Lỗi khi gửi kết quả.</b> Ghi <code>logger.error</code> nhưng không làm mất câu trả lời đã stream. Lỗi ghi clinical cũng vậy.</li>
+</ul>
+
+<h2 id="chat-graph">4. Chat graph</h2>
+<p>Graph ngoài cùng (<code>graph/chat_graph.py</code>) rất ngắn:</p>
+<svg viewBox="0 0 700 110" role="img" aria-label="Chat graph">
+  <rect class="box" x="10" y="35" width="90" height="40" rx="20"/><text x="55" y="60" text-anchor="middle">START</text>
+  <rect class="hot" x="170" y="35" width="130" height="40" rx="8"/><text x="235" y="60" text-anchor="middle">triage</text>
+  <rect class="hot" x="400" y="35" width="150" height="40" rx="8"/><text x="475" y="60" text-anchor="middle">pre_diagnosis</text>
+  <rect class="box" x="610" y="35" width="80" height="40" rx="20"/><text x="650" y="60" text-anchor="middle">END</text>
+  <path class="edge" d="M100 55 L170 55"/><path class="edge" d="M300 55 L400 55"/><text x="350" y="46" text-anchor="middle" class="muted">diagnose</text>
+  <path class="edge" d="M550 55 L610 55"/>
+  <path class="dash" d="M235 35 C235 5 650 5 650 35"/><text x="440" y="14" text-anchor="middle" class="muted">answer (trả lời luôn)</text>
+</svg>
+<ul>
+<li><b>triage</b> (<code>graph/intent_triage_node.py</code>) lọc intent: chào hỏi, câu hỏi chung thì trả lời luôn (<code>route=answer</code>), câu hỏi y khoa thì sang <code>pre_diagnosis</code>. Tin có ảnh đính kèm (dòng <code>[Ảnh đính kèm]</code>) luôn đi tiếp, khỏi tốn một lần gọi LLM. Triage hỏng thì chuyển sang <code>pre_diagnosis</code>, không chặn câu hỏi y khoa. Tắt bằng <code>AGENT_TRIAGE_ENABLED</code>.</li>
+<li><b>pre_diagnosis</b> là node bọc graph con. Nó đọc stream của graph con (<code>subgraphs=True</code>), chuyển token của node <code>answer</code> ra kênh <code>custom</code> để <code>turn.py</code> phát <code>message.delta</code>, rồi trả lại tin nhắn mới và snapshot <code>diag</code>.</li>
+<li><code>diag</code> giữ các khoá <code>facts, facts_upto, plan, unsupported, evidence, evidence_status, done_calls, call_results</code> qua các lượt, trong checkpoint theo hội thoại.</li>
+</ul>
+
+<h2 id="pre-graph">5. Graph tiền chẩn đoán</h2>
+<p>Sau <code>load_memory</code>, hai làn chạy song song. Mỗi làn là một subgraph riêng để không chặn nhau (trong graph phẳng, node cùng một bước chặn bước kế).</p>
+<svg viewBox="0 0 900 460" role="img" aria-label="Graph tiền chẩn đoán gồm làn chữ và làn ảnh">
+  <rect class="box" x="10" y="200" width="100" height="40" rx="20"/><text x="60" y="225" text-anchor="middle">START</text>
+  <rect class="hot" x="150" y="200" width="130" height="40" rx="8"/><text x="215" y="225" text-anchor="middle">load_memory</text>
+  <rect class="lane-a" x="320" y="10" width="570" height="290" rx="10"/><text x="335" y="30" class="muted">làn chữ: text_flow</text>
+  <rect class="lane-b" x="320" y="320" width="570" height="125" rx="10"/><text x="335" y="340" class="muted">làn ảnh: image_flow (chỉ khi có ảnh, tối đa 3)</text>
+
+  <rect class="box" x="335" y="45" width="110" height="38" rx="8"/><text x="390" y="69" text-anchor="middle">extract_facts</text>
+  <rect class="box" x="480" y="45" width="70" height="38" rx="8"/><text x="515" y="69" text-anchor="middle">plan</text>
+  <rect class="box" x="590" y="45" width="110" height="38" rx="8"/><text x="645" y="69" text-anchor="middle">choose_tools</text>
+  <rect class="box" x="740" y="45" width="70" height="38" rx="8"/><text x="775" y="69" text-anchor="middle">tools</text>
+  <rect class="hot" x="700" y="130" width="130" height="38" rx="8"/><text x="765" y="154" text-anchor="middle">label_evidence</text>
+  <rect class="box" x="560" y="130" width="90" height="38" rx="8"/><text x="605" y="154" text-anchor="middle">reflect</text>
+  <rect class="box" x="480" y="230" width="90" height="38" rx="8"/><text x="525" y="254" text-anchor="middle">answer</text>
+  <path class="edge" d="M445 64 L480 64"/><path class="edge" d="M550 64 L590 64"/><path class="edge" d="M700 64 L740 64"/>
+  <path class="edge" d="M775 83 L765 130"/><path class="edge" d="M700 149 L650 149"/>
+  <path class="edge" d="M605 168 L525 230"/><text x="560" y="205" class="muted">hết vòng / đủ</text>
+  <path class="dash" d="M590 140 C560 110 640 100 645 83"/><text x="610" y="105" class="muted">tra cứu thêm</text>
+  <path class="dash" d="M515 83 L515 230"/><text x="520" y="170" class="muted">không có truy vấn</text>
+
+  <rect class="box" x="335" y="360" width="110" height="38" rx="8"/><text x="390" y="384" text-anchor="middle">image_cnn</text>
+  <rect class="box" x="335" y="405" width="110" height="30" rx="8"/><text x="390" y="425" text-anchor="middle">image_vision</text>
+  <rect class="box" x="520" y="380" width="110" height="38" rx="8"/><text x="575" y="404" text-anchor="middle">image_done</text>
+  <path class="edge" d="M445 379 L520 392"/><path class="edge" d="M445 420 L520 408"/>
+  <path class="dash" d="M630 399 C720 399 770 340 768 168"/><text x="790" y="260" class="muted">ctx.image_result</text>
+
+  <path class="edge" d="M110 220 L150 220"/><path class="edge" d="M280 215 L335 70"/><path class="edge" d="M280 230 L335 385"/>
+</svg>
+<ul>
+<li><b>Trần vòng tra cứu:</b> <code>MAX_TOOL_ROUNDS = 3</code> (<code>pre_diagnosis_nodes.py</code>). Model nhỏ cứ chọn tra cứu tiếp, mỗi vòng mất 30 đến 60 giây; hết vòng thì <code>reflect</code> ép sang <code>answer</code>.</li>
+<li><b>Hai đường tắt sang answer:</b> <code>plan</code> không sinh truy vấn nào (chào hỏi, hoặc bằng chứng đã đủ), hoặc <code>reflect</code> quyết định trả lời.</li>
+<li>Chỉ <code>answer</code> nói chuyện với người bệnh. Các node còn lại xuất lời gọi hàm có cấu trúc, nên prompt của chúng dùng giọng nội bộ (không chào hỏi).</li>
+</ul>
+
+<h2 id="nodes">6. Các node</h2>
+<table>
+<tr><th>Node</th><th>Làm gì</th><th>Ghi vào</th></tr>
+<tr><td><code>load_memory</code></td><td>Đọc memory dài hạn của hồ sơ một lần; tạo Future cho làn ảnh nếu có ảnh.</td><td>context: <code>memory_text</code>, <code>image_result</code></td></tr>
+<tr><td><code>extract_facts</code></td><td>Trích dữ kiện lâm sàng từ tin mới (xem mục dưới). Lỗi chỉ ghi warning và giữ facts cũ.</td><td>state: <code>facts</code>, <code>facts_upto</code>; context: <code>turn_facts</code></td></tr>
+<tr><td><code>plan</code></td><td>LLM nêu 1 đến 4 giả thuyết (chỉ để chọn cần tra gì) và 1 đến 4 truy vấn. Không có truy vấn thì sang <code>answer</code>.</td><td>state: <code>unsupported</code>, <code>queries</code>, <code>rounds=0</code></td></tr>
+<tr><td><code>choose_tools</code></td><td>LLM chọn tool với <code>tool_choice="any"</code>. Lệnh trùng lệnh đã gọi bị bỏ.</td><td>state: <code>messages</code>, <code>done_calls</code>, <code>rounds</code>, <code>new_calls</code></td></tr>
+<tr><td><code>tools</code></td><td><code>ToolNode</code> chạy tool; lỗi tool trả thành chuỗi lỗi, không làm đổ lượt.</td><td>state: <code>messages</code> (ToolMessage)</td></tr>
+<tr><td><code>label_evidence</code></td><td>Gộp kết quả làn ảnh (một lần mỗi lượt), rồi gắn nhãn kết quả tool thành E#/H#.</td><td>state: <code>evidence</code>, <code>evidence_status</code>, <code>call_results</code></td></tr>
+<tr><td><code>reflect</code></td><td>LLM xét lại giả thuyết kèm trích dẫn; code lọc giả thuyết thiếu bằng chứng hợp lệ; quyết định tra tiếp hay trả lời.</td><td>state: <code>plan</code>, <code>unsupported</code>, <code>next</code>; context: <code>turn_hypotheses</code></td></tr>
+<tr><td><code>answer</code></td><td>Viết câu trả lời cuối cho người bệnh, chỉ dựa vào giả thuyết có căn cứ và bằng chứng đã trích.</td><td>state: <code>messages</code></td></tr>
+</table>
+<h3>Cơ chế chịu lỗi của model nhỏ</h3>
+<p><code>plan</code>, <code>reflect</code> dùng <code>invoke_structured_with_retry</code> và <code>choose_tools</code> tự retry, tối đa <code>MAX_MODEL_RETRIES = 2</code> lần kèm nhắc "chỉ gọi hàm". Mỗi node luôn thêm một tin nhiệm vụ cuối (<code>build_task_reminder</code>): nếu tin cuối là lời người bệnh thì model nhỏ trả lời họ bằng văn bản thay vì gọi hàm. Hết lượt retry thì <code>plan</code>/<code>reflect</code> raise (lượt báo lỗi chung), <code>choose_tools</code> chuyển sang <code>reflect</code>.</p>
+<h3>Trích dữ kiện (extract_facts)</h3>
+<ol>
+<li>Gộp <code>state.facts</code> với <code>ctx.known_facts</code> (bản DB thắng khi trùng khoá).</li>
+<li>Lấy tin mới kể từ <code>facts_upto</code>, lọc bằng <code>get_dialogue_history</code>.</li>
+<li>LLM trả <code>ExtractedFacts</code>; <code>validate_facts_evidence</code> lọc chỉ số tin nguồn sai và chuẩn hoá vùng cơ thể.</li>
+<li>Đổi chỉ số tin trong lượt sang id tin nhắn LangGraph, gộp theo (loại, vùng, nhãn), giữ tối đa 30 mục.</li>
+<li><code>turn_facts</code> = fact mới hoặc đổi, cộng fact theo đợt còn thiếu vùng. <code>turn.py</code> gửi chúng sang clinical.</li>
+</ol>
+
+<h2 id="evidence">7. Bằng chứng E# và gợi ý H#</h2>
+<p>Quy tắc cốt lõi: <b>kiến thức nền của model không phải bằng chứng</b>. Việc phân loại do code quyết định, không do model (<code>reasoning/retrieval_evidence.py</code>).</p>
+<table>
+<tr><th>Nguồn kết quả</th><th>Loại</th><th>Mã</th></tr>
+<tr><td>Đoạn sách giáo khoa (<code>source="book"</code>) từ <code>hybrid_retrieval</code>, <code>semantic_search</code>, <code>keyword_search</code></td><td>evidence</td><td>E#</td></tr>
+<tr><td>Ca bệnh thực tế từ <code>search_finalize_report</code> (khi tìm thấy)</td><td>evidence</td><td>E#</td></tr>
+<tr><td>Cạnh đồ thị sách có câu trích gốc từ <code>query_document_graph</code></td><td>evidence</td><td>E#</td></tr>
+<tr><td>Đồ thị tri thức (<code>knowledge_graph_query</code>), kết quả ảnh, kiểm tra chéo</td><td>hint</td><td>H#</td></tr>
+</table>
+<ul>
+<li><code>add_retrieval_evidence</code> khử trùng theo (loại, nguồn, 300 ký tự đầu) và cấp mã E#/H# tiếp nối.</li>
+<li><code>ground_hypotheses_in_evidence</code>: chỉ giữ giả thuyết có <b>ít nhất một mã E# hợp lệ</b>. Giả thuyết còn lại vào <code>unsupported</code> kèm ghi chú và <code>logger.warning</code>.</li>
+<li>Giới hạn: kiểm được "có trích dẫn hợp lệ", không kiểm được "đoạn đó thật sự ủng hộ bệnh đó".</li>
+</ul>
+
+<h2 id="image">8. Làn ảnh</h2>
+<p>Chỉ chạy khi <code>image_keys</code> khác rỗng (ảnh đính kèm, tối đa 3). Code nằm ở <code>graph/skin_image_nodes.py</code> và package <code>tools/skin_image/</code>.</p>
+<table>
+<tr><th>Bước</th><th>Mô tả</th></tr>
+<tr><td><code>image_cnn</code></td><td>Tải ảnh từ MinIO, chạy CNN (CPU, trong thread riêng để không chặn event loop), lấy top 5 nhãn.</td></tr>
+<tr><td><code>image_vision</code></td><td>Model đa phương thức mô tả ảnh. Bỏ qua nếu <code>AGENT_VISION_MODEL</code> rỗng. Chạy song song với CNN.</td></tr>
+<tr><td><code>image_done</code></td><td>Gom kết quả thành hint, đặt vào <code>ctx.image_result</code> (Future), ghi <code>turn_images</code> để gửi sang clinical.</td></tr>
+<tr><td><code>join_images</code></td><td>Gọi từ <code>label_evidence</code>: chờ Future, thêm hint H# và một hint <code>cross_check</code> so nhãn CNN và mô tả ảnh với giả thuyết của làn chữ.</td></tr>
+</table>
+<div class="note">Kết quả ảnh <b>chỉ là gợi ý</b> (H#), không bao giờ là bằng chứng. Hai làn chỉ gặp nhau ở <code>label_evidence</code>. Hệ quả: <code>plan</code> và vòng <code>choose_tools</code> đầu không thấy ảnh, chỉ <code>reflect</code> trở đi mới thấy. Bảng tên tay <code>ALIASES</code> (22 lớp CNN) dùng để so khớp nên tên bệnh ngoài bảng chỉ so theo chuỗi.</div>
+
+<h2 id="retrieval">9. Tra cứu (tools)</h2>
+<table>
+<tr><th>Tool</th><th>Dùng khi</th></tr>
+<tr><td><code>hybrid_retrieval</code></td><td>Mặc định cho mô tả bệnh, triệu chứng, thuốc. Trộn semantic, BM25 và nhánh đồ thị.</td></tr>
+<tr><td><code>semantic_search</code>, <code>keyword_search</code></td><td>Khi cần đúng loại tìm kiếm.</td></tr>
+<tr><td><code>knowledge_graph_query</code></td><td>Quan hệ trong đồ thị tri thức theo ý định (<code>disease_overview</code>, <code>differential</code>, <code>treatments</code>...). Chỉ cho H#.</td></tr>
+<tr><td><code>query_document_graph</code></td><td>Quan hệ rút từ sách giáo khoa, có câu trích và trang (E#).</td></tr>
+<tr><td><code>search_finalize_report</code></td><td>Ca bệnh thực tế tương tự. Tắt bằng <code>AGENT_FINALIZE_REPORT_SEARCH_ENABLED</code>.</td></tr>
+</table>
+<h3>Luồng của <code>hybrid_retrieval</code> (<code>tools/hybrid_retrieval/pipeline.py</code>)</h3>
+<ol>
+<li><code>extract_entities</code>: LLM trích thực thể y khoa, dịch sang tên Anh và Việt.</li>
+<li><code>expand_query</code>: nối tên thực thể vào query BM25 (BM25 chỉ khớp đúng chữ).</li>
+<li>Ba nhánh chạy song song: semantic (Qdrant), BM25, và nhánh đồ thị (thực thể → cạnh sách → chunk). Một nhánh lỗi thì thành rỗng kèm ghi chú, các nhánh còn lại vẫn cho kết quả.</li>
+<li>Trộn bằng RRF (khử trùng theo id), lấy 20 ứng viên.</li>
+<li><code>rerank</code> bằng Qwen3-Reranker qua OpenRouter. Không dùng được thì giữ thứ tự RRF và ghi chú.</li>
+</ol>
+<p>Mọi truy vấn đi qua <code>KnowledgeClient</code> sang knowledge_service; <code>ai_service</code> không chạm Qdrant hay Neo4j trực tiếp.</p>
+
+<h2 id="state-ctx">10. State và AgentContext</h2>
+<div class="grid">
+<div class="card"><b>Graph state</b>
+<ul>
+<li><code>ChatState</code>: <code>messages</code>, <code>route</code>, <code>diag</code>.</li>
+<li><code>PreDiagnosisState</code>, <code>SkinImageState</code> cho các subgraph.</li>
+<li><b>Được checkpoint</b> vào Postgres theo <code>thread_id</code> (= <code>conversation_id</code>), nên sống qua nhiều lượt.</li>
+<li>Node trả dict cập nhật, LangGraph gộp.</li>
+</ul></div>
+<div class="card"><b>AgentContext</b>
+<ul>
+<li>Dataclass dựng mới ở đầu <b>mỗi lượt</b>, truyền qua <code>context=</code>, đọc bằng <code>runtime.context</code>.</li>
+<li><b>Không</b> vào checkpoint.</li>
+<li>Node sửa trực tiếp; <code>turn.py</code> đọc kết quả sau <code>astream()</code>.</li>
+</ul></div>
+</div>
+<table>
+<tr><th>Field của context</th><th>Loại</th><th>Ai ghi → ai đọc</th></tr>
+<tr><td><code>user_id</code>, <code>patient_profile_id</code>, <code>conversation_id</code>, <code>message_id</code>, <code>image_keys</code>, <code>model</code></td><td>tham số lượt</td><td><code>build_context</code> → mọi node</td></tr>
+<tr><td><code>known_facts</code></td><td>dữ liệu nạp sẵn</td><td><code>build_context</code> (từ clinical) → <code>extract_facts</code></td></tr>
+<tr><td><code>memory_text</code></td><td>đọc một lần</td><td><code>load_memory</code> → prompt của các node sau</td></tr>
+<tr><td><code>image_result</code></td><td>Future cầu nối làn</td><td><code>load_memory</code> tạo, <code>image_done</code> set, <code>join_images</code> đọc</td></tr>
+<tr><td><code>turn_facts</code>, <code>turn_hypotheses</code>, <code>turn_images</code></td><td>kết quả lượt</td><td>node → <code>turn.py</code> gửi sang clinical</td></tr>
+<tr><td><code>reasoning_steps</code>, <code>tool_counts</code>, <code>open_steps</code></td><td>bước hiển thị</td><td><code>tool_step_events</code> → <code>turn.py</code> gửi sang consultation</td></tr>
+<tr><td><code>max_tool_rounds</code>, <code>max_model_retries</code></td><td>ghi đè khi thử</td><td>người thử → <code>reflect</code>, <code>structured_llm_calls</code></td></tr>
+</table>
+
+<h2 id="memory">11. Memory dài hạn và checkpoint</h2>
+<ul>
+<li><b>Khoá theo hồ sơ bệnh nhân</b> (<code>patient_profile_id</code>), lưu <code>AsyncPostgresStore</code> trong schema <code>langgraph</code>, không dùng embedding. Chỉ chứa thông tin giao tiếp, <b>không</b> phải dữ kiện y khoa.</li>
+<li><b>Đọc:</b> <code>load_memory</code> đọc tối đa 10 bản mới nhất, một lần đầu lượt; các node sau chỉ nối chuỗi vào prompt (<code>inject_memory</code>).</li>
+<li><b>Ghi:</b> không còn là tool hay node. Sau khi trả lời, <code>_schedule_memory_update</code> chạy <code>after_turn()</code> ở nền: gom tin người dùng vào bộ đệm, rồi một lần gọi LLM đối chiếu với memory cũ khi đủ 20 tin hoặc 60 phút. Gom định kỳ khi có từ 15 bản hoặc sau 7 ngày (có archive).</li>
+<li><b>Checkpoint:</b> <code>AsyncPostgresSaver</code> cùng schema <code>langgraph</code>. Graph biên dịch lúc import với bản RAM, <code>lifespan</code> thay bằng Postgres trước khi nhận lượt nào.</li>
+</ul>
+<div class="note">Rủi ro đã biết: batch ghi memory có thể ghi đè "dị ứng penicillin" thành "không còn dị ứng" chỉ dựa vào lời bệnh nhân. Chưa có quy tắc bảo vệ dị ứng. Ngoại lệ so với quy tắc "chỉ một service ghi Postgres": worker này ghi trực tiếp schema <code>langgraph</code>.</div>
+
+<h2 id="events">12. Event realtime</h2>
+<p><code>emit</code> (<code>middleware/tool_step_events.py</code>) ghi event vào Redis Stream của hội thoại; consultation đọc và forward nguyên văn qua SSE cho FE.</p>
+<table>
+<tr><th>Event</th><th>Phát khi</th></tr>
+<tr><td><code>message.started</code></td><td>đầu lượt (<code>_drive</code>)</td></tr>
+<tr><td><code>message.delta</code></td><td>mỗi token của node <code>answer</code>; câu trả lời của triage (không qua token) phát một lần</td></tr>
+<tr><td><code>message.tool_start</code>, <code>message.tool_result</code></td><td>một bước tool, bước lập luận (<code>plan</code>, <code>reflect</code>), trích dữ kiện, hint ảnh. Cùng <code>step_id</code> để FE tắt vòng quay</td></tr>
+<tr><td><code>message.done</code> + sentinel kết thúc stream</td><td>cuối lượt (cả nhánh dừng và lỗi)</td></tr>
+</table>
+<p>Tên tool hiển thị cho người dùng được map sang tiếng Việt trong <code>TOOL_DISPLAY_NAMES</code>. Bước <code>plan</code> và <code>reflect</code> hiện dưới tên "Lập luận ban đầu" và "Cập nhật lập luận sau bằng chứng".</p>
+
+<h2 id="limits">13. Giới hạn đã biết</h2>
+<ul>
+<li>Agent <b>không hỏi lại bằng <code>interrupt()</code></b>. Mọi câu hỏi lại nằm cuối câu trả lời, người dùng trả lời ở lượt sau. Hợp đồng với consultation vẫn gửi <code>status="done"</code>, <code>choice=null</code>.</li>
+<li>Khoá theo hội thoại chỉ có hiệu lực trong một tiến trình; chạy nhiều worker có thể chạy đè hai lượt cùng hội thoại (chưa thử).</li>
+<li>Mỗi lượt sinh nhiều checkpoint mà chưa có dọn dẹp; dữ liệu y tế nằm trong các bảng này nên cần chính sách xoá.</li>
+<li><code>diag</code> là dict không có schema; đổi tên hoặc thêm khoá phải sửa đồng thời <code>_DIAG_KEYS</code> (<code>chat_graph.py</code>) và <code>PreDiagnosisState</code>.</li>
+<li>Thời gian một lượt dao động mạnh theo độ trễ API (mỗi bước LLM 25 đến 35 giây ở model nhỏ qua OpenRouter).</li>
+<li>Dòng <code>state.get("image_facts")</code> trong <code>plan</code> là code thừa: không node nào còn ghi khoá này.</li>
+</ul>
+
+<p class="sub" style="margin-top:40px">Tài liệu mô tả mã nguồn tại thời điểm viết. Chi tiết quyết định thiết kế nằm ở <code>docs/notice/agent-graph-versions.md</code>.</p>
+</div>
+</body>
+</html>

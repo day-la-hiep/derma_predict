@@ -2,7 +2,7 @@
 
 Chưa làm, không phải cam kết. Ý tưởng: tiền xử lý ảnh bằng **kỹ thuật phân đoạn cổ điển** hoặc **model có sẵn
 trên Hugging Face** để cắt vùng tổn thương, rồi đưa vùng đó cho CNN `classify_skin_image`
-(`archive/core/agent/tools/skin_image_classifier.py`).
+(`archive/core/agent/tools/skin_image/classifier.py`).
 
 ## 1. Vấn đề
 

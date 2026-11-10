@@ -6,6 +6,7 @@ from uuid import UUID
 
 from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.messages.utils import count_tokens_approximately
 from langchain_core.outputs import ChatGeneration, LLMResult
 
@@ -14,7 +15,7 @@ logger = logging.getLogger("agent.trace")
 _PREVIEW = 160
 # Node nội bộ của `create_agent` ("model", "tools") và của chat graph; các chain con khác (RunnableSequence...) bị bỏ qua cho đỡ ồn.
 _SKIP_NODES = {"__start__", "__end__"}
-# `interrupt()` của `ask_user` bay lên qua tool dưới dạng exception — đó là tạm dừng chờ người dùng, không phải lỗi.
+# Ngoại lệ điều khiển của LangGraph (huỷ, bubble-up), không phải lỗi.
 _PAUSE_EXCEPTIONS = {"GraphInterrupt", "GraphBubbleUp", "NodeInterrupt"}
 
 
@@ -111,3 +112,11 @@ class TraceCallback(AsyncCallbackHandler):
 
 # Một instance dùng chung: trạng thái chỉ là bảng run_id -> thời điểm bắt đầu, mỗi run_id duy nhất.
 trace_callback = TraceCallback()
+
+
+def build_run_config(conversation_id: str) -> RunnableConfig:
+    """`thread_id` = `conversation_id`"""
+    return {
+        "configurable": {"thread_id": conversation_id},
+        "callbacks": [trace_callback],
+    }

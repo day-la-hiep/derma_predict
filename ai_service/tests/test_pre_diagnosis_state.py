@@ -8,13 +8,14 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from agent.common.fact_extractor import ExtractedFact, ExtractedFacts, extract_facts, merge_facts, validate_facts_evidence
+from agent.reasoning.patient_fact_extractor import ExtractedFact, ExtractedFacts, extract_facts, merge_facts, validate_facts_evidence
 from agent.context.agent_context import AgentContext
-from agent.graph.chat_graph import build_chat_graph, config_for
-from agent.graph.v2.nodes import load_memory_node
-from agent.graph.v2.pre_diagnosis_graph import _after_plan
-from agent.graph.v2.state import PreDiagState
-from agent.middleware.common.model import inject_memory, load_memory
+from agent.common.tracing import build_run_config
+from agent.graph.chat_graph import build_chat_graph
+from agent.graph.pre_diagnosis_nodes import load_memory_node
+from agent.graph.pre_diagnosis_graph import _after_plan
+from agent.state.pre_diagnosis_state import PreDiagnosisState
+from agent.middleware.patient_memory_prompt import inject_memory, load_memory
 from langgraph.store.memory import InMemoryStore
 from app.config.settings import settings
 
@@ -70,7 +71,7 @@ class MergeFactsTest(unittest.TestCase):
 class ExtractFactsTest(unittest.TestCase):
     def _run(self, result: Any, transcript: list[tuple[str, str]]) -> tuple[list[dict[str, Any]], FakeStructured]:
         structured = FakeStructured(result)
-        with patch("agent.common.fact_extractor.get_model", return_value=FakeModel(structured)):
+        with patch("agent.reasoning.patient_fact_extractor.get_model", return_value=FakeModel(structured)):
             return run(extract_facts([], transcript)), structured
 
     def test_skips_llm_without_patient_message(self):
@@ -98,7 +99,7 @@ class DiagPersistTest(unittest.TestCase):
     def test_state_survives_between_turns(self):
         seen: list[dict[str, Any]] = []
 
-        async def step(state: PreDiagState) -> dict[str, Any]:
+        async def step(state: PreDiagnosisState) -> dict[str, Any]:
             seen.append({k: state.get(k) for k in ("facts", "evidence", "done_calls")})
             n = len(state.get("facts", []))
             return {
@@ -108,7 +109,7 @@ class DiagPersistTest(unittest.TestCase):
                 "done_calls": [*state.get("done_calls", []), f"call{n}"],
             }
 
-        fake = StateGraph(PreDiagState)
+        fake = StateGraph(PreDiagnosisState)
         fake.add_node("step", step)
         fake.add_edge(START, "step")
         fake.add_edge("step", END)
@@ -117,10 +118,10 @@ class DiagPersistTest(unittest.TestCase):
         async def scenario() -> list[Any]:
             with patch.object(settings, "AGENT_TRIAGE_ENABLED", False):
                 graph = build_chat_graph(pre_diagnosis=cast(Any, fake.compile()))
-            cfg = config_for("thread-1")
+            cfg = build_run_config("thread-1")
             await graph.ainvoke({"messages": [HumanMessage(content="tôi ngứa")]}, config=cfg, context=ctx)
             await graph.ainvoke({"messages": [HumanMessage(content="ngứa về đêm")]}, config=cfg, context=ctx)
-            other = config_for("thread-2")
+            other = build_run_config("thread-2")
             await graph.ainvoke({"messages": [HumanMessage(content="chào")]}, config=other, context=ctx)
             return seen
 
@@ -133,10 +134,10 @@ class DiagPersistTest(unittest.TestCase):
 
 class CheckpointerSwapTest(unittest.TestCase):
     def test_checkpointer_assigned_after_compile_is_used(self):
-        async def step(state: PreDiagState) -> dict[str, Any]:
+        async def step(state: PreDiagnosisState) -> dict[str, Any]:
             return {"messages": [AIMessage(content="ok")], "facts": [fact("f", "x")]}
 
-        fake = StateGraph(PreDiagState)
+        fake = StateGraph(PreDiagnosisState)
         fake.add_node("step", step)
         fake.add_edge(START, "step")
         fake.add_edge("step", END)
@@ -145,7 +146,7 @@ class CheckpointerSwapTest(unittest.TestCase):
         default_saver, swapped = graph.checkpointer, InMemorySaver()
         graph.checkpointer = swapped  # cách worker thay checkpoint RAM bằng Postgres sau khi graph đã biên dịch
         ctx = AgentContext(user_id="u", conversation_id="c")
-        cfg = config_for("thread-swap")
+        cfg = build_run_config("thread-swap")
 
         async def scenario() -> Any:
             await graph.ainvoke({"messages": [HumanMessage(content="tôi ngứa")]}, config=cfg, context=ctx)
@@ -163,7 +164,7 @@ class MemoryInjectedAtFirstNodeTest(unittest.TestCase):
         load_mock = AsyncMock(return_value="- dị ứng penicillin")
         state: Any = {"messages": [HumanMessage(content="tôi ngứa")]}
         runtime: Any = SimpleNamespace(context=ctx, store=object())
-        with patch("agent.graph.v2.nodes.load_memory", load_mock):
+        with patch("agent.graph.pre_diagnosis_nodes.load_memory", load_mock):
             run(load_memory_node(state, runtime))
         self.assertEqual((ctx.memory_text, load_mock.await_count), ("- dị ứng penicillin", 1))
         load_mock.assert_awaited_once_with(runtime.store, "p1")

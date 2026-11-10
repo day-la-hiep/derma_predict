@@ -1,12 +1,11 @@
 """Sinh báo cáo tiền tư vấn: kéo tiền sử từ clinical và hội thoại từ consultation, gọi LLM, ghi báo cáo vào clinical."""
 import json
 import logging
-from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.common.llm import get_model
-from agent.dto.schemas import TurnRequest
+from agent.dto.turn_request import TurnRequest
 from app.deps import get_clinical_client, get_consultation_client
 
 logger = logging.getLogger(__name__)

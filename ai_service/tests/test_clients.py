@@ -5,9 +5,9 @@ from typing import Any
 
 import httpx
 
-from app.clients.clinical_client import ClinicalClient
-from app.clients.consultation_client import ConsultationClient
-from app.clients.knowledge_client import KnowledgeClient
+from app.clients import ClinicalClient
+from app.clients import ConsultationClient
+from app.clients import KnowledgeClient
 
 
 def make_http(handler: Any) -> httpx.AsyncClient:

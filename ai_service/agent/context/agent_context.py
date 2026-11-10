@@ -24,12 +24,12 @@ class AgentContext:
     # "provider:model" đã resolve từ `Conversation.model`; rỗng thì `select_model` fallback `settings.AGENT_MODEL`.
     model: str = ""
     # Middleware append trực tiếp; worker giữ cùng reference nên đọc được sau `astream()` để Core lưu lại
-    # (SSE không replay được khi load lại hội thoại). Mỗi dict khớp `Step`.
+    # (SSE không replay được khi load lại hội thoại)..
     reasoning_steps: list[dict[str, Any]] = field(default_factory=list)
-    # Ghi đè mức trần của graph v2 cho riêng lượt này (None = dùng mặc định trong `graph/v2/nodes.py`); chủ yếu để thử trong `agent/test/debug_app.py`.
+    # Ghi đè mức trần của graph cho riêng lượt này (None = dùng mặc định trong `graph/nodes.py`); chủ yếu để thử trong `agent/test/debug_app.py`.
     max_tool_rounds: int | None = None
     max_model_retries: int | None = None
-    # Memory dài hạn của người dùng, đọc một lần ở node đầu của lượt (graph v2: `load_memory`); các node sau chỉ nối chuỗi này vào prompt, không chạm store.
+    # Memory dài hạn của người dùng, đọc một lần ở node đầu của lượt (`load_memory`); các node sau chỉ nối chuỗi này vào prompt, không chạm store.
     memory_text: str = ""
     # Làn ảnh (`image_flow`) đặt kết quả vào đây khi xong; `label_evidence` của làn chữ chờ nó. Dùng Future vì state graph cha chỉ được ghi khi cả hai làn kết thúc.
     image_result: "asyncio.Future[ImageResult] | None" = None
