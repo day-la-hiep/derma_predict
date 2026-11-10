@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Thử nghiệm luồng lập luận của agent bằng cách gọi THẲNG graph (không API/RabbitMQ/Postgres).
 
-Chạy từ core/:  uv run python .claude/skills/experiment-agent-flow/experiment.py --help
+Chạy từ archive/core/:  uv run python .claude/skills/experiment-agent-flow/experiment.py --help
 
   # 1 câu hỏi, cấu hình mặc định
   experiment.py "Bệnh chàm là gì?"
@@ -19,7 +19,7 @@ import argparse, asyncio, json, sys, time, uuid, warnings
 from pathlib import Path
 
 warnings.filterwarnings("ignore")
-sys.path.insert(0, str(Path.cwd()))  # chạy từ core/ để import `agent`, `app`
+sys.path.insert(0, str(Path.cwd()))  # chạy từ archive/core/ để import `agent`, `app`
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage  # noqa: E402
 from langgraph.errors import GraphRecursionError  # noqa: E402

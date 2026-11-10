@@ -11,11 +11,11 @@ Mọi API ở đây yêu cầu đăng nhập JWT (`Authorization: Bearer ...`); 
 | Lớp | File |
 |---|---|
 | FE | `fe/app/chats/page.tsx`, `fe/features/chat/` (`store.ts` Zustand + xử lý SSE, `components/`), `fe/services/apiAdapters.ts` |
-| API | `core/app/api/conversation_api.py`, `core/app/api/upload_api.py` |
-| Service | `core/app/services/conversation_service.py`, `message_service.py` |
+| API | `archive/core/app/api/conversation_api.py`, `archive/core/app/api/upload_api.py` |
+| Service | `archive/core/app/services/conversation_service.py`, `message_service.py` |
 | Repository / Model | `conversation_repository.py`, `message_repository.py`, `file_repository.py`; `models/conversation.py`, `message.py`, `file.py` |
-| Worker | `core/agent/worker.py` (vòng đời, khoá theo hội thoại), `turn.py` (chạy 1 turn), `persistence.py` (checkpoint + memory ở Postgres), `core/app/workers/agent_response_consumer.py` (chạy trong Core) |
-| Agent | `core/agent/graph/` (`chat_graph.py` → `triage.py` lọc intent → tiền chẩn đoán `graph/v1/pre_diagnosis_graph.py` (mặc định) hoặc `graph/v2/`, chọn bằng `AGENT_GRAPH_VERSION`, xem [agent-graph-versions](../notice/agent-graph-versions.md)), `tools/`, `middleware/`, `prompt/`, `state/` |
+| Worker | `archive/core/agent/worker.py` (vòng đời, khoá theo hội thoại), `turn.py` (chạy 1 turn), `persistence.py` (checkpoint + memory ở Postgres), `archive/core/app/workers/agent_response_consumer.py` (chạy trong Core) |
+| Agent | `archive/core/agent/graph/` (`chat_graph.py` → `triage.py` lọc intent → tiền chẩn đoán `graph/v1/pre_diagnosis_graph.py` (mặc định) hoặc `graph/v2/`, chọn bằng `AGENT_GRAPH_VERSION`, xem [agent-graph-versions](../notice/agent-graph-versions.md)), `tools/`, `middleware/`, `prompt/`, `state/` |
 
 ## 2. API
 
@@ -151,7 +151,7 @@ Phần dưới mô tả chung và v1:
 Memory theo **hồ sơ bệnh nhân** (xuyên hội thoại), lưu Postgres (schema `langgraph`), không embedding. Đọc: tối đa 10 bản
 mới nhất chèn vào system prompt (v2 đọc một lần ở node `load_memory`, v1 qua `inject_long_term_memory`). Ghi: không còn
 tool; sau khi trả lời, worker chạy nền gom tin người dùng vào bộ đệm rồi cập nhật memory theo batch (đối chiếu với memory
-cũ: thêm / ghi đè / bỏ qua) và gom định kỳ. Chi tiết: `core/app/kien-truc-memory.md`.
+cũ: thêm / ghi đè / bỏ qua) và gom định kỳ. Chi tiết: `archive/core/app/kien-truc-memory.md`.
 
 ## 7. Ảnh đính kèm
 

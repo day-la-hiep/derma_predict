@@ -1,7 +1,7 @@
 # Giải thích chi tiết sơ đồ cơ sở dữ liệu
 
-Nguồn: [db-diagram.dbml](db-diagram.dbml) (khớp ORM `core/app/models/*.py`, migration head `3e4b8f67b9ca`).
-Entity nghiệp vụ tương ứng nằm ở `core/app/dto/base/` (mỗi bounded context một file).
+Nguồn: [db-diagram.dbml](db-diagram.dbml) (khớp ORM `archive/core/app/models/*.py`, migration head `3e4b8f67b9ca`).
+Entity nghiệp vụ tương ứng nằm ở `archive/core/app/dto/base/` (mỗi bounded context một file).
 
 ## 0. Quy ước chung
 

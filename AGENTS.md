@@ -16,39 +16,50 @@ Hướng dẫn cho Agent / Gemini khi làm việc trong repo này.
 
 | Hệ thống | Mô tả | Đọc thêm |
 |---|---|---|
-| **Chat tư vấn da liễu** | FE chat + Core API + Agent Worker (LangGraph) tra guideline, knowledge graph, phân loại ảnh da | `README.md`, `docs/overview/system-overview.md`, `core/app/kien-truc-agent.md` |
-| **Pipeline số hoá sách giáo khoa** (`document_ingest`) | Admin upload PDF → OCR/đọc chữ → AI đọc mục lục (người duyệt) → cắt chunk theo mục lục → nạp Qdrant | `core/pipeline/document_ingest/README.md` |
+| **Chat tư vấn da liễu** | FE chat + Core API + Agent Worker (LangGraph) tra guideline, knowledge graph, phân loại ảnh da | `README.md`, `docs/overview/system-overview.md`, `archive/core/app/kien-truc-agent.md` |
+| **Pipeline số hoá sách giáo khoa** (`document_ingest`) | Admin upload PDF → OCR/đọc chữ → AI đọc mục lục (người duyệt) → cắt chunk theo mục lục → nạp Qdrant | `archive/core/pipeline/document_ingest/README.md` |
 
 Cấu trúc thư mục:
 
 ```
 fe/        Next.js App Router: /chats (chat), /doctor (ca tư vấn, hồ sơ), /doctor/documents (pipeline admin), /doctor/graph-schema
-core/      FastAPI (app/), agent LangGraph (agent/), pipeline (pipeline/document_ingest/),
+archive/core/      FastAPI (app/), agent LangGraph (agent/), pipeline (pipeline/document_ingest/),
            migrations Alembic (migrations/), dữ liệu nạp (data_ingest/)
+deploy/             docker-compose.yml (hạ tầng dev), docker-compose.services.yml (6 service), docker-compose.prod.yml (core cũ), DEPLOY.md
+ml/                 model/ (checkpoint CNN), notebook/ (huấn luyện), data/ (dataset, không theo dõi git)
+report/             báo cáo đồ án: bao_cao_latex/ (LaTeX), vp_derma/ (Visual Paradigm), thi_t_k_database.md
+scripts/            tiện ích: init-service-databases.sh, transfer-data.sh, reset-and-gen-data.sh
 docs/      tài liệu kiến trúc + hướng dẫn chung; docs/notice/ = các lưu ý dễ bỏ sót,
            docs/pending/ = ý tưởng / hướng mở rộng chưa làm (xem mục 8)
-docker-compose.yml   hạ tầng dev (Postgres, Redis, RabbitMQ, Qdrant, Neo4j, MinIO)
+tmp/       nháp / kế hoạch tạm (không theo dõi git)
 ```
 
 ## 2. Chạy dự án
 
+> **Kiến trúc hiện tại là microservice** (các thư mục `<tên>_service/` ở gốc repo, xem `docs/notice/microservice-split.md`
+> và skill `derma-microservice-migration`). `archive/core/` là monolith cũ, đóng băng: makefile không còn target cho nó; skill
+> `derma-core-conventions`, `derma-pipeline-conventions`, `run-core`, `experiment-agent-flow` và phần lớn `docs/` mô tả core cũ.
+
 ```bash
-make infra          # docker compose up -d (hạ tầng)
-make migrate        # alembic upgrade head
-make backend        # Core FastAPI :3050 (hoặc python main.py)
-make worker         # Agent Worker (tiến trình riêng, consume RabbitMQ)
-make frontend       # Next.js :3010
+make infra          # hạ tầng: Postgres, Redis, RabbitMQ, Qdrant, Neo4j, MinIO (deploy/docker-compose.yml)
+make services-db    # tạo 5 database identity/consultation/clinical/knowledge/ai (chạy lại không sao)
+make knowledge-migrate   # alembic cho database knowledge (các service Spring tự chạy Flyway khi khởi động)
+make gateway        # :3040  (mỗi lệnh dưới đây một terminal)
+make identity       # :3051
+make consultation   # :3052
+make clinical       # :3053
+make knowledge      # :3054
+make knowledge-worker    # worker pipeline sách (không chạy thì nút "Chạy" ở /admin/documents không có tác dụng)
+make ai             # :3055
+make frontend       # Next.js :3010, gọi qua gateway :3040
+make reindex-cases  # nạp lại Qdrant + đồ thị từ báo cáo kết luận (knowledge đang chạy)
+make services-up    # hoặc chạy cả 6 service + worker bằng Docker (make services-build trước)
+make test           # test 4 service Spring + shared + ai; make knowledge-test chạy riêng (2 test graph_schema lỗi từ trước)
 ```
 
-- Python dùng `uv` (`core/pyproject.toml`), venv tại `core/.venv`. Chạy script trong `core/`.
-- Test pipeline (không cần service thật, dùng MinIO giả + SQLite + Qdrant in-memory):
-  ```bash
-  cd core && python -m unittest pipeline.document_ingest.tests.test_document_pipeline \
-    pipeline.document_ingest.tests.test_api pipeline.document_ingest.tests.test_storage_index
-  ```
-- Kiểm tra kiểu: `cd core && .venv/bin/python -m pyright app pipeline`.
-- Migration mới: `make migrate-new m="mô tả"`, rồi **đọc lại file sinh ra** trước khi chạy. Không để
-  autogenerate drop/create bảng có dữ liệu.
+- Spring dùng `./mvnw` (Java 21), Python dùng `uv` (venv tại `<tên>_service/.venv`). `ai_service/.env` và `knowledge_service/.env` chứa key LLM/Qdrant (đã gitignore).
+- Tài khoản mẫu (migration Flyway của identity): `user-1`, `doctor-1`, `admin-1`, mật khẩu `123456`.
+- Migration mới: Spring dùng file Flyway `src/main/resources/db/migration/V<n>__*.sql` (viết tay, **đọc lại** trước khi chạy); knowledge dùng `uv run alembic revision`. Không để autogenerate drop/create bảng có dữ liệu.
 
 ## 3. Luồng nghiệp vụ chính
 
@@ -86,7 +97,7 @@ Các bước theo thứ tự, mỗi bước phải được người duyệt **a
 
 ## 4. Kiến trúc & quy ước cần nhớ
 
-- **Entity nghiệp vụ** ở `core/app/dto/base/` (`Document`, `File`, `DocumentStage`, `DocumentChunk`, ...)
+- **Entity nghiệp vụ** ở `archive/core/app/dto/base/` (`Document`, `File`, `DocumentStage`, `DocumentChunk`, ...)
   khác với ORM (`app/models/`) và DTO wire (`app/dto/request|response/`). **Đổi `dto/base` phải hỏi
   người dùng duyệt trước** rồi mới cascade sang models/repo/service.
 - **Repository là stateless**: `DocumentRepository` nhận `document_id` trực tiếp. Override nằm ở
@@ -104,8 +115,8 @@ Các bước theo thứ tự, mỗi bước phải được người duyệt **a
 ## 5. Kỹ năng & quy ước thư mục
 
 Khi làm việc trong một khu vực, tham khảo các quy ước chi tiết:
-- `core/app/`: endpoint, DTO, model, service, tool, middleware, prompt agent.
-- `core/pipeline/document_ingest/`: quy ước pipeline xử lý PDF, OCR, chunking, indexing.
+- `archive/core/app/`: endpoint, DTO, model, service, tool, middleware, prompt agent.
+- `archive/core/pipeline/document_ingest/`: quy ước pipeline xử lý PDF, OCR, chunking, indexing.
 - `fe/`: trang Next.js, component, hook, store, SSE event.
 
 Quy tắc dùng chung:
@@ -117,7 +128,7 @@ Quy tắc dùng chung:
 
 - Thêm một **nghiệp vụ mới** thường là: entity/DTO (`dto/base` — hỏi trước) → model + migration →
   repository → service → endpoint → màn hình FE. Làm trọn một flow rồi mới mở rộng.
-- Khi demo, dữ liệu mẫu nằm ở `core/data_ingest/` và script `reset-and-gen-data.sh`.
+- Khi demo, dữ liệu mẫu nằm ở `archive/core/data_ingest/` và script `scripts/reset-and-gen-data.sh`.
 - Ghi chú các điểm **chưa làm / đơn giản hoá có chủ ý** (ví dụ: DB và MinIO không cùng transaction
   thật, không có tài liệu người dùng đăng nhập theo quyền, chưa có job dọn file mồ côi) vào mục
   "Hạn chế" khi viết báo cáo, không cần sửa ngay.
@@ -127,7 +138,7 @@ Quy tắc dùng chung:
 - Không có auth đa người dùng cho khu admin (API chưa kiểm tra JWT phía server).
 - Upload PDF đi qua Core; chưa có presigned upload trực tiếp lên MinIO.
 - Không có job dọn object MinIO mồ côi khi rollback thất bại.
-- Chưa có tài liệu hướng dẫn triển khai cho pipeline; `DEPLOY.md` chỉ mô tả chat.
+- Chưa có tài liệu hướng dẫn triển khai cho pipeline; `deploy/DEPLOY.md` chỉ mô tả chat.
 - Kết quả AI chỉ là gợi ý hỗ trợ, không phải chẩn đoán; guideline đang chờ bác sĩ duyệt.
 
 ## 8. Khi làm việc với Agent / Gemini

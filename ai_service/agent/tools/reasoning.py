@@ -1,0 +1,281 @@
+import logging
+from typing import Any, Literal
+
+from langchain.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AnyMessage
+from langchain_core.tools import tool
+from pydantic import BaseModel, Field, ValidationError, field_validator
+
+from app.deps import get_knowledge_client
+
+logger = logging.getLogger(__name__)
+
+TOOL_NAME = "record_reasoning"
+INVALID_PREFIX = "Không hợp lệ:"
+# Tin nhắn nội bộ chèn bởi middleware — KHÔNG phải lời người dùng, không tính là ranh giới turn.
+FEEDBACK_PREFIX = "[Hệ thống kiểm soát lập luận — không phải lời người dùng]"
+_SYSTEM_MARKERS = (FEEDBACK_PREFIX, "[Hệ thống kiểm duyệt")
+
+# Tool KHÔNG cung cấp bằng chứng chẩn đoán -> không kích hoạt yêu cầu lập luận.
+_NON_EVIDENCE_TOOLS = {TOOL_NAME, "save_memory"}
+
+STAGE_LABELS = {
+    "initial": "Lập luận ban đầu",
+    "after_evidence": "Cập nhật lập luận sau bằng chứng",
+    "final": "Kết luận lập luận",
+}
+
+Stage = Literal["initial", "after_evidence", "final"]
+
+
+class Observation(BaseModel):
+    fact: str = Field(description="1 dữ kiện ngắn gọn (lời người dùng, kết quả tool, ảnh)")
+    source: str = Field(
+        description='Nguồn: "user", "image" hoặc "tool:<tên tool>"'
+    )
+
+
+def _as_list(value: Any) -> Any:
+    """Model hay trả 1 chuỗi/1 số thay vì list — bọc lại thay vì từ chối cả lần lập luận."""
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+
+class Hypothesis(BaseModel):
+    disease: str = Field(description="Tên bệnh/giả thuyết")
+    supports: list[int] = Field(
+        default_factory=list,
+        description="Số thứ tự (bắt đầu từ 1) của các dữ kiện trong `observations` ỦNG HỘ",
+    )
+    contradicts: list[int] = Field(
+        default_factory=list,
+        description="Số thứ tự các dữ kiện trong `observations` MÂU THUẪN với giả thuyết",
+    )
+    missing: list[str] = Field(
+        default_factory=list, description="Còn thiếu gì để xác nhận hoặc loại trừ"
+    )
+    confidence: Literal["cao", "vừa", "thấp"]
+
+    _coerce = field_validator("supports", "contradicts", "missing", mode="before")(_as_list)
+
+
+class RedFlags(BaseModel):
+    checked: list[str] = Field(
+        default_factory=list, description="Các cờ đỏ đã kiểm tra (đã hỏi hoặc đã có thông tin)"
+    )
+    present: list[str] = Field(default_factory=list, description="Cờ đỏ ĐANG có ở người bệnh")
+
+    _coerce = field_validator("checked", "present", mode="before")(_as_list)
+
+
+def _first_red_flags(value: Any) -> Any:
+    """Model đôi khi trả `red_flags` là list 1 phần tử."""
+    if isinstance(value, list):
+        return value[0] if value else {}
+    return value
+
+
+class ReasoningInput(BaseModel):
+    stage: Stage = Field(
+        description="initial: trước tra cứu đầu tiên; after_evidence: sau kết quả tool; "
+        "final: đủ căn cứ để trả lời hoặc hỏi người dùng"
+    )
+    observations: list[Observation] = Field(
+        min_length=1, description="Dữ kiện đã biết, mỗi dữ kiện kèm nguồn"
+    )
+    hypotheses: list[Hypothesis] = Field(
+        max_length=4,
+        description="1-4 giả thuyết xếp theo mức phù hợp giảm dần. Chỉ được để RỖNG ở stage after_evidence / final khi chưa "
+        "tra cứu được bằng chứng nào (sách / ca bệnh) — khi đó không có giả thuyết nào đủ căn cứ để nêu",
+    )
+    red_flags: RedFlags = Field(default_factory=RedFlags)
+    next_action: Literal["call_tool", "ask_user", "answer"]
+    next_action_reason: str = Field(description="1-2 câu: vì sao chọn bước tiếp theo này")
+
+    _coerce_flags = field_validator("red_flags", mode="before")(_first_red_flags)
+
+
+def validate_reasoning(args: dict[str, Any]) -> tuple[ReasoningInput | None, list[str]]:
+    """Kiểm tra schema + ràng buộc ngữ nghĩa"""
+    try:
+        data = ReasoningInput.model_validate(args)
+    except ValidationError as exc:
+        return None, [f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()]
+
+    problems: list[str] = []
+    n = len(data.observations)
+    if data.stage == "initial" and not data.hypotheses:
+        problems.append('stage "initial" cần ít nhất 1 giả thuyết ban đầu (chỉ để cân nhắc tra cứu gì, chưa phải kết luận).')
+    for i, h in enumerate(data.hypotheses, 1):
+        bad = [x for x in [*h.supports, *h.contradicts] if not 1 <= x <= n]
+        if bad:
+            problems.append(
+                f"Giả thuyết {i} ({h.disease}) tham chiếu dữ kiện không tồn tại: {bad} "
+                f"(chỉ có 1..{n})."
+            )
+        # độ tin cậy "vừa"/"cao" cần ít nhất 1 dữ kiện từ tool ủng hộ: lời người dùng một mình chỉ cho biết triệu chứng, không
+        # cho biết đó là bệnh gì; kiến thức nền của model không phải bằng chứng (SYSTEM_PROMPT mục 1)
+        if data.stage != "initial" and h.confidence != "thấp":
+            sources = [data.observations[x - 1].source for x in h.supports if 1 <= x <= n]
+            if not any(src.startswith("tool:") for src in sources):
+                problems.append(
+                    f"Giả thuyết {i} ({h.disease}) có độ tin cậy \"{h.confidence}\" nhưng không có dữ kiện nào từ tool ủng "
+                    'hộ — chỉ được để "thấp", hoặc bỏ giả thuyết này nếu chưa tra cứu được bằng chứng.'
+                )
+        if not (h.supports or h.contradicts or h.missing):
+            problems.append(
+                f"Giả thuyết {i} ({h.disease}) không có dữ kiện ủng hộ/mâu thuẫn hay điều còn "
+                "thiếu — chỉ nêu giả thuyết có căn cứ."
+            )
+    if data.stage != "initial" and not data.red_flags.checked:
+        if data.next_action == "ask_user" or not data.hypotheses:
+            data.red_flags.checked = ["chưa ghi nhận cờ đỏ"]
+        else:
+            problems.append("`red_flags.checked` rỗng — phải nêu các cờ đỏ đã kiểm tra.")
+    if data.stage == "final" and data.next_action == "call_tool":
+        problems.append('stage "final" không đi kèm next_action "call_tool".')
+    return (None, problems) if problems else (data, [])
+
+
+def _refs(indexes: list[int]) -> str:
+    return ", ".join(f"[{i}]" for i in indexes) if indexes else "—"
+
+
+_ACTION_LABELS = {
+    "call_tool": "tra cứu thêm",
+    "ask_user": "hỏi người dùng",
+    "answer": "trả lời",
+}
+
+
+def render_reasoning(data: ReasoningInput) -> str:
+    """Đoạn văn hiển thị ở step (Markdown nhẹ, tiếng Việt) — người dùng đọc được, không lộ JSON."""
+    lines = [f"**{STAGE_LABELS[data.stage]}**", "", "Dữ kiện đã có:"]
+    lines += [f"[{i}] {o.fact} (nguồn: {o.source})" for i, o in enumerate(data.observations, 1)]
+    lines += ["", "Các giả thuyết (chỉ để cân nhắc, chưa có bằng chứng):" if data.stage == "initial" else "Các giả thuyết:"]
+    if not data.hypotheses:
+        lines.append("Chưa có giả thuyết nào đủ căn cứ để nêu (chưa tra cứu được bằng chứng).")
+    for i, h in enumerate(data.hypotheses, 1):
+        # trước khi tra cứu, độ tin cậy do model tự ước chưa có căn cứ nên không hiển thị như một kết quả
+        lines.append(f"{i}. {h.disease}" + ("" if data.stage == "initial" else f" — độ tin cậy {h.confidence}"))
+        lines.append(f"   Ủng hộ: {_refs(h.supports)} · Mâu thuẫn: {_refs(h.contradicts)}")
+        if h.missing:
+            lines.append(f"   Còn thiếu: {'; '.join(h.missing)}")
+    rf = data.red_flags
+    lines += [
+        "",
+        f"Cờ đỏ đã kiểm tra: {'; '.join(rf.checked) or 'chưa'}"
+        + (f" · ĐANG CÓ: {'; '.join(rf.present)}" if rf.present else ""),
+        f"Bước tiếp theo: {_ACTION_LABELS[data.next_action]} — {data.next_action_reason}",
+    ]
+    return "\n".join(lines)
+
+
+def _render_questions(result: dict[str, Any]) -> str:
+    questions = result.get("questions") or []
+    if not questions:
+        return ""
+    lines = ["", "Gợi ý câu hỏi phân biệt (từ đồ thị, chỉ để tham khảo):"]
+    for q in questions:
+        lines.append(
+            f"- {q['phenotype']}: có ở {', '.join(q['present_in'])}; "
+            f"không có ở {', '.join(q['absent_in'])}"
+        )
+    return "\n".join(lines)
+
+
+@tool(args_schema=ReasoningInput)
+async def record_reasoning(**kwargs: Any) -> str:
+    """Ghi lại LẬP LUẬN có cấu trúc — không tra cứu bệnh/bằng chứng, chỉ buộc bạn nêu dữ kiện,
+    giả thuyết và bước tiếp theo để người dùng thấy được quá trình suy luận. Gọi ĐÚNG lúc:
+    (1) stage="initial": TRƯỚC tool tra cứu đầu tiên của lượt có nội dung y khoa;
+    (2) stage="after_evidence": ngay sau mỗi đợt kết quả tool (hệ thống sẽ yêu cầu);
+    (3) stage="final": khi đủ căn cứ để trả lời hoặc hỏi người dùng.
+    Mỗi giả thuyết phải dựa trên dữ kiện đã liệt kê (tham chiếu theo số thứ tự); chỉ dùng dữ
+    kiện thật từ người dùng/kết quả tool, không bịa. Kiến thức nền không phải dữ kiện.
+
+    Khi next_action="ask_user" và có từ 2 giả thuyết trở lên, kết quả kèm GỢI Ý CÂU HỎI PHÂN
+    BIỆT (phenotype chia đôi tốt nhất các giả thuyết, tính từ đồ thị). Khi đó hãy gọi
+    `record_reasoning` MỘT MÌNH, đọc gợi ý trong kết quả rồi mới `ask_user`; tự diễn đạt gợi ý
+    thành 1 câu hỏi tiếng Việt dễ hiểu, và chỉ dùng nếu người dùng có thể tự trả lời được."""
+    data, problems = validate_reasoning(kwargs)
+    if data is None:
+        return f"{INVALID_PREFIX} " + " | ".join(problems) + " — hãy gọi lại với nội dung đúng."
+    text = render_reasoning(data)
+    if data.next_action == "ask_user" and len(data.hypotheses) >= 2:
+        try:
+            result = await get_knowledge_client().get_discriminating_questions([h.disease for h in data.hypotheses])
+            text += _render_questions(result)
+        except Exception as exc:  # noqa: BLE001 — gợi ý là phần thêm, không làm hỏng lập luận
+            logger.warning("gợi ý câu hỏi lỗi: %s", exc, exc_info=True)
+    return text
+
+
+# ---------------------------------------------------------------------------
+# Phân tích trạng thái lập luận của turn hiện tại (dùng bởi middleware)
+# ---------------------------------------------------------------------------
+
+
+def _text(message: AnyMessage) -> str:
+    return message.content if isinstance(message.content, str) else str(message.content)
+
+
+def _is_system_marker(message: AnyMessage) -> bool:
+    return isinstance(message, HumanMessage) and _text(message).startswith(_SYSTEM_MARKERS)
+
+
+def turn_messages(messages: list[AnyMessage]) -> list[AnyMessage]:
+    """Các message SAU tin nhắn thật gần nhất của người dùng"""
+    for i in range(len(messages) - 1, -1, -1):
+        m = messages[i]
+        if isinstance(m, HumanMessage) and not _is_system_marker(m):
+            return messages[i + 1 :]
+    return list(messages)
+
+
+class TurnReasoning(BaseModel):
+    has_valid_reasoning: bool = False
+    has_evidence: bool = False
+    # Có kết quả tool (bằng chứng) MỚI hơn lần lập luận hợp lệ gần nhất.
+    pending_evidence: bool = False
+    invalid_count: int = 0
+    feedback_count: int = 0
+
+
+def analyze_turn(turn: list[AnyMessage]) -> TurnReasoning:
+    state = TurnReasoning()
+    for m in turn:
+        if isinstance(m, AIMessage):
+            for call in m.tool_calls:
+                if call["name"] != TOOL_NAME:
+                    continue
+                # Đếm lần không hợp lệ theo THAM SỐ (không dựa nội dung `ToolMessage`): lỗi schema
+                # bị `ToolNode` bắt trước khi tool chạy nên không có `INVALID_PREFIX`.
+                data, _ = validate_reasoning(call["args"])
+                if data is not None:
+                    state.has_valid_reasoning = True
+                    state.pending_evidence = False
+                else:
+                    state.invalid_count += 1
+        elif isinstance(m, ToolMessage):
+            if m.name not in _NON_EVIDENCE_TOOLS:
+                state.has_evidence = True
+                state.pending_evidence = True
+        elif _is_system_marker(m) and _text(m).startswith(FEEDBACK_PREFIX):
+            state.feedback_count += 1
+    return state
+
+
+def has_valid_reasoning_call(message: AIMessage) -> bool:
+    return any(
+        call["name"] == TOOL_NAME and validate_reasoning(call["args"])[0] is not None
+        for call in message.tool_calls
+    )
+
+
+def needs_reasoning(message: AIMessage) -> bool:
+    """AIMessage gọi tool bằng chứng mà KHÔNG kèm `record_reasoning` hợp lệ trong cùng lượt gọi."""
+    if not message.tool_calls or has_valid_reasoning_call(message):
+        return False
+    return any(c["name"] not in _NON_EVIDENCE_TOOLS for c in message.tool_calls)

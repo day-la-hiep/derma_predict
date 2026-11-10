@@ -106,7 +106,7 @@ Cách chia bám theo ranh giới trong code (service / API / FE feature / worker
 
 | Mã | Chức năng | Trạng thái | Hiện trạng / việc cần làm |
 |---|---|---|---|
-| M5.1 | KG da liễu (bệnh – triệu chứng – thuốc – gen) và ontology thuật ngữ | ✅ | PrimeKG + DermO trong Neo4j, dựng bằng `core/graph_base/` (`make kg-download kg-build kg-load kg-verify`) |
+| M5.1 | KG da liễu (bệnh – triệu chứng – thuốc – gen) và ontology thuật ngữ | ✅ | PrimeKG + DermO trong Neo4j, dựng bằng `archive/core/graph_base/` (`make kg-download kg-build kg-load kg-verify`) |
 | M5.2 | Chatbot truy vấn KG | ✅ | tool `knowledge_graph_query` (template Cypher theo intent: ứng viên, phân biệt, điều trị, chống chỉ định, hồ sơ thuốc...) |
 | M5.3 | Trích quan hệ từ sách và nạp Neo4j (cạnh `source='DOC'`) | ✅ | các bước `chunks → graph → graph_index` của pipeline; LLM trích theo ô quan hệ, người duyệt qua override |
 | M5.4 | Người duyệt xem / sửa quan hệ trích từ sách | ✅ | `GET\|PATCH /admin/documents/{id}/triples`, FE `TripleBrowser`; tìm nút bằng `GET /admin/graph/nodes` |

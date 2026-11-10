@@ -1,0 +1,10 @@
+# Build context là REPO ROOT nên pattern tính từ gốc repo
+**
+!shared
+!knowledge_service
+!archive/core/graph_base/data/build
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.env
+!**/.env.example

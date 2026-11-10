@@ -10,10 +10,10 @@ trong cùng hội thoại, gọi thoại / video (WebRTC), xem hồ sơ + đồ 
 | Lớp | File |
 |---|---|
 | FE | `fe/app/doctor/page.tsx` (ca tư vấn), `fe/app/doctor/records/page.tsx` (lịch sử khám); `fe/features/doctor/` (`DoctorConsultationPage`, `SessionList`, `ChatViewer`, `ReportPanel`, `AiSummaryView`, `ClinicalFactList`, `FinalizeConsultationDialog`, `FinalizeReportForm`, `PatientInfoCard`, `PatientJourneyCanvas`...); phía bệnh nhân `fe/features/chat/components/RequestConsultationDialog.tsx`, `ConsultationDivider.tsx`; gọi video `fe/features/video-call/` |
-| API | `core/app/api/doctor_api.py` (ca tư vấn, báo cáo kết luận, đồ thị hành trình, `request-consultation`), `video_call_api.py`, `conversation_api.py` (room SSE) |
+| API | `archive/core/app/api/doctor_api.py` (ca tư vấn, báo cáo kết luận, đồ thị hành trình, `request-consultation`), `video_call_api.py`, `conversation_api.py` (room SSE) |
 | Service | `consultation_service.py` (vòng đời phiên, quyền xem room, tin của bác sĩ), `finalize_report_service.py` + `finalize_report_index_service.py` (chốt báo cáo, nạp Qdrant), `video_call_service.py`, `patient_graph_service.py` (đồ thị hành trình), `room_events.py` (Pub/Sub room / inbox / cuộc gọi) |
 | Repository / Model | `consultation_repository.py`, `finalize_report_repository.py`, `video_call_repository.py`; `models/consultation_session.py`, `finalize_report.py`, `video_call.py`, `clinical.py` |
-| Worker | `core/agent/handler/consultation_report.py` (sinh báo cáo tiền tư vấn), `core/agent/common/fact_extractor.py` (trích dữ kiện) |
+| Worker | `archive/core/agent/handler/consultation_report.py` (sinh báo cáo tiền tư vấn), `archive/core/agent/common/fact_extractor.py` (trích dữ kiện) |
 
 Phân quyền: các endpoint bác sĩ dùng `require_role("doctor")` (`app/api/deps.py`); bệnh nhân dùng JWT thường và chỉ thao tác trên hội thoại của mình.
 
@@ -80,7 +80,7 @@ WebRTC P2P 1-1; Core chỉ quản lý vòng đời cuộc gọi và relay signal
 - Chỉ **bác sĩ phụ trách** khởi tạo, khi phiên `active`; bệnh nhân là bên nhận. Mỗi phiên tối đa một cuộc gọi chưa kết thúc. Trạng thái: `pending` (đổ chuông) → `ongoing` → `ended`.
 - Event cuộc gọi đi qua kênh Redis riêng của từng tài khoản (`user:calls:{user_id}`) và SSE global `GET /video-calls/stream`, không qua room hội thoại.
 - Chat chỉ ghi hai tin hệ thống `video_call` (bắt đầu / kết thúc kèm thời lượng, hoặc lý do nhỡ / từ chối / huỷ).
-- Hai bên khác mạng cần TURN: `TURN_URL`, `TURN_SECRET` (coturn trong `docker-compose.yml`) hoặc TURN ngoài `METERED_TURN_*`; trình duyệt cần HTTPS (trừ `localhost`) mới cho dùng camera / mic.
+- Hai bên khác mạng cần TURN: `TURN_URL`, `TURN_SECRET` (coturn trong `deploy/docker-compose.yml`) hoặc TURN ngoài `METERED_TURN_*`; trình duyệt cần HTTPS (trừ `localhost`) mới cho dùng camera / mic.
 - Chi tiết quy tắc, giới hạn: [video-call](../notice/video-call.md).
 
 ## 6. Báo cáo kết luận và đồ thị hành trình

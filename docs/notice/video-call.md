@@ -1,7 +1,7 @@
 # [Lưu ý] Cuộc gọi thoại / video bác sĩ ↔ bệnh nhân
 
-WebRTC P2P 1-1; Core chỉ quản lý vòng đời cuộc gọi và relay signaling, không nhận media. Code: `core/app/services/video_call_service.py`,
-`core/app/api/video_call_api.py`, `fe/features/video-call/`. Kế hoạch gốc và hướng mở rộng: [video-call](../pending/video-call.md).
+WebRTC P2P 1-1; Core chỉ quản lý vòng đời cuộc gọi và relay signaling, không nhận media. Code: `archive/core/app/services/video_call_service.py`,
+`archive/core/app/api/video_call_api.py`, `fe/features/video-call/`. Kế hoạch gốc và hướng mở rộng: [video-call](../pending/video-call.md).
 
 ## Quy tắc
 
@@ -18,10 +18,10 @@ WebRTC P2P 1-1; Core chỉ quản lý vòng đời cuộc gọi và relay signal
 
 ## Điểm cần lưu ý
 
-- **TURN ngoài (Metered Open Relay)**: đặt `METERED_TURN_USERNAME` / `METERED_TURN_CREDENTIAL` trong `core/.env` (credential tĩnh, gitignore, không đưa vào
+- **TURN ngoài (Metered Open Relay)**: đặt `METERED_TURN_USERNAME` / `METERED_TURN_CREDENTIAL` trong `archive/core/.env` (credential tĩnh, gitignore, không đưa vào
   `.env.example`); Core trả kèm cho FE qua `GET /video-calls/ice-config`. Hạn mức miễn phí có giới hạn (~20 GB/tháng, kiểm tra lại ở metered.ca). Credential
   tĩnh do FE nhận được nên ai đăng nhập đều thấy — chấp nhận cho đồ án, nên đổi (rotate) trên dashboard nếu lộ.
-- **Cần TURN khi hai bên khác mạng.** Mặc định chỉ STUN (đủ cho cùng LAN/localhost). Bật `coturn` trong `docker-compose.yml`, đặt `TURN_URL`
+- **Cần TURN khi hai bên khác mạng.** Mặc định chỉ STUN (đủ cho cùng LAN/localhost). Bật `coturn` trong `deploy/docker-compose.yml`, đặt `TURN_URL`
   trỏ IP/domain public và `--external-ip` cho coturn; credential do Core cấp theo HMAC, hết hạn sau `TURN_CREDENTIAL_TTL_SECONDS`.
 - **Cần HTTPS** (trừ `localhost`) thì trình duyệt mới cho `getUserMedia`.
 - Bên nhận thấy cuộc gọi đến ở mọi trang miễn là tab đang mở và đã đăng nhập (SSE global). Chưa có thông báo đẩy khi đóng tab.

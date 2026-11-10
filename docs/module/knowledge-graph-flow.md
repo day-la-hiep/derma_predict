@@ -2,7 +2,7 @@
 
 Sơ đồ Mermaid. Nét đứt cam = **chưa làm**. Phần luồng trích tự động (khớp theo `(loại, id)`, lexicon từ `graph_base`) đã sửa trong code, chưa chạy với Neo4j thật. Schema và số liệu: [knowledge-graph.md](knowledge-graph.md).
 
-## 1. Dựng đồ thị nền (`core/graph_base/`)
+## 1. Dựng đồ thị nền (`archive/core/graph_base/`)
 
 ```mermaid
 flowchart LR
@@ -87,5 +87,5 @@ flowchart LR
 
 ## Chú thích
 - Chạy `make kg-load reset=1` xoá cả cạnh `DOC`; sau đó phải chạy lại bước `graph_index` cho từng sách.
-- `GRAPH_LEXICON_DIR` mặc định trỏ `core/graph_base/data/build` (cần chạy `make kg-build` trước khi chạy bước `graph`).
+- `GRAPH_LEXICON_DIR` mặc định trỏ `archive/core/graph_base/data/build` (cần chạy `make kg-build` trước khi chạy bước `graph`).
 - Cạnh `DOC` chỉ hiện với agent khi `KG_EDGE_SOURCES` có `DOC` (mặc định `["KG"]`).

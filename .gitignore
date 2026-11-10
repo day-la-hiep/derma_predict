@@ -1,9 +1,9 @@
 .idea
-# chỉ ignore thư mục data dev ở root (2GB+ raw PrimeKG/dermnet/epfl), KHÔNG ignore core/data/ (data deploy)
-/data
+# chỉ ignore thư mục data dev ở root (2GB+ raw PrimeKG/dermnet/epfl), KHÔNG ignore archive/core/data/ (data deploy)
+/ml/data
 # bản export dữ liệu để chuyển máy (transfer-data.sh)
 /scripts/backup/
-# secrets compose prod (mẫu: .env.prod.example)
+# secrets compose prod (mẫu: deploy/.env.prod.example)
 /.env
 .vscode
 reference
@@ -28,10 +28,10 @@ node_modules/
 derma_hospital/
 
 # PDF assets
-*.pdf
+
 
 # Thư mục tạm ở gốc repo
 /tmp/
 
 # output của debug app (agent/test)
-core/agent/test/debug_conversations/
+archive/core/agent/test/debug_conversations/

@@ -1,7 +1,7 @@
 # [Lưu ý] Phạm vi bác sĩ xem hội thoại
 
 Bác sĩ chỉ xem hội thoại từ đầu tới hết phiên gần nhất của mình. Logic nằm ở
-`ConsultationService.room_access` (`core/app/services/consultation_service.py`), dùng chung cho
+`ConsultationService.room_access` (`archive/core/app/services/consultation_service.py`), dùng chung cho
 `GET /conversations/{id}/messages` và `GET /conversations/{id}/stream`. Mô tả luồng chat đầy đủ ở
 [chat.md](../module/chat.md).
 

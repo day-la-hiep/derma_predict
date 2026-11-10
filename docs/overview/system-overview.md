@@ -5,7 +5,7 @@ Derma Hospital chia thành **7 module** (mã khớp [requirements.md](requiremen
 | Module | Người dùng | Làm gì | Code chính | Tài liệu |
 |---|---|---|---|---|
 | **M1. Tài khoản & hồ sơ bệnh nhân** | mọi người dùng | JWT, vai trò, nhiều hồ sơ / tài khoản | `auth_*`, `patient_profile_*`; FE `features/auth`, `patient-profile` | [requirements.md](requirements.md) |
-| **M2. Chatbot tư vấn AI** | bệnh nhân | chat, agent suy luận, tra sách / đồ thị / ca bệnh / ảnh, memory | `conversation_*`, `message_service`, `core/agent/`; FE `features/chat` | [chat.md](../module/chat.md) |
+| **M2. Chatbot tư vấn AI** | bệnh nhân | chat, agent suy luận, tra sách / đồ thị / ca bệnh / ảnh, memory | `conversation_*`, `message_service`, `archive/core/agent/`; FE `features/chat` | [chat.md](../module/chat.md) |
 | **M3. Tư vấn với bác sĩ** | bệnh nhân, bác sĩ | xin tư vấn, báo cáo tiền tư vấn, chat, video, báo cáo kết luận, đồ thị hành trình | `consultation_*`, `finalize_report_*`, `video_call_*`, `patient_graph_service`; FE `features/doctor`, `video-call` | [doctor-consultation.md](../module/doctor-consultation.md), [patient-journey-graph.md](../module/patient-journey-graph.md) |
 | **M4. Kho tri thức: số hoá tài liệu** | admin / bác sĩ | PDF → chữ → mục lục → chunk → Qdrant | `document_*`, `pipeline/document_ingest`, Ingest Worker; FE `features/document-pipeline` | [book-ingest-pipeline.md](../module/book-ingest-pipeline.md) |
 | **M5. Đồ thị tri thức** | admin, chatbot | PrimeKG + DermO, cạnh trích từ sách, schema admin | `graph_base/`, `document_graph_service`, `graph_schema_*`; FE `features/graph-schema` | [knowledge-graph.md](../module/knowledge-graph.md) |
@@ -35,15 +35,15 @@ Derma Hospital chia thành **7 module** (mã khớp [requirements.md](requiremen
 | Thành phần | Vai trò | Vị trí code |
 |---|---|---|
 | **FE** | Next.js App Router. `/chats` (Zustand store + SSE), `/doctor` (ca tư vấn, hồ sơ), `/admin/documents`, `/admin/graph-schema` (TanStack Query, poll) | `fe/app/`, `fe/features/{chat,doctor,video-call,document-pipeline,graph-schema,...}/` |
-| **Core** | REST + SSE gateway, JWT, ghi Postgres, publish turn sang Worker, consume kết quả, publish yêu cầu chạy bước pipeline | `core/app/` (`api/`, `services/`, `repositories/`, `models/`, `dto/`, `infra/`, `workers/agent_response_consumer.py`) |
-| **Agent Worker** | Tiến trình riêng, consume `agent_request_queue`, chạy chat graph (lọc intent → tiền chẩn đoán v1 / v2), stream event lên Redis, ghi checkpoint + memory vào schema `langgraph` | `core/agent/` (`worker.py`, `turn.py`, `graph/`, `tools/`, `middleware/`, `persistence.py`) |
-| **Ingest Worker** | Tiến trình riêng, consume `document_ingest_queue`, chạy từng bước pipeline tài liệu; dừng qua Redis | `core/app/workers/document_ingest_worker.py` |
-| **Pipeline tài liệu** | Chỉ biến đổi dữ liệu (PDF → trang → mục lục → chunk → vector; chunk → quan hệ → Neo4j) | `core/pipeline/document_ingest/` |
-| **PostgreSQL** | Nguồn sự thật: user, hồ sơ bệnh nhân, hội thoại, tin nhắn, ca tư vấn, báo cáo, file, tài liệu + trạng thái bước, schema đồ thị | migration Alembic `core/migrations/` |
+| **Core** | REST + SSE gateway, JWT, ghi Postgres, publish turn sang Worker, consume kết quả, publish yêu cầu chạy bước pipeline | `archive/core/app/` (`api/`, `services/`, `repositories/`, `models/`, `dto/`, `infra/`, `workers/agent_response_consumer.py`) |
+| **Agent Worker** | Tiến trình riêng, consume `agent_request_queue`, chạy chat graph (lọc intent → tiền chẩn đoán v1 / v2), stream event lên Redis, ghi checkpoint + memory vào schema `langgraph` | `archive/core/agent/` (`worker.py`, `turn.py`, `graph/`, `tools/`, `middleware/`, `persistence.py`) |
+| **Ingest Worker** | Tiến trình riêng, consume `document_ingest_queue`, chạy từng bước pipeline tài liệu; dừng qua Redis | `archive/core/app/workers/document_ingest_worker.py` |
+| **Pipeline tài liệu** | Chỉ biến đổi dữ liệu (PDF → trang → mục lục → chunk → vector; chunk → quan hệ → Neo4j) | `archive/core/pipeline/document_ingest/` |
+| **PostgreSQL** | Nguồn sự thật: user, hồ sơ bệnh nhân, hội thoại, tin nhắn, ca tư vấn, báo cáo, file, tài liệu + trạng thái bước, schema đồ thị | migration Alembic `archive/core/migrations/` |
 | **Redis** | Pub/Sub event realtime (room hội thoại, inbox bác sĩ, cuộc gọi); key turn đang chạy / chờ đẩy; cờ dừng pipeline | `app/infra/redis_client.py` |
 | **RabbitMQ** | `agent_request_queue` (Core → Worker), `agent_response_queue` (Worker → Core), `document_ingest_queue` (Core → Ingest Worker) | `app/infra/rabbitmq_client.py` |
 | **Qdrant** | `derma_document_chunks_v4` (chunk sách; agent tra bằng `hybrid_retrieval` / `semantic_search` / `keyword_search`), `derma_finalize_reports` (báo cáo kết luận; tool `search_finalize_report*`) | `app/infra/qdrant_client.py` |
-| **Neo4j** | PrimeKG (`:Entity`) + ontology DermO (`:DermoTerm`) + cạnh trích từ sách (`source='DOC'`); đồ thị hành trình bệnh nhân | dựng bằng `core/graph_base/`, cạnh sách do pipeline |
+| **Neo4j** | PrimeKG (`:Entity`) + ontology DermO (`:DermoTerm`) + cạnh trích từ sách (`source='DOC'`); đồ thị hành trình bệnh nhân | dựng bằng `archive/core/graph_base/`, cạnh sách do pipeline |
 | **MinIO** | ảnh đính kèm tin nhắn; mọi file của tài liệu dưới `document/<id>/` | `app/infra/minio_client.py` |
 
 ## 2. Nguyên tắc kiến trúc chung
@@ -52,7 +52,7 @@ Derma Hospital chia thành **7 module** (mã khớp [requirements.md](requiremen
   repository của Core để ghi trạng thái bước. Ngoại lệ: Agent Worker ghi trực tiếp schema `langgraph` (checkpoint, long-term memory).
 - **Core không gọi LLM cho chat** — chỉ publish turn và forward event. LLM chạy ở Worker, nên request HTTP luôn
   trả nhanh. (Pipeline tài liệu gọi LLM ở bước `toc` và `graph`, nhưng chạy ở Ingest Worker; API chỉ ghi `running` rồi trả ngay.)
-- **Phân lớp trong `core/app/`**: `api` (map request/response) → `services` (nghiệp vụ) → `repositories`
+- **Phân lớp trong `archive/core/app/`**: `api` (map request/response) → `services` (nghiệp vụ) → `repositories`
   (truy cập DB, stateless) → `models` (ORM). Entity nghiệp vụ nằm ở `dto/base/`, khác DTO wire
   (`dto/request|response/`) và ORM.
 - **`pipeline/` không import `app.services`/`app.repositories`** — nhận mọi thứ qua `StageContext`.
@@ -83,15 +83,15 @@ make ingest-worker  # Ingest Worker (pipeline tài liệu)
 make frontend  # Next.js :3010
 ```
 
-Đồ thị nền nạp bằng `make kg-download kg-build kg-load kg-verify` (`core/graph_base/`); chunk sách nạp qua giao diện `/admin/documents`; `make reindex-qdrant` nạp lại Qdrant.
+Đồ thị nền nạp bằng `make kg-download kg-build kg-load kg-verify` (`archive/core/graph_base/`); chunk sách nạp qua giao diện `/admin/documents`; `make reindex-qdrant` nạp lại Qdrant.
 
 ## 5. Tài liệu liên quan
 
 - [`fe/docs/backend-contract.md`](../../fe/docs/backend-contract.md) — hợp đồng REST + SSE; Swagger của Core ở `http://localhost:3050/docs`.
 - [`requirements.md`](requirements.md), [`phan-ra-chuc-nang.md`](phan-ra-chuc-nang.md) — yêu cầu và phân rã chức năng.
 - [`../module/knowledge-graph.md`](../module/knowledge-graph.md), [`../notice/agent-graph-versions.md`](../notice/agent-graph-versions.md).
-- [`core/app/kien-truc-agent.md`](../../core/app/kien-truc-agent.md), [`kien-truc-memory.md`](../../core/app/kien-truc-memory.md).
-- [`core/pipeline/document_ingest/README.md`](../../core/pipeline/document_ingest/README.md).
+- [`archive/core/app/kien-truc-agent.md`](../../core/app/kien-truc-agent.md), [`kien-truc-memory.md`](../../core/app/kien-truc-memory.md).
+- [`archive/core/pipeline/document_ingest/README.md`](../../core/pipeline/document_ingest/README.md).
 
 ## 6. Hạn chế chung (đồ án)
 

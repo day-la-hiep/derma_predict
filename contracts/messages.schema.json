@@ -1,0 +1,332 @@
+{
+  "AgentResponseMessage": {
+    "properties": {
+      "choice": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Choice"
+      },
+      "content": {
+        "default": "",
+        "title": "Content",
+        "type": "string"
+      },
+      "conversation_id": {
+        "title": "Conversation Id",
+        "type": "string"
+      },
+      "facts": {
+        "anyOf": [
+          {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Facts"
+      },
+      "hypotheses": {
+        "anyOf": [
+          {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Hypotheses"
+      },
+      "image_predictions": {
+        "anyOf": [
+          {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Image Predictions"
+      },
+      "message_id": {
+        "title": "Message Id",
+        "type": "string"
+      },
+      "provenance_pairs": {
+        "anyOf": [
+          {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Provenance Pairs"
+      },
+      "reasoning": {
+        "anyOf": [
+          {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Reasoning"
+      },
+      "report_summary": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Report Summary"
+      },
+      "session_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Session Id"
+      },
+      "status": {
+        "enum": [
+          "done",
+          "question",
+          "report_ready",
+          "report_failed"
+        ],
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "conversation_id",
+      "message_id",
+      "status"
+    ],
+    "title": "AgentResponseMessage",
+    "type": "object"
+  },
+  "TurnAttachment": {
+    "description": "1 ảnh đính kèm turn — field khớp `app/dto/base/file.py::File`; `storage_key` là key MinIO\n(`app/services/file_store_service.py`), Worker tự fetch bytes qua `get_object_bytes()` khi\ntool `classify_skin_image` (`agent/tools/skin_image_classifier.py`) cần.",
+    "properties": {
+      "content_type": {
+        "title": "Content Type",
+        "type": "string"
+      },
+      "file_name": {
+        "title": "File Name",
+        "type": "string"
+      },
+      "storage_key": {
+        "title": "Storage Key",
+        "type": "string"
+      }
+    },
+    "required": [
+      "file_name",
+      "content_type",
+      "storage_key"
+    ],
+    "title": "TurnAttachment",
+    "type": "object"
+  },
+  "TurnRequest": {
+    "$defs": {
+      "TurnAttachment": {
+        "description": "1 ảnh đính kèm turn — field khớp `app/dto/base/file.py::File`; `storage_key` là key MinIO\n(`app/services/file_store_service.py`), Worker tự fetch bytes qua `get_object_bytes()` khi\ntool `classify_skin_image` (`agent/tools/skin_image_classifier.py`) cần.",
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          },
+          "storage_key": {
+            "title": "Storage Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_name",
+          "content_type",
+          "storage_key"
+        ],
+        "title": "TurnAttachment",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "answer": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Answer"
+      },
+      "attached_files": {
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/TurnAttachment"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Attached Files"
+      },
+      "content": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Content"
+      },
+      "conversation_id": {
+        "title": "Conversation Id",
+        "type": "string"
+      },
+      "corr_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Corr Id"
+      },
+      "message_id": {
+        "title": "Message Id",
+        "type": "string"
+      },
+      "patient_profile_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Patient Profile Id"
+      },
+      "reason": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Reason"
+      },
+      "session_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Session Id"
+      },
+      "type": {
+        "enum": [
+          "turn",
+          "resume",
+          "consultation_report"
+        ],
+        "title": "Type",
+        "type": "string"
+      },
+      "user_message_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "User Message Id"
+      }
+    },
+    "required": [
+      "type",
+      "conversation_id",
+      "message_id"
+    ],
+    "title": "TurnRequest",
+    "type": "object"
+  }
+}

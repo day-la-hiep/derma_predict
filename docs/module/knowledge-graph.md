@@ -1,6 +1,6 @@
 # Knowledge graph (Neo4j): schema, cơ chế nạp, cơ chế khai thác
 
-Neo4j chứa **hai đồ thị nền** dựng thẳng từ nguồn gốc bằng `core/graph_base/` (PrimeKG cho quan hệ, DermO cho ontology) cộng **cạnh trích từ sách giáo khoa**
+Neo4j chứa **hai đồ thị nền** dựng thẳng từ nguồn gốc bằng `archive/core/graph_base/` (PrimeKG cho quan hệ, DermO cho ontology) cộng **cạnh trích từ sách giáo khoa**
 (`source='DOC'`) do pipeline `document_ingest` thêm vào. Kết quả đồ thị chỉ là **gợi ý, không phải bằng chứng lâm sàng hay chẩn đoán**.
 Hai đồ thị độc lập, không có cạnh nối nhau; chỉ gặp nhau qua so khớp tên (mục 3.2).
 
@@ -67,7 +67,7 @@ Nguồn: `dermatology.obo` v1.19 (GitHub `dermatology-ontology/dermatology`, cù
 
 ## 2. Cơ chế nạp
 
-### 2.1 Đồ thị nền (chạy tay, ngoài pipeline sách): `core/graph_base/`
+### 2.1 Đồ thị nền (chạy tay, ngoài pipeline sách): `archive/core/graph_base/`
 
 ```
 tải gốc (data/raw) --build--> data/build/{primekg,dermo} --load--> Neo4j --verify
@@ -83,8 +83,8 @@ tải gốc (data/raw) --build--> data/build/{primekg,dermo} --load--> Neo4j --v
 - PrimeKG: ràng buộc duy nhất `id` theo từng label, cạnh `MATCH` theo `(Label {id})` nên không nối nhầm loại. Quan hệ chưa có cạnh nào thì `CREATE` (nhanh), đã có thì `MERGE`.
 - `reset=1` xoá `:Entity` / `:DermoTerm` **kể cả cạnh và nút `DOC` từ sách** → phải chạy lại `graph_index` cho từng sách. Xoá theo đợt, cạnh trước nút (xoá thẳng nút thuốc có hàng trăm nghìn cạnh `DRUG_DRUG` làm Neo4j hết bộ nhớ giao dịch).
 - Chạy lại không reset là upsert; **chưa thử** trên toàn bộ dữ liệu (nhánh `MERGE` của `DRUG_DRUG` có thể chậm).
-- Chi tiết, cấu trúc thư mục và nguồn: `core/graph_base/README.md`.
-- Chưa chuyển sang: `reset-and-gen-data.sh` (prod) vẫn gọi loader cũ trong `data_ingest/01_normalize/scripts/`.
+- Chi tiết, cấu trúc thư mục và nguồn: `archive/core/graph_base/README.md`.
+- Chưa chuyển sang: `scripts/reset-and-gen-data.sh` (prod) vẫn gọi loader cũ trong `data_ingest/01_normalize/scripts/`.
 - Không có bước tự kiểm tra lúc khởi động agent; quên nạp thì chỉ phát hiện khi query rỗng hoặc `graph_index` bỏ cạnh.
 
 ### 2.2 Cạnh từ sách (pipeline, mỗi tài liệu)

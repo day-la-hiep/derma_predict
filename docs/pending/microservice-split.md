@@ -1,6 +1,6 @@
 # [Pending] Tách hệ thống thành microservice theo domain
 
-Chương 2 của báo cáo (`bao_cao_latex/chuong2`) mô tả **thiết kế đích** gồm API Gateway và các dịch vụ theo domain, mỗi dịch vụ
+Chương 2 của báo cáo (`report/bao_cao_latex/chuong2`) mô tả **thiết kế đích** gồm API Gateway và các dịch vụ theo domain, mỗi dịch vụ
 có CSDL riêng. Code hiện tại chưa làm vậy: Core, Agent Worker, Ingest Worker cùng một mã nguồn `core/`, dùng chung một
 PostgreSQL và chỉ Core ghi vào đó. Tài liệu này ghi cách chia đang dự kiến để chốt trước khi viết chương 2.
 

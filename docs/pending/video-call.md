@@ -59,7 +59,7 @@ Kết luận: bác sĩ ↔ bệnh nhân 1-1 → P2P + coturn. SFU chỉ khi có 
 
 | Lựa chọn | Đánh giá |
 |---|---|
-| coturn tự host (thêm vào `docker-compose.yml`) | **Chọn.** Time-limited credential (HMAC) do Core cấp |
+| coturn tự host (thêm vào `deploy/docker-compose.yml`) | **Chọn.** Time-limited credential (HMAC) do Core cấp |
 | STUN công cộng của Google | Chỉ dev, không có relay |
 | Twilio/Metered TURN | Dễ nhưng tốn tiền, phụ thuộc ngoài; dự phòng khi không có IP public |
 
@@ -71,7 +71,7 @@ Kết luận: bác sĩ ↔ bệnh nhân 1-1 → P2P + coturn. SFU chỉ khi có 
 - Ai gọi ai: đề xuất bác sĩ của phiên `active` khởi tạo, bệnh nhân nhận; tái dùng `room_access`.
 
 ### Giai đoạn 1 — Hạ tầng
-- Thêm `coturn` vào `docker-compose.yml` (`use-auth-secret`, dải cổng UDP relay).
+- Thêm `coturn` vào `deploy/docker-compose.yml` (`use-auth-secret`, dải cổng UDP relay).
 - Biến `TURN_URL`, `TURN_SECRET` trong settings (không commit secret).
 - Dev chạy HTTPS (`next dev --experimental-https`) hoặc dùng `localhost` cho cả hai tab.
 
