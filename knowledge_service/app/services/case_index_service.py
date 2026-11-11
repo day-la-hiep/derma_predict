@@ -28,6 +28,7 @@ def build_case_text(case: CaseInput, age: int | None) -> str:
         f"Đặc điểm bệnh nhân: {', '.join(t for t in traits if t)}" if any(traits) else "",
         "Dữ kiện lâm sàng & Triệu chứng ghi nhận:" if case.snapshot.clinical_facts else "",
         *(f"- [{f.fact_type}] {f.label}: {f.detail}" for f in case.snapshot.clinical_facts),
+        f"Mô tả của bác sĩ khi khám: {assessment.description}" if assessment.description else "",
         f"Đánh giá & Cơ sở chẩn đoán của bác sĩ: {assessment.reasoning}" if assessment.reasoning else "",
         f"Mức độ khẩn cấp: {assessment.urgency}" if assessment.urgency else "",
         f"Dặn dò & Hướng xử trí: {'; '.join(assessment.instructions)}" if assessment.instructions else "",

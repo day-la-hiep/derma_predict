@@ -39,6 +39,12 @@ function SummaryTab({ report }: { report: FinalizeReportItem }) {
           {snap?.assessment.reasoning && (
             <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{snap.assessment.reasoning}</p>
           )}
+          {snap?.assessment.description && (
+            <p className="whitespace-pre-line text-sm leading-relaxed text-foreground">
+              <span className="text-muted-foreground">Mô tả: </span>
+              {snap.assessment.description}
+            </p>
+          )}
         </div>
       </section>
 

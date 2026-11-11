@@ -33,6 +33,7 @@ Không qua gateway; mọi lời gọi kèm header `X-Internal-Key` (cấu hình 
 |---|---|---|
 | ai | `POST /internal/turns` (202) | nhận `TurnRequest` (chỉ id + nội dung + file; **không** mang context), chạy nền |
 | ai | `POST /internal/turns/{message_id}/cancel` | dừng lượt: `{cancelled: bool}` |
+| ai | `POST /internal/extract-facts-from-description` | clinical gọi lúc bác sĩ chốt kết luận: body `{description, body_site, known_facts:[{fact_type,label,detail}]}` → `data: {facts:[{fact_type,label,detail}]}` (chỉ dữ kiện bác sĩ mô tả mà `known_facts` chưa có hoặc đổi giá trị); lỗi LLM → 502 `detail` tiếng Việt, clinical không chốt |
 | identity | `GET /internal/patient-profiles/resolve?user_id=&profile_id=` | consultation xác định hồ sơ của tài khoản (bỏ `profile_id` = hồ sơ đầu tiên): `data: {id, user_id, full_name}`; 404 nếu không có/không phải của tài khoản |
 | identity | `GET /internal/users/{id}` | tên và vai trò tài khoản: `data: {id, full_name, role}`; 404 nếu không có (consultation lấy tên bác sĩ cho kênh theo dõi) |
 | identity | `GET /internal/patient-profiles?ids=a,b` | thông tin nhiều hồ sơ cùng lúc: `data: [{id, user_id, full_name, dob, gender, relationship, phone}]` (id không tồn tại thì bỏ qua) |
@@ -110,6 +111,8 @@ Kênh = hội thoại `kind=doctor_followup` gắn một lần khám; AI không 
 | `GET /api/v1/followup-channels/by-encounter/{encounter_id}` | bệnh nhân chủ kênh hoặc bác sĩ của kênh: `{conversation_id, encounter_id, status: open\|read_only, followup_until, doctor_id, doctor_name, ...}`; 404 nếu chưa có kênh |
 | `GET /api/v1/doctor/followup-channels` | kênh của bác sĩ, thêm `patient_profile_id`, `patient_name`, `last_message_at`, `preview` |
 | `POST /api/v1/conversations/{id}/video-calls` | gọi video: chỉ bác sĩ của kênh, chỉ khi kênh còn mở (các route `/video-calls/*` giữ nguyên) |
+
+Chốt kết luận lần khám `POST /api/v1/doctor/encounters/{id}/finalize` (clinical): body bắt buộc `diagnosis` (nhận định), `reasoning` (cơ sở nhận định), `description` (mô tả của bác sĩ), `diagnosis_code`, `urgency`; `facts` chỉ là các dữ kiện AI được **giữ** (có `source_fact_id`, vắng mặt = xoá). Clinical gọi ai `extract-facts-from-description` trước transaction để chuyển `description` thành dữ kiện mới (origin `doctor_observed`); mọi dữ kiện sau chốt đều đã xác nhận. Ai lỗi → 502, không tạo báo cáo. `description` lưu trong `snapshot.assessment.description` (báo cáo cũ: null) và knowledge nhận ở `CaseInput.snapshot.assessment.description`.
 
 Đã bỏ: `request-consultation`, `/doctor/consultations/*`, `/doctor/consultations/{id}/finalize*`, `consultation_report`. `openapi.core.json` và `messages.schema.json` sinh từ `archive/core/` (đóng băng) nên vẫn còn các đường dẫn cũ; không sửa tay.
 

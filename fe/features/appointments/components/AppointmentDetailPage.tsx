@@ -161,7 +161,8 @@ function Conclusion({ d, report }: { d: DoctorAppointmentDetail; report: Finaliz
         {report.isReferenceCase ? " · ca tham khảo" : ""}
       </p>
       <dl className="space-y-3">
-        {a?.reasoning && <Field label="Nhận định"><span className="whitespace-pre-line">{a.reasoning}</span></Field>}
+        {a?.reasoning && <Field label="Cơ sở"><span className="whitespace-pre-line">{a.reasoning}</span></Field>}
+        {a?.description && <Field label="Mô tả"><span className="whitespace-pre-line">{a.description}</span></Field>}
         {a && a.instructions.length > 0 && (
           <Field label="Dặn dò">
             <ul className="list-disc space-y-0.5 pl-5">

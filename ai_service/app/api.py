@@ -6,8 +6,10 @@ from typing import Annotated
 from derma_shared.errors import ForbiddenError
 from derma_shared.log import request_id_var
 from fastapi import APIRouter, Depends, Header, status
+from pydantic import BaseModel
 
 from app.dto.turn_request import TurnRequest
+from app.reasoning.description_fact_extractor import extract_facts_from_description
 from app.turn import handle_turn
 from app.config.settings import settings
 
@@ -74,3 +76,22 @@ async def create_turn(body: TurnRequest) -> dict[str, bool]:
 @router.post("/turns/{message_id}/cancel")
 async def cancel_turn_by_message(message_id: str) -> dict[str, bool]:
     return {"cancelled": cancel_turn(message_id)}
+
+
+class KnownFact(BaseModel):
+    fact_type: str
+    label: str
+    detail: str = ""
+
+
+class DescriptionFactsRequest(BaseModel):
+    description: str
+    body_site: str = ""
+    known_facts: list[KnownFact] = []
+
+
+@router.post("/extract-facts-from-description")
+async def extract_facts_from_doctor_description(body: DescriptionFactsRequest) -> dict[str, dict[str, list[dict[str, str]]]]:
+    """Clinical gọi lúc bác sĩ chốt kết luận: mô tả của bác sĩ → dữ kiện (lỗi LLM thì 502 để không chốt thiếu dữ kiện)."""
+    known = [{"fact_type": k.fact_type, "template_label": k.label, "detail": k.detail} for k in body.known_facts]
+    return {"data": {"facts": await extract_facts_from_description(body.description, known)}}

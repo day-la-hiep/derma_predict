@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EMPTY_FINALIZE, FinalizeReportForm, SuggestionPanel } from "@/features/doctor";
+import { EMPTY_FINALIZE, FinalizeReportForm, SuggestionPanel, isFinalizeComplete } from "@/features/doctor";
 import type { FinalizeInput } from "@/features/doctor";
 import { useEncounterDraft, useFinalizeEncounter } from "../hooks";
 import type { EncounterDraft } from "../types";
@@ -104,7 +104,7 @@ function Form({ encounterId, draft, onDone }: { encounterId: string; draft: Enco
         )}
       </div>
       <DialogFooter className="border-t border-border px-6 py-3.5">
-        <Button type="submit" variant="brand" disabled={!value.diagnosis.trim() || !code || finalize.isPending}>
+        <Button type="submit" variant="brand" disabled={!isFinalizeComplete(value) || !code || finalize.isPending}>
           {finalize.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
           Kết luận
         </Button>
@@ -121,7 +121,7 @@ export function EncounterFinalizeDialog({ encounterId, onClose }: { encounterId:
         <DialogHeader className="border-b border-border px-6 py-4 text-left">
           <DialogTitle className="font-serif text-xl">Kết luận</DialogTitle>
           <DialogDescription className="text-xs">
-            Dữ kiện bạn giữ lại sẽ được đánh dấu đã xác nhận; dữ kiện bị bỏ khỏi danh sách sẽ bị xoá. Phiếu đã chốt không sửa được.
+            Nhận định, cơ sở nhận định và mô tả là bắt buộc. Khi lưu, hệ thống đọc mô tả và chuyển thành dữ kiện; mọi dữ kiện (giữ nguyên và mới) đều ở trạng thái đã xác nhận, dữ kiện AI bị bỏ sẽ bị xoá. Phiếu đã lưu không sửa được.
           </DialogDescription>
         </DialogHeader>
         {isLoading ? (

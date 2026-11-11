@@ -3,7 +3,7 @@ package vn.derma.clinical.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "derma")
-public record DermaProperties(Jwt jwt, String internalApiKey, String consultationUrl, String knowledgeUrl, String identityUrl,
+public record DermaProperties(Jwt jwt, String internalApiKey, String consultationUrl, String knowledgeUrl, String identityUrl, String aiUrl,
         int episodeExpireDays, int followupDays, Minio minio) {
 
     public record Jwt(String secret) {

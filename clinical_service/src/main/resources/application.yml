@@ -29,6 +29,7 @@ derma:
   consultation-url: ${CONSULTATION_URL:http://localhost:3052}
   knowledge-url: ${KNOWLEDGE_URL:http://localhost:3054}
   identity-url: ${IDENTITY_URL:http://localhost:3051}
+  ai-url: ${AI_URL:http://localhost:3055}
   # đợt bệnh `open` quá hạn không cập nhật thì chuyển `expired` (trừ đợt có lịch hẹn còn hiệu lực)
   episode-expire-days: 30
   # kênh chat theo dõi sau khám mở thêm bao nhiêu ngày kể từ lúc chốt kết luận (hết hạn thì chỉ đọc)

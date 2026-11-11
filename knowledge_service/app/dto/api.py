@@ -129,6 +129,8 @@ class CaseAssessment(BaseModel):
     reasoning: str = ""
     urgency: str = ""
     instructions: list[str] = []
+    # mô tả của bác sĩ lúc chốt; báo cáo cũ không có
+    description: str | None = None
 
 
 class CaseFact(BaseModel):
