@@ -26,4 +26,4 @@ ENV PATH="/app/ai_service/.venv/bin:${PATH}" \
     SKIN_CNN_CHECKPOINT_PATH=/model/model_output/AdaptiveCNN_SkinDisease_v5_best.pth
 
 EXPOSE 3055
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "3055"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3055"]

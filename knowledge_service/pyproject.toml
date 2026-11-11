@@ -29,4 +29,4 @@ dependencies = [
 derma-shared = { path = "../shared", editable = true }
 
 [tool.pyright]
-include = ["app", "pipeline", "main.py"]
+include = ["app"]

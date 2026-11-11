@@ -7,9 +7,9 @@ from derma_shared.errors import ForbiddenError
 from derma_shared.log import request_id_var
 from fastapi import APIRouter, Depends, Header, status
 
-from agent.dto.turn_request import TurnRequest
-from agent.handler.consultation_report import handle_consultation_report
-from agent.turn import handle_turn
+from app.dto.turn_request import TurnRequest
+from app.handler.consultation_report import handle_consultation_report
+from app.turn import handle_turn
 from app.config.settings import settings
 
 logger = logging.getLogger("turn_runner")

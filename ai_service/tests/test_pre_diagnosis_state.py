@@ -8,14 +8,14 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from agent.reasoning.patient_fact_extractor import ExtractedFact, ExtractedFacts, extract_facts, merge_facts, validate_facts_evidence
-from agent.context.agent_context import AgentContext
-from agent.common.tracing import build_run_config
-from agent.graph.chat_graph import build_chat_graph
-from agent.graph.pre_diagnosis_nodes import load_memory_node
-from agent.graph.pre_diagnosis_graph import _after_plan
-from agent.state.pre_diagnosis_state import PreDiagnosisState
-from agent.middleware.patient_memory_prompt import inject_memory, load_memory
+from app.reasoning.patient_fact_extractor import ExtractedFact, ExtractedFacts, extract_facts, merge_facts, validate_facts_evidence
+from app.context.agent_context import AgentContext
+from app.common.tracing import build_run_config
+from app.graph.chat_graph import build_chat_graph
+from app.graph.pre_diagnosis_nodes import load_memory_node
+from app.graph.pre_diagnosis_graph import _after_plan
+from app.state.pre_diagnosis_state import PreDiagnosisState
+from app.middleware.patient_memory_prompt import inject_memory, load_memory
 from langgraph.store.memory import InMemoryStore
 from app.config.settings import settings
 
@@ -71,7 +71,7 @@ class MergeFactsTest(unittest.TestCase):
 class ExtractFactsTest(unittest.TestCase):
     def _run(self, result: Any, transcript: list[tuple[str, str]]) -> tuple[list[dict[str, Any]], FakeStructured]:
         structured = FakeStructured(result)
-        with patch("agent.reasoning.patient_fact_extractor.get_model", return_value=FakeModel(structured)):
+        with patch("app.reasoning.patient_fact_extractor.get_model", return_value=FakeModel(structured)):
             return run(extract_facts([], transcript)), structured
 
     def test_skips_llm_without_patient_message(self):
@@ -164,7 +164,7 @@ class MemoryInjectedAtFirstNodeTest(unittest.TestCase):
         load_mock = AsyncMock(return_value="- dị ứng penicillin")
         state: Any = {"messages": [HumanMessage(content="tôi ngứa")]}
         runtime: Any = SimpleNamespace(context=ctx, store=object())
-        with patch("agent.graph.pre_diagnosis_nodes.load_memory", load_mock):
+        with patch("app.graph.pre_diagnosis_nodes.load_memory", load_mock):
             run(load_memory_node(state, runtime))
         self.assertEqual((ctx.memory_text, load_mock.await_count), ("- dị ứng penicillin", 1))
         load_mock.assert_awaited_once_with(runtime.store, "p1")

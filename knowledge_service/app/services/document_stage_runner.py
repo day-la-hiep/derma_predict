@@ -21,11 +21,11 @@ from app.services.document_graph_service import DocumentGraphService
 from app.services.document_service import DocumentService, get_local_pdf, read_profile
 from app.services.file_store_service import FileStoreService
 from app.services.graph_schema_service import GraphSchemaService
-from pipeline.document_ingest import mapping
-from pipeline.document_ingest.graph_link import EntityLexicon, LexEntry
-from pipeline.document_ingest.graph_schema import CORE_SCHEMA, GraphSchema
-from pipeline.document_ingest.types import DoclingBlock, PageRow, TocAuto, TocDoc
-from pipeline.document_ingest.stages import (
+from app.pipeline.document_ingest import mapping
+from app.pipeline.document_ingest.graph_link import EntityLexicon, LexEntry
+from app.pipeline.document_ingest.graph_schema import CORE_SCHEMA, GraphSchema
+from app.pipeline.document_ingest.types import DoclingBlock, PageRow, TocAuto, TocDoc
+from app.pipeline.document_ingest.stages import (
     StageCancelled,
     StageError,
     step1_ingest,

@@ -5,13 +5,13 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-from agent import turn
-from agent.context.agent_context import AgentContext
-from agent.context.turn_context_builder import build_context
-from agent.dto.turn_request import TurnAttachment, TurnRequest
-from agent.tools.similar_case_search import search_similar_cases
+from app import turn
+from app.context.agent_context import AgentContext
+from app.context.turn_context_builder import build_context
+from app.dto.turn_request import TurnAttachment, TurnRequest
+from app.tools.similar_case_search import search_similar_cases
 from app import api as turn_runner
-from main import app as main_app
+from app.main import app as main_app
 from app.config.settings import settings
 
 HEADERS = {"X-Internal-Key": settings.INTERNAL_API_KEY}
@@ -39,7 +39,7 @@ class FinishTurnTest(unittest.TestCase):
             patcher = patch.object(turn, target, lambda v=value: v)
             patcher.start()
             self.addCleanup(patcher.stop)
-        patcher = patch("agent.middleware.tool_step_events.get_redis_client", lambda: self.redis)
+        patcher = patch("app.middleware.tool_step_events.get_redis_client", lambda: self.redis)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -59,7 +59,7 @@ class FinishTurnTest(unittest.TestCase):
         self.clinical.apply_turn.side_effect = RuntimeError("clinical chết")
         context = AgentContext(user_id="u", conversation_id="c1")
         context.turn_hypotheses = [{"disease": "x"}]
-        with self.assertLogs("agent.turn", level="ERROR"):
+        with self.assertLogs("app.turn", level="ERROR"):
             asyncio.run(turn.finish_turn(make_request(), {"type": "message.done"}, content="ok", context=context))
         self.consultation.post_turn_result.assert_awaited_once()
 
@@ -70,7 +70,7 @@ class BuildContextTest(unittest.TestCase):
         consultation.get_conversation.return_value = {"user_id": "u1", "patient_profile_id": "pp-1", "model": "gemma4-26b"}
         clinical.get_patient_context.return_value = {"facts": [{"label": "Ngứa", "fact_type": "symptom", "detail": "đêm", "body_site": "tay"}]}
         req = make_request(attached_files=[TurnAttachment(file_name="a.jpg", content_type="image/jpeg", storage_key="k/a.jpg")])
-        with patch("agent.context.turn_context_builder.get_consultation_client", lambda: consultation), patch("agent.context.turn_context_builder.get_clinical_client", lambda: clinical):
+        with patch("app.context.turn_context_builder.get_consultation_client", lambda: consultation), patch("app.context.turn_context_builder.get_clinical_client", lambda: clinical):
             context = asyncio.run(build_context(req))
         self.assertEqual((context.user_id, context.patient_profile_id, context.image_keys), ("u1", "pp-1", ["k/a.jpg"]))
         self.assertEqual(context.model, settings.AGENT_MODEL_CHOICES["gemma4-26b"])
@@ -83,13 +83,13 @@ class BuildContextTest(unittest.TestCase):
         self.assertEqual((context.user_id, context.known_facts), ("", []))
         consultation.get_conversation.return_value = {"user_id": "u", "patient_profile_id": "pp-1", "model": "x"}
         clinical.get_patient_context.side_effect = RuntimeError("down")
-        with self.assertLogs("agent.context.turn_context_builder", level="WARNING"):
+        with self.assertLogs("app.context.turn_context_builder", level="WARNING"):
             context = asyncio.run(_build_with(consultation, clinical))
         self.assertEqual(context.known_facts, [])
 
 
 async def _build_with(consultation: Any, clinical: Any) -> AgentContext:
-    with patch("agent.context.turn_context_builder.get_consultation_client", lambda: consultation), patch("agent.context.turn_context_builder.get_clinical_client", lambda: clinical):
+    with patch("app.context.turn_context_builder.get_consultation_client", lambda: consultation), patch("app.context.turn_context_builder.get_clinical_client", lambda: clinical):
         return await build_context(make_request())
 
 
@@ -97,7 +97,7 @@ class CaseSearchTest(unittest.TestCase):
     def test_maps_knowledge_payload_to_case_dict(self) -> None:
         knowledge = AsyncMock()
         knowledge.search_semantic.return_value = [{"case_id": "r1", "diagnosis": "Eczema", "reasoning": "khô da", "instructions": ["bôi kem"], "notes": "n", "images": [{"storage_key": "k"}]}]
-        with patch("agent.tools.similar_case_search.get_knowledge_client", lambda: knowledge):
+        with patch("app.tools.similar_case_search.get_knowledge_client", lambda: knowledge):
             cases = asyncio.run(search_similar_cases("eczema", 3))
         knowledge.search_semantic.assert_awaited_once_with("eczema", 3, corpus="finalize_report")
         self.assertEqual((cases[0]["doctor_reasoning"], cases[0]["treatment_instructions"], cases[0]["images"]), ("khô da", ["bôi kem"], [{"storage_key": "k"}]))

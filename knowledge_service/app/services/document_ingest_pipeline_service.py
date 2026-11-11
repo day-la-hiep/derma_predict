@@ -30,7 +30,7 @@ from app.services.document_graph_service import DocumentGraphService
 from app.services.document_service import DocumentService, read_profile
 from app.services.document_stage_runner import DocumentStageRunner, StageRunState
 from app.services.graph_schema_service import GraphSchemaService
-from pipeline.document_ingest.stages import StageCancelled, StageError
+from app.pipeline.document_ingest.stages import StageCancelled, StageError
 
 logger = logging.getLogger(__name__)
 

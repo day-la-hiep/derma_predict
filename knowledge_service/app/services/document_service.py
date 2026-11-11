@@ -32,8 +32,8 @@ from app.models.document_stage import STAGES, get_blocking_deps
 from app.repositories.document_repository import DocumentRepository
 from app.services.document_chunk_index import DocumentChunkIndex
 from app.services.document_graph_service import DocumentGraphService
-from pipeline.document_ingest.profile import ProfileError, default_profile
-from pipeline.document_ingest.textutil import sha
+from app.pipeline.document_ingest.profile import ProfileError, default_profile
+from app.pipeline.document_ingest.textutil import sha
 
 logger = logging.getLogger(__name__)
 

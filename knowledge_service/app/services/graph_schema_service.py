@@ -7,7 +7,7 @@ from app.dto.api import EntityTypeCreate, EntityTypeUpdate, RelationCreate, Rela
 from derma_shared.errors import ConflictError, InvalidError
 from app.models.graph_schema import GraphEntityType, GraphRelation
 from app.repositories.graph_schema_repository import GraphSchemaRepository
-from pipeline.document_ingest.graph_schema import ENTITY_TYPES, SLOTS, TOPIC_TYPES, EntityType, GraphSchema, Relation, Slot
+from app.pipeline.document_ingest.graph_schema import ENTITY_TYPES, SLOTS, TOPIC_TYPES, EntityType, GraphSchema, Relation, Slot
 
 # id / label / relationship type được ghép thẳng vào câu Cypher nên chỉ nhận ký tự an toàn
 _ENTITY_ID = re.compile(r"^[a-z][a-z0-9_]{2,39}$")

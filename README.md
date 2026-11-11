@@ -102,8 +102,8 @@ make frontend             # FE http://localhost:3010, gọi qua gateway :3040
 
 | Cấu hình | Chạy |
 |---|---|
-| `AiApplication` | `ai_service/main.py` (:3055) |
-| `KnowledgeApplication` | `knowledge_service/main.py` (:3054) |
+| `AiApplication` | `ai_service/app/main.py` (:3055) |
+| `KnowledgeApplication` | `knowledge_service/app/main.py` (:3054) |
 | `KnowledgeWorker` | `python -m app.workers.document_ingest_worker` |
 | `KnowledgeMigrate` | `python -m alembic upgrade head` (chạy một lần) |
 | `DermaAll` | bật cùng lúc 4 service Spring (`GatewayApplication`, `IdentityApplication`, `ConsultationApplication`, `ClinicalApplication`) + 3 cấu hình Python ở trên |

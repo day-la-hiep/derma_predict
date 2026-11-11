@@ -39,7 +39,7 @@ clinical:
 	cd clinical_service && ./mvnw -q spring-boot:run
 
 knowledge:
-	cd knowledge_service && uv run python main.py
+	cd knowledge_service && uv run python -m app.main
 
 # worker chạy các bước pipeline sách; không chạy thì bấm "Chạy" ở /admin/documents không có tác dụng
 knowledge-worker:
@@ -49,7 +49,7 @@ knowledge-migrate:
 	cd knowledge_service && uv run alembic upgrade head
 
 ai:
-	cd ai_service && uv run python main.py
+	cd ai_service && uv run python -m app.main
 
 # FE gọi qua gateway (:3040, mặc định trong next.config.ts); đổi BACKEND_URL trong fe/.env.local. Không gán biến ở đây vì biến process đè .env.local
 frontend:
@@ -83,10 +83,10 @@ gateway-test:
 	cd gateway_service && ./mvnw -q -B clean test
 
 knowledge-test:
-	cd knowledge_service && uv run python -m unittest discover -s tests -t . && uv run python -m unittest discover -s pipeline/document_ingest/tests -t .
+	cd knowledge_service && uv run python -m unittest discover -s tests -t . && uv run python -m unittest discover -s app/pipeline/document_ingest/tests -t .
 
 ai-test:
-	cd ai_service && uv run python -m unittest discover -s tests -t . && uv run python -m unittest discover -s agent/graph/tests -t .
+	cd ai_service && uv run python -m unittest discover -s tests -t . && uv run python -m unittest discover -s app/graph/tests -t .
 
 shared-test:
 	cd shared && uv run python -m unittest tests.test_shared

@@ -11,8 +11,8 @@ from app.dto.api import TripleListOutput, TripleOutput, TripleUpdate
 from derma_shared.errors import ConflictError, InvalidError, NotFoundError
 from app.infra.neo4j_client import Neo4jClient
 from app.repositories.document_repository import DocumentRepository
-from pipeline.document_ingest.graph_link import EntityLexicon, LexEntry
-from pipeline.document_ingest.graph_schema import CORE_SCHEMA, GraphSchema
+from app.pipeline.document_ingest.graph_link import EntityLexicon, LexEntry
+from app.pipeline.document_ingest.graph_schema import CORE_SCHEMA, GraphSchema
 
 
 def load_lexicon(kg_dir: Path) -> EntityLexicon:

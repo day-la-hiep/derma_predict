@@ -25,4 +25,4 @@ ENV PATH="/app/knowledge_service/.venv/bin:${PATH}" \
 
 EXPOSE 3054
 # Áp migration DB `knowledge` rồi chạy API; ingest worker override: python -u -m app.workers.document_ingest_worker
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn main:app --host 0.0.0.0 --port 3054"]
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 3054"]

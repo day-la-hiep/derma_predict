@@ -35,4 +35,4 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.pyright]
-include = ["agent", "app", "main.py", "tests"]
+include = ["app", "tests"]

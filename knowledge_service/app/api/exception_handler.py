@@ -1,7 +1,7 @@
 from derma_shared.errors import AppError, NotFoundError
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from pipeline.document_ingest.profile import ProfileError
+from app.pipeline.document_ingest.profile import ProfileError
 
 
 def _json(status_code: int, detail: str) -> JSONResponse:

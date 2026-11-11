@@ -85,9 +85,9 @@ Thứ tự khuyến nghị, **mỗi lệnh một terminal**:
 | 1 | identity | 3051 | `cd identity_service` rồi `./mvnw spring-boot:run` |
 | 2 | consultation | 3052 | `cd consultation_service` rồi `./mvnw spring-boot:run` |
 | 3 | clinical | 3053 | `cd clinical_service` rồi `./mvnw spring-boot:run` |
-| 4 | knowledge | 3054 | `cd knowledge_service` rồi `uv run python main.py` |
+| 4 | knowledge | 3054 | `cd knowledge_service` rồi `uv run python -m app.main` |
 | 5 | knowledge worker | - | `cd knowledge_service` rồi `uv run python -u -m app.workers.document_ingest_worker` |
-| 6 | ai | 3055 | `cd ai_service` rồi `uv run python main.py` |
+| 6 | ai | 3055 | `cd ai_service` rồi `uv run python -m app.main` |
 | 7 | gateway | 3040 | `cd gateway_service` rồi `./mvnw spring-boot:run` |
 | 8 | fe | 3010 | `cd fe` rồi `pnpm dev` |
 
@@ -115,15 +115,15 @@ Mở **thư mục gốc repo** trong IDE.
 | identity | 3051 | `IdentityApplication` |
 | consultation | 3052 | `ConsultationApplication` |
 | clinical | 3053 | `ClinicalApplication` |
-| knowledge | 3054 | `main.py` (+ worker) |
-| ai | 3055 | `main.py` |
+| knowledge | 3054 | `app/main.py` (+ worker) |
+| ai | 3055 | `app/main.py` |
 | fe | 3010 | `pnpm dev` |
 
 ### IntelliJ IDEA
 
 1. `File > Open` thư mục gốc. IntelliJ nhận 4 module Maven (`gateway_service`, `identity_service`, `consultation_service`, `clinical_service`). Nếu chưa nhận: mở `pom.xml` của từng service, chuột phải, **Add as Maven Project**. Project SDK: JDK 21.
 2. Chạy từng Spring service: mở class `*Application`, bấm nút run cạnh `main`. Hoặc dùng cửa sổ **Services** để chạy cả 4.
-3. Python (knowledge, ai): cần plugin **Python** hoặc PyCharm. Tạo run configuration kiểu **Python**, script `main.py`, working directory là `knowledge_service/` hoặc `ai_service/`, interpreter là `.venv` của service (đã tạo ở mục 3 bước 3). Worker: chọn **Module name** `app.workers.document_ingest_worker`, working directory `knowledge_service/`.
+3. Python (knowledge, ai): cần plugin **Python** hoặc PyCharm. Tạo run configuration kiểu **Python**, script `app/main.py`, working directory là `knowledge_service/` hoặc `ai_service/`, interpreter là `.venv` của service (đã tạo ở mục 3 bước 3). Worker: chọn **Module name** `app.workers.document_ingest_worker`, working directory `knowledge_service/`.
 4. FE: tạo run configuration kiểu **npm**, package.json `fe/package.json`, command `run`, script `dev`. Working directory là `fe/` nên Next tự đọc `fe/.env.local`; **không đặt biến trong ô Environment** vì nó đè `.env.local`.
 5. Gộp thành một nút: **Run > Edit Configurations > + > Compound**, thêm các configuration trên.
 
@@ -142,7 +142,7 @@ Các cấu hình hiện có trong `.vscode/` còn trỏ về `core/` cũ, nên t
     { "name": "consultation", "type": "java", "request": "launch", "mainClass": "vn.derma.consultation.ConsultationApplication", "projectName": "consultation" },
     { "name": "clinical", "type": "java", "request": "launch", "mainClass": "vn.derma.clinical.ClinicalApplication", "projectName": "clinical" },
     {
-      "name": "knowledge", "type": "debugpy", "request": "launch", "program": "main.py",
+      "name": "knowledge", "type": "debugpy", "request": "launch", "module": "app.main",
       "python": "${workspaceFolder}/knowledge_service/.venv/bin/python",
       "cwd": "${workspaceFolder}/knowledge_service", "envFile": "${workspaceFolder}/knowledge_service/.env"
     },
@@ -152,7 +152,7 @@ Các cấu hình hiện có trong `.vscode/` còn trỏ về `core/` cũ, nên t
       "cwd": "${workspaceFolder}/knowledge_service", "envFile": "${workspaceFolder}/knowledge_service/.env"
     },
     {
-      "name": "ai", "type": "debugpy", "request": "launch", "program": "main.py",
+      "name": "ai", "type": "debugpy", "request": "launch", "module": "app.main",
       "python": "${workspaceFolder}/ai_service/.venv/bin/python",
       "cwd": "${workspaceFolder}/ai_service", "envFile": "${workspaceFolder}/ai_service/.env"
     }
