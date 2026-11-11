@@ -175,7 +175,7 @@ Mở 8 terminal (hoặc dùng `tmux`) và chạy các lệnh ở mục 4 theo th
 
 ## 6. Reset dữ liệu người dùng về seed ban đầu
 
-Xóa dữ liệu 3 database `identity`, `consultation`, `clinical` rồi nạp lại tài khoản mẫu. **Thao tác này xóa dữ liệu thật**; tắt các service trước khi chạy. Không đụng `knowledge`, `ai`, Qdrant, Neo4j, MinIO.
+Xóa dữ liệu 3 database `identity`, `consultation`, `clinical`, các điểm ca bệnh trong Qdrant (`derma_finalize_reports`) và node hành trình bệnh nhân trong Neo4j, rồi nạp lại tài khoản mẫu cùng dữ liệu demo (`scripts/seed/consultation.sql`, `scripts/seed/clinical.sql`: 7 hội thoại AI, 8 đợt bệnh, 6 lịch hẹn ở mọi trạng thái, 3 báo cáo kết luận, 4 kênh theo dõi), cuối cùng gọi `reindex` của knowledge để dựng Qdrant + Neo4j từ báo cáo mẫu (cần knowledge đang chạy; chưa chạy thì chạy `make reindex-cases` sau). **Thao tác này xóa dữ liệu thật**; tắt các service trước khi chạy. Xóa thêm bộ nhớ/checkpoint của agent (database `ai`, schema `langgraph`) và ảnh đính kèm (bucket `derma-attachments`). Không đụng database `knowledge`, chunk sách trong Qdrant, đồ thị sách/DermO trong Neo4j và các bucket sách.
 
 Linux/macOS/WSL (có `sh`), có hỏi xác nhận:
 

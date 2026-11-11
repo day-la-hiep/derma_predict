@@ -14,7 +14,7 @@ infra-down:
 services-db:
 	sh scripts/init-service-databases.sh
 
-# xoá dữ liệu người dùng (identity/consultation/clinical) rồi nạp lại seed demo; hỏi xác nhận, thêm ARGS=--yes để bỏ hỏi
+# xoá dữ liệu người dùng (identity/consultation/clinical + ca bệnh trong Qdrant + đồ thị bệnh nhân trong Neo4j) rồi nạp lại seed demo (tài khoản + dữ liệu mẫu ở scripts/seed/ + reindex Qdrant/Neo4j); hỏi xác nhận, thêm ARGS=--yes để bỏ hỏi
 reseed-users:
 	sh scripts/reseed-user-data.sh $(ARGS)
 
