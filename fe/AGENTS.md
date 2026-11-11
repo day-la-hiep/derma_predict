@@ -42,9 +42,9 @@ fe/
 - **`types.ts`** — Chat type definitions (Message, Conversation, StreamEvent)
 
 ### Doctor & Follow-up Features (`fe/features/doctor/`, `fe/features/followup/`)
-- **`doctor/`** — khu bác sĩ: báo cáo kết luận (`MedicalHistoryPage`), dữ kiện lâm sàng, đồ thị hành trình; `types.ts` map từ `finalize_reports`, `clinical_facts`
+- **`doctor/`** — khu bác sĩ: báo cáo kết luận (`FinalizeReportDetail`, mở từ bảng Ca khám), dữ kiện lâm sàng, đồ thị hành trình; `types.ts` map từ `finalize_reports`, `clinical_facts`
 - **`appointments/`** — lịch khám, lần khám, chốt kết luận theo encounter (bệnh nhân đặt lịch, bác sĩ xử lý)
-- **`followup/`** — kênh chat bác sĩ ↔ bệnh nhân sau khám (`/followup-channels/*`); `FollowupButton` mở kênh của một lần khám, `FollowupPage` là màn `/doctor/followups`
+- **`followup/`** — kênh chat bác sĩ ↔ bệnh nhân sau khám (`/followup-channels/*`); `FollowupButton` mở kênh của một lần khám, bác sĩ vào kênh từ dòng ca khám ở `/doctor`
 - **`video-call/`** — cuộc gọi trong kênh theo dõi (bác sĩ gọi, bệnh nhân nhận qua `CallLayer`)
 
 ### Services

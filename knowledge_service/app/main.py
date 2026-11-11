@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import app.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from app.api.deps import close_clients, get_rabbitmq_client
+from app.api.citation_api import router as citation_router
 from app.api.document_api import router as document_router
 from app.api.exception_handler import register_exception_handlers
 from app.api.graph_schema_api import router as graph_schema_router
@@ -32,6 +33,7 @@ app.add_middleware(
     CORSMiddleware, allow_origins=settings.CORS_ORIGINS, allow_credentials=False, allow_methods=["*"], allow_headers=["*"]
 )
 app.include_router(document_router, prefix=settings.API_V1_PREFIX)
+app.include_router(citation_router, prefix=settings.API_V1_PREFIX)
 app.include_router(graph_schema_router, prefix=settings.API_V1_PREFIX)
 app.include_router(internal_router)
 app.include_router(internal_case_router)

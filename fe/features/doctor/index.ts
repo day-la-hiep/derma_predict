@@ -1,5 +1,8 @@
-export { MedicalHistoryPage } from "./components/MedicalHistoryPage";
+export { FinalizeReportDetail } from "./components/FinalizeReportDetail";
+export { UrgencyBadge } from "./components/FinalizeReportBadges";
+export { useMyFinalizeReports } from "./hooks";
 export { PatientJourneyDialog } from "./components/PatientJourneyDialog";
+export { PatientJourneyView } from "./components/PatientJourneyView";
 export { PatientJourneyCanvas } from "./components/PatientJourneyCanvas";
 export { PatientJourneyTimeline } from "./components/PatientJourneyTimeline";
 export { adaptDraft, adaptFinalizeReport, adaptPatient, doctorApi, errorMessage, toFinalizeBody } from "./api";

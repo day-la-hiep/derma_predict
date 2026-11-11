@@ -119,7 +119,8 @@ class AppointmentApiTest {
         body.put("facts", List.of(Map.of("fact_type", "symptom", "template_label", "Ngứa", "detail", "về đêm", "body_site", "tay", "source_messages", List.of("m1")),
                 Map.of("fact_type", "allergy", "template_label", "Penicillin", "detail", "phát ban", "body_site", "", "source_messages", List.of())));
         body.put("hypotheses", withHypothesis ? List.of(Map.of("disease", "Chàm", "code", "Eczema", "body_site", "tay", "confidence", "cao",
-                "evidence", List.of(Map.of("source", "chat", "text", "ngứa đêm")), "missing", List.of("tiền sử"))) : List.of());
+                "evidence", List.of(Map.of("source", "chat", "text", "ngứa đêm", "ref", Map.of("document_id", "doc1", "chunk_id", "c1", "page_start", 12, "page_end", 13))),
+                "missing", List.of("tiền sử"))) : List.of());
         body.put("image_predictions", List.of());
         mvc.perform(post("/internal/episodes/apply-turn").header("X-Internal-Key", KEY).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body)))
                 .andExpect(status().isOk());
@@ -186,6 +187,10 @@ class AppointmentApiTest {
         // kênh theo dõi mở sau khi commit lúc bắt đầu khám
         verify(consultation).openFollowupChannel(started.get("encounter_id").asText(), started.get("patient").get("id").asText(), "doc-1");
         assertEquals(true, started.get("episode").get("hypotheses_locked").asBoolean());
+        // truy vết trích dẫn: `ref` của bằng chứng đi nguyên vẹn ra API bác sĩ
+        JsonNode ref = started.get("episode").get("hypotheses").get(0).get("evidence").get(0).get("ref");
+        assertEquals("doc1", ref.get("document_id").asText());
+        assertEquals(13, ref.get("page_end").asInt());
         call(post("/api/v1/doctor/appointments/" + id + "/cancel"), doctor, Map.of("reason", "x")).andExpect(status().isConflict());
 
         call(get("/api/v1/doctor/appointments"), doctor, null).andExpect(status().isOk()).andExpect(jsonPath("$.data[?(@.id=='" + id + "')].status").value("in_progress"));

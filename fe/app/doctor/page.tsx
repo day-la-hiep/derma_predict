@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { DoctorCasesPage } from "@/features/appointments";
 
 export default function DoctorHome() {
-  redirect("/doctor/appointments");
+  return <DoctorCasesPage />;
 }

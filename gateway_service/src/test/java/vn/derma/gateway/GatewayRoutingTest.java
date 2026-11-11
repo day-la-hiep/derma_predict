@@ -75,7 +75,6 @@ class GatewayRoutingTest {
         expect("/api/v1/video-calls/ice-config", "consultation");
         expect("/api/v1/followup-channels/by-encounter/e1", "consultation");
         expect("/api/v1/doctor/followup-channels", "consultation");
-        expect("/api/v1/doctor/followup-channels/c1/extend", "consultation");
         expect("/api/v1/conversations/c1/video-calls", "consultation");
         expect("/api/v1/appointments/a1/cancel", "clinical");
         expect("/api/v1/doctor/appointments/a1/start", "clinical");
@@ -84,6 +83,8 @@ class GatewayRoutingTest {
         expect("/api/v1/doctor/patient-profiles/p1/journey-graph", "clinical");
         expect("/api/v1/admin/documents/documents", "knowledge");
         expect("/api/v1/admin/graph-schema/relations", "knowledge");
+        expect("/api/v1/citations/documents/d1/source-url", "knowledge");
+        expect("/api/v1/citations/documents/d1/passages", "knowledge");
     }
 
     @Test

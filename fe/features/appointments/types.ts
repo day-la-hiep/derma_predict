@@ -31,13 +31,27 @@ export interface PatientEpisode {
   appointment: Appointment | null;
 }
 
+/** Tham chiếu để mở đúng đoạn sách đã dẫn; ca cũ không có */
+export interface EvidenceRef {
+  documentId: string;
+  chunkId: string | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+}
+
+export interface Evidence {
+  source: string;
+  text: string;
+  ref: EvidenceRef | null;
+}
+
 export interface Hypothesis {
   rank: number;
   diagnosisCode: string;
   diagnosisLabel: string;
   disease: string;
   confidence: string;
-  evidence: { source: string; text: string }[];
+  evidence: Evidence[];
   missing: string[];
 }
 

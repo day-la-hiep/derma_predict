@@ -109,7 +109,14 @@ Kênh = hội thoại `kind=doctor_followup` gắn một lần khám; AI không 
 |---|---|
 | `GET /api/v1/followup-channels/by-encounter/{encounter_id}` | bệnh nhân chủ kênh hoặc bác sĩ của kênh: `{conversation_id, encounter_id, status: open\|read_only, followup_until, doctor_id, doctor_name, ...}`; 404 nếu chưa có kênh |
 | `GET /api/v1/doctor/followup-channels` | kênh của bác sĩ, thêm `patient_profile_id`, `patient_name`, `last_message_at`, `preview` |
-| `POST /api/v1/doctor/followup-channels/{conversation_id}/extend` | body `{days}` (1..90, mặc định 30) gia hạn từ `followup_until`; chỉ khi còn mở và đã có hạn |
 | `POST /api/v1/conversations/{id}/video-calls` | gọi video: chỉ bác sĩ của kênh, chỉ khi kênh còn mở (các route `/video-calls/*` giữ nguyên) |
 
 Đã bỏ: `request-consultation`, `/doctor/consultations/*`, `/doctor/consultations/{id}/finalize*`, `consultation_report`. `openapi.core.json` và `messages.schema.json` sinh từ `archive/core/` (đóng băng) nên vẫn còn các đường dẫn cũ; không sửa tay.
+
+## 8. Trích dẫn gợi ý AI truy vết được (public, qua gateway → knowledge)
+Bằng chứng sách của giả thuyết (`GET /api/v1/doctor/appointments/{id}` → `episode.hypotheses[].evidence[]`) có thêm `ref: {document_id, chunk_id, page_start, page_end}` (trang PDF, khác trang in ở `source`). Ca cũ và bằng chứng không phải sách không có `ref` (null). Hai endpoint dưới đây yêu cầu JWT vai trò `doctor` hoặc `admin`.
+
+| Endpoint | Việc |
+|---|---|
+| `GET /api/v1/citations/documents/{document_id}/source-url?page=N` | `{data: {url, title, page}}`: URL ký sẵn (30 phút) của `source.pdf` trong MinIO; FE mở kèm `#page=N`. 404 nếu tài liệu/file gốc không còn |
+| `GET /api/v1/citations/documents/{document_id}/passages?page_start=N&page_end=M&chunk_id=X` | `{data: {title, passages: [{chunk_id, section, pages, page_start, page_end, text, is_cited}]}}`: toàn văn các đoạn giao khoảng trang PDF (đọc từ `chunks.jsonl`), tối đa 10, đoạn `chunk_id` luôn có mặt và `is_cited=true` |

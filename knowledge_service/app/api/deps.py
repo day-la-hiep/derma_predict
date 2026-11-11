@@ -145,8 +145,7 @@ async def close_clients() -> None:
             await get_client().close()
 
 
-def require_admin(request: Request) -> dict:
-    """Xác thực bằng claim trong JWT do identity phát; knowledge không có bảng user để tra lại."""
+def _claims_with_role(request: Request, roles: tuple[str, ...]) -> dict:
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise AuthenticationError("Yêu cầu đăng nhập (thiếu Authorization Bearer header).")
@@ -156,9 +155,18 @@ def require_admin(request: Request) -> dict:
         raise AuthenticationError("Access token không hợp lệ hoặc đã hết hạn.") from exc
     if claims.get("type") != "access" or not claims.get("sub"):
         raise AuthenticationError("Token không phải là access token.")
-    if claims.get("role") != "admin":
-        raise ForbiddenError("Bạn không có quyền truy cập chức năng này (yêu cầu vai trò: admin).")
+    if claims.get("role") not in roles:
+        raise ForbiddenError(f"Bạn không có quyền truy cập chức năng này (yêu cầu vai trò: {' hoặc '.join(roles)}).")
     return claims
+
+
+def require_admin(request: Request) -> dict:
+    """Xác thực bằng claim trong JWT do identity phát; knowledge không có bảng user để tra lại."""
+    return _claims_with_role(request, ("admin",))
+
+
+def require_doctor_or_admin(request: Request) -> dict:
+    return _claims_with_role(request, ("doctor", "admin"))
 
 
 def require_internal_key(x_internal_key: str | None = Header(default=None)) -> None:

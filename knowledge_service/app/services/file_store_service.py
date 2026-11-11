@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 from collections.abc import Iterable, Iterator
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +40,12 @@ class FileStoreService:
 
     def key(self, name: str) -> str:
         return self.prefix + name
+
+    def presigned_get_url(self, name: str, expires: timedelta) -> str | None:
+        """URL ký sẵn để trình duyệt tải thẳng từ MinIO; None khi file không tồn tại."""
+        if self.size(name) is None:
+            return None
+        return self._minio.presigned_get_url(self.bucket, self.key(name), expires)
 
     # ---- bytes / file ----
     def size(self, name: str) -> int | None:

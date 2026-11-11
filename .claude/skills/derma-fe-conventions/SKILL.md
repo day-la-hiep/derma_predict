@@ -106,7 +106,7 @@ the hook from a component in `components/`.
 
 Giao diện chỉ giữ **tên gọi ngắn**; hướng dẫn đầy đủ đặt vào hover (`components/ui/hint.tsx` → `<Hint content=...>`).
 
-- **Nút / tab / chip lọc**: 1–2 từ, động từ hoặc danh từ chính ("Xác nhận", "Gia hạn", "Gửi", "Chờ"). Không lặp danh từ
+- **Nút / tab / chip lọc**: 1–2 từ, động từ hoặc danh từ chính ("Xác nhận", "Huỷ lịch", "Gửi", "Chờ"). Không lặp danh từ
   đã rõ theo ngữ cảnh ("Huỷ lịch khám" → "Huỷ lịch" khi đang ở màn lịch khám).
 - **Tiêu đề mục**: ≤ 3 từ ("Lịch khám", "Báo cáo", "Dữ kiện"). Không kèm dòng phụ giải thích cố định bên dưới.
 - **Trạng thái**: chấm màu + 1 từ ("Chờ", "Đang", "Xong"); nghĩa đầy đủ nằm trong hint.
@@ -139,9 +139,9 @@ Giao diện chỉ giữ **tên gọi ngắn**; hướng dẫn đầy đủ đặ
   vào, tự chuyển tới đoạn chat đã nhớ của hồ sơ đang chọn (`lastConversationByProfile` trong `features/patient-profile/store.ts`).
   `ChatPage` vẽ ở `app/(patient)/layout.tsx` (các page trả `null`) vì page dưới catch-all bị Next dựng lại mỗi lần đổi đường dẫn.
   URL là nguồn quyết định hội thoại đang mở; `store.init()` không tự chọn nữa.
-- Khu bác sĩ: `/doctor` chuyển tới `/doctor/appointments` (Lịch khám); `/doctor/followups` (kênh theo dõi sau khám, `features/followup`);
-  `/doctor/records/<reportId>` (lịch sử khám, màn vẽ ở layout `records`, page trả `null`). Kênh chat bác sĩ–bệnh nhân chỉ có sau khám
-  và gắn với `encounter`; không còn luồng "yêu cầu tư vấn" từ chat AI.
+- Khu bác sĩ: một trang `/doctor` (bảng "Ca khám", `features/appointments/components/DoctorCasesPage.tsx`) trong khung sidebar trái; mỗi dòng ghép
+  lịch hẹn + báo cáo kết luận + kênh theo dõi theo `encounter_id`. Click một lần mở modal tóm tắt (`CaseSummaryDialog`, có nút "Xem chi tiết"), nhấp đúp mở màn chi tiết `/doctor/cases/<appointmentId>` (`AppointmentDetailPage`); trên dòng chỉ có thao tác nhanh theo trạng thái, hồ sơ và kênh chat (khung trượt). Kênh chat
+  bác sĩ–bệnh nhân chỉ có sau khám và gắn với `encounter`; không còn luồng "yêu cầu tư vấn" từ chat AI.
 - `NEXT_PUBLIC_USE_MOCK=true` makes the whole chat UI work from `localStorage` with zero backend
   calls — great for isolated UI work, but don't trust it to validate an integration change (see
   `/run-fe`).

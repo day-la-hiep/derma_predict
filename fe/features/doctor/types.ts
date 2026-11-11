@@ -67,6 +67,8 @@ export interface FinalizeReport {
   createdAt: string;
   consultationSessionId: string | null;
   conversationId: string | null;
+  /** lần khám tạo ra báo cáo; null với báo cáo cũ chốt theo phiên tư vấn */
+  encounterId: string | null;
   /** null với báo cáo kết luận ghi trước khi có snapshot */
   snapshot: FinalizeReportSnapshot | null;
   images: FinalizeReportImage[];

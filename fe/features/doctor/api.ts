@@ -113,6 +113,7 @@ export function adaptFinalizeReport(raw: any): FinalizeReport {
     createdAt: raw.createdAt ?? raw.created_at ?? new Date().toISOString(),
     consultationSessionId: raw.consultation_session_id ?? null,
     conversationId: raw.conversation_id ?? null,
+    encounterId: raw.encounter_id ?? null,
     snapshot: adaptSnapshot(raw.snapshot),
   images: (raw.images ?? []).map((img: any) => ({
     id: img.id ?? "",

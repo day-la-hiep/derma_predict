@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { CornerDownLeft, Lock, PlusCircle } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Lock } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
 import { doctorApi } from "@/features/doctor";
@@ -12,11 +11,11 @@ import { CallButtons } from "@/features/video-call";
 import { endpoints } from "@/services/endpoints";
 import { subscribeSse } from "@/services/sse";
 import { cn } from "@/lib/utils";
-import { qk, useExtendFollowup, useFollowupMessages, useSendFollowupMessage } from "../hooks";
+import type { UploadedImage } from "../api";
+import { qk, useFollowupMessages, useSendFollowupMessage } from "../hooks";
 import type { FollowupChannel } from "../types";
 import { ChatBubble } from "./ChatBubble";
-
-const EXTEND_DAYS = 30;
+import { Composer } from "./Composer";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("vi-VN");
@@ -27,8 +26,6 @@ export function FollowupChat({ channel, role }: { channel: FollowupChannel; role
   const qc = useQueryClient();
   const { data: messages = [], isLoading } = useFollowupMessages(id);
   const send = useSendFollowupMessage(id);
-  const extend = useExtendFollowup(id);
-  const [text, setText] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const readOnly = channel.status === "read_only";
 
@@ -52,12 +49,8 @@ export function FollowupChat({ channel, role }: { channel: FollowupChannel; role
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  const submit = () => {
-    const content = text.trim();
-    if (!content || readOnly || send.isPending) return;
-    setText("");
-    send.mutate(content, { onError: () => setText(content) });
-  };
+  const submit = (content: string, files: UploadedImage[]) =>
+    new Promise<boolean>((resolve) => send.mutate({ content, files }, { onSuccess: () => resolve(true), onError: () => resolve(false) }));
 
   const title = role === "doctor" ? (channel.patientName ?? "Bệnh nhân") : channel.doctorName ? `BS. ${channel.doctorName}` : "Bác sĩ";
 
@@ -80,13 +73,6 @@ export function FollowupChat({ channel, role }: { channel: FollowupChannel; role
         </div>
         {role === "doctor" && (
           <div className="flex shrink-0 items-center gap-2">
-            <Hint content={`Gia hạn kênh theo dõi thêm ${EXTEND_DAYS} ngày. Kênh đã hết hạn thì không gia hạn được.`}>
-              <span>
-                <Button variant="outline" size="sm" disabled={readOnly || extend.isPending} onClick={() => extend.mutate(EXTEND_DAYS)} className="gap-1.5">
-                  <PlusCircle className="size-3.5" /> Gia hạn
-                </Button>
-              </span>
-            </Hint>
             <CallButtons conversationId={id} disabled={readOnly} />
           </div>
         )}
@@ -107,44 +93,15 @@ export function FollowupChat({ channel, role }: { channel: FollowupChannel; role
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t border-border p-3">
-        {readOnly ? (
+      {readOnly ? (
+        <div className="shrink-0 border-t border-border p-3 pb-4">
           <Hint content="Kênh theo dõi đã hết hạn, chỉ xem lại được. Tái khám sẽ mở kênh mới.">
             <p className="rounded-xl bg-muted/40 p-3 text-center text-xs text-muted-foreground">Chỉ xem</p>
           </Hint>
-        ) : (
-          <div className="flex items-end gap-2 rounded-2xl border border-border bg-card p-2 transition-colors focus-within:border-brand/40 focus-within:ring-2 focus-within:ring-brand/10">
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-              placeholder={role === "doctor" ? "Phản hồi bệnh nhân..." : "Nhắn cho bác sĩ..."}
-              aria-label="Tin nhắn"
-              rows={2}
-              className="flex-1 resize-none bg-transparent px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-            />
-            <Hint content="Gửi (Enter). Xuống dòng: Shift + Enter.">
-              <button
-                type="button"
-                onClick={submit}
-                disabled={!text.trim() || send.isPending}
-                aria-label="Gửi"
-                className={cn(
-                  "flex size-9 shrink-0 items-center justify-center rounded-xl transition-all active:scale-95",
-                  text.trim() ? "bg-brand text-brand-foreground shadow-sm hover:brightness-110" : "cursor-not-allowed bg-muted text-muted-foreground opacity-50"
-                )}
-              >
-                <CornerDownLeft className="size-4" />
-              </button>
-            </Hint>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <Composer role={role} sending={send.isPending} onSend={submit} />
+      )}
     </div>
   );
 }
