@@ -19,15 +19,6 @@ from app.services.file_store_service import FileStoreService
 
 ROOT_PREFIX = "document/"
 _STAGE_TIMES = ("started_at", "finished_at", "approved_at")
-_STAGE_FIELDS = {
-    "state",
-    "options",
-    "progress",
-    "summary",
-    "error",
-    *_STAGE_TIMES,
-}
-
 SessionFactory = Callable[[], Session]
 
 
@@ -69,17 +60,14 @@ class DocumentRepository:
     def __init__(self, files: FileStoreService, session_factory: SessionFactory) -> None:
         self.files, self._sessions = files, session_factory
         self.overrides = DocumentOverrideRepository(session_factory)
-        # (document_id, stage_id) -> dòng log của lần chạy đang diễn ra (chỉ 1 bước chạy mỗi tài liệu nên không cần khoá)
-        self._log_buf: dict[tuple[str, str], list[str]] = {}
 
     @contextmanager
     def _tx(self) -> Iterator[Session]:
         with self._sessions() as s, s.begin():
             yield s
 
-    def _row(self, s: Session, document_id: str, *, lock: bool = False) -> Document:
-        stmt = select(Document).where(Document.id == document_id)
-        row = s.scalars(stmt.with_for_update() if lock else stmt).first()
+    def _row(self, s: Session, document_id: str) -> Document:
+        row = s.get(Document, document_id)
         if row is None:
             raise NotFoundError(document_id)
         return row
@@ -97,21 +85,18 @@ class DocumentRepository:
         with self._sessions() as s:
             return s.get(Document, document_id) is not None
 
-    def meta(self, document_id: str) -> dict[str, Any]:
+    def get_title(self, document_id: str) -> str:
         with self._sessions() as s:
             b = s.get(Document, document_id)
-            if b is None:
-                return {}
-            return {
-                "id": b.id,
-                "title": b.title,
-                "created_at": _iso(b.created_at),
-                "source_file": _file_dict(s.get(File, b.source_file_id) if b.source_file_id else None),
-                "pdf_pages": b.pdf_pages,
-            }
+            return b.title if b is not None else document_id
+
+    def get_pdf_pages(self, document_id: str) -> int | None:
+        with self._sessions() as s:
+            b = s.get(Document, document_id)
+            return b.pdf_pages if b is not None else None
 
     def get_detail(self, document_id: str) -> dict[str, Any]:
-        """`meta()` + trạng thái mọi bước trong 1 lần đọc"""
+        """Thông tin tài liệu + trạng thái mọi bước trong 1 lần đọc"""
         with self._sessions() as s:
             b = s.get(Document, document_id)
             if b is None:
@@ -136,7 +121,7 @@ class DocumentRepository:
     def update_meta(self, document_id: str, **fields: Any) -> None:
         """Sửa cột của tài liệu (`title`, `pdf_pages`...)."""
         with self._tx() as s:
-            b = self._row(s, document_id, lock=True)
+            b = self._row(s, document_id)
             for k, v in fields.items():
                 setattr(b, k, v)
 
@@ -146,7 +131,8 @@ class DocumentRepository:
             b = s.get(Document, document_id)
             if b is None or b.profile is None:
                 return None
-            return Profile.model_validate({**b.profile, "document_id": document_id})
+            # `indexing` (ngôn ngữ BM25) đã bỏ nhưng profile cũ trong DB vẫn còn khoá này; Profile cấm khoá lạ
+            return Profile.model_validate({**{k: v for k, v in b.profile.items() if k != "indexing"}, "document_id": document_id})
 
     def create(
         self,
@@ -209,12 +195,26 @@ class DocumentRepository:
             }
         return {"stages": {sid: rows.get(sid, {"state": "not_started"}) for sid in STAGE_IDS}}
 
+    def get_running_stage(self, document_id: str) -> str | None:
+        with self._sessions() as s:
+            return s.scalars(
+                select(DocumentStage.stage_id).where(DocumentStage.document_id == document_id, DocumentStage.state == "running")
+            ).first()
+
+    def fail_running_stages(self, error: str) -> int:
+        """Đánh dấu failed mọi bước đang `running` của mọi tài liệu; trả về số bước."""
+        with self._tx() as s:
+            rows = list(s.scalars(select(DocumentStage).where(DocumentStage.state == "running").with_for_update()))
+            for row in rows:
+                row.state, row.finished_at, row.error = "failed", _dt(now_iso()), error
+            return len(rows)
+
     def set_ingested_file(self, document_id: str, name: str, content_type: str) -> None:
         """Ghi/ cập nhật dòng `files` cho kết quả bước ingest (`pages.jsonl`) và gắn vào `documents.ingested_file_id`."""
         fs = self.files_for(document_id)
         key, size = fs.key(name), fs.size(name)
         with self._tx() as s:
-            b = self._row(s, document_id, lock=True)
+            b = self._row(s, document_id)
             row = s.scalar(select(File).where(File.storage_key == key))
             if row is None:
                 row = File(file_name=name, storage_key=key, content_type=content_type, size=size)
@@ -225,14 +225,10 @@ class DocumentRepository:
             b.ingested_file_id = row.id
 
     def update_stage(self, document_id: str, stage_id: str, **fields: Any) -> dict[str, Any]:
-        unknown = set(fields) - _STAGE_FIELDS
-        if unknown:
-            raise ValueError(f"trường trạng thái không hợp lệ: {sorted(unknown)}")
         with self._tx() as s:
             row = s.scalars(
                 select(DocumentStage)
                 .where(DocumentStage.document_id == document_id, DocumentStage.stage_id == stage_id)
-                .with_for_update()
             ).first()
             if row is None:
                 self._row(s, document_id)
@@ -257,21 +253,3 @@ class DocumentRepository:
                     row.state = "stale"
                     marked.append(row.stage_id)
         return marked
-
-    # ---- nhật ký: object MinIO không nối thêm được, nên giữ các dòng trong RAM và ghi lại cả file mỗi lần
-    # thêm dòng mới (một lần chạy bước chỉ log vài chục dòng — không cần gộp/trễ ghi) ----
-    def _log_name(self, stage_id: str) -> str:
-        return f"logs/{stage_id}.log"
-
-    def reset_log(self, document_id: str, stage_id: str) -> None:
-        self._log_buf.pop((document_id, stage_id), None)
-        self.files_for(document_id).delete(self._log_name(stage_id))
-
-    def append_log(self, document_id: str, stage_id: str, message: str) -> None:
-        buf = self._log_buf.setdefault((document_id, stage_id), [])
-        buf.append(f"{now_iso()} {message}")
-        self.files_for(document_id).put_text(self._log_name(stage_id), "\n".join(buf) + "\n")
-
-    def tail_log(self, document_id: str, stage_id: str, lines: int = 200) -> str:
-        text = self.files_for(document_id).get_text(self._log_name(stage_id))
-        return "" if not text else "\n".join(text.splitlines()[-lines:])

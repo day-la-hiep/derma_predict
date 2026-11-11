@@ -65,18 +65,6 @@ export interface DocumentSummary {
 export interface Settings {
   title: string;
   engine: "pdftotext" | "docling";
-  docling_force_ocr: boolean;
-  docling_tables: boolean;
-  noise_pages: string[];
-  llm_enabled: boolean;
-  llm_model: string;
-  max_tokens: number;
-  min_tokens: number;
-  boundary_level: number;
-  breadcrumb: boolean;
-  text_language: "vi" | "en" | "mixed";
-  graph_allow_new_entities: boolean;
-  graph_chunks_per_call: number;
 }
 
 export interface TocEntry {
@@ -117,13 +105,9 @@ export interface TocDoc {
 
 export interface TocUpdate {
   items?: { id: string; title?: string; level?: number; page_printed?: number; clear_page?: boolean }[];
-  revert?: string[];
   deleted?: string[];
-  restored?: string[];
   added?: { title: string; level?: number; page_printed?: number; after_id?: string }[];
-  removed_added?: string[];
   offset?: number;
-  clear_offset?: boolean;
 }
 
 export interface Figure {
@@ -218,23 +202,10 @@ export interface TripleList {
   total: number;
   page: number;
   page_size: number;
-  counts: { all?: number; ok?: number; unlinked?: number; rejected?: number; new?: number; by_relation?: Record<string, number> };
-  accepted_nodes: string[];
+  counts: { all?: number; ok?: number; unlinked?: number; rejected?: number; by_relation?: Record<string, number> };
 }
 
 export interface TripleUpdate {
   rejected?: string[];
   restored?: string[];
-  /** same_term (mặc định true): áp cho mọi quan hệ có cùng thuật ngữ trong sách */
-  relink?: { triple_id: string; side: "subject" | "object"; node_id: string | null; same_term?: boolean }[];
-  accept_nodes?: string[];
-  unaccept_nodes?: string[];
-}
-
-export interface GraphNode {
-  kg: string;
-  type: string;
-  id: string;
-  name: string;
-  source: string;
 }

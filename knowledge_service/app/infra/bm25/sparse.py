@@ -4,7 +4,7 @@ from collections import Counter
 
 from qdrant_client.models import SparseVector
 
-from app.infra.bm25.tokenizer import LANGUAGES, tokenize, tokenize_with_folds
+from app.infra.bm25.tokenizer import tokenize_with_folds
 
 SPARSE_NAME = "bm25"  # tên sparse vector trong collection chunk sách
 

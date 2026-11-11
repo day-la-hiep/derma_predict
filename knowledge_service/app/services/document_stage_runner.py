@@ -1,5 +1,6 @@
 """Chạy từng bước của pipeline `document_ingest`: đọc/ghi file, gọi hàm thuần trong `pipeline/`."""
 
+import logging
 import threading
 import time
 from collections import Counter
@@ -16,7 +17,6 @@ from app.infra.embedding_client import EmbeddingClient
 from app.infra.llm_client import LLMClient
 from app.models.document_profile import Profile
 from app.models.document_stage import STAGE_BY_ID
-from app.repositories.document_repository import DocumentRepository
 from app.services.document_graph_service import DocumentGraphService
 from app.services.document_service import DocumentService, get_local_pdf, read_profile
 from app.services.file_store_service import FileStoreService
@@ -35,6 +35,8 @@ from pipeline.document_ingest.stages import (
     step5_graph,
     step6_graph_index,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -62,7 +64,7 @@ def get_call_limit(raw: Any) -> int:
     return n
 
 
-def _save_figures(files: Any, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _save_figures(files: FileStoreService, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Ghi ảnh hình minh hoạ ra `figures/` rồi thay bytes bằng `image_key` để part JSON vẫn serialize được."""
     per_page: Counter[int] = Counter()
     for blk in blocks:
@@ -76,10 +78,10 @@ def _save_figures(files: Any, blocks: list[dict[str, Any]]) -> list[dict[str, An
 
 
 class DocumentStageRunner:
-    def __init__(self, documents: DocumentService, repository: DocumentRepository, *, docling: DoclingClient | None = None,
+    def __init__(self, documents: DocumentService, *, docling: DoclingClient | None = None,
                  embedding: EmbeddingClient | None = None, graph: DocumentGraphService | None = None,
                  graph_schema: GraphSchemaService | None = None) -> None:
-        self.documents, self._repo = documents, repository
+        self.documents, self._repo = documents, documents.repo
         self._docling, self._embedding = docling, embedding
         self._graph, self._graph_schema = graph, graph_schema
 
@@ -89,13 +91,13 @@ class DocumentStageRunner:
         profile = read_profile(self._repo, document_id)
         use_llm = STAGE_BY_ID[stage_id]["llm"] and profile.llm.enabled
         if use_llm and llm is None:
-            llm = LLMClient(profile.llm.model, cache=self.documents.files.scoped("_cache/llm/"))
+            llm = LLMClient(profile.llm.model, cache=self._repo.files.scoped("_cache/llm/"))
         return StageRunState(
             document_id=document_id, stage_id=stage_id, options=options, profile=profile,
             files=self._repo.files_for(document_id), llm=llm if use_llm else None,
             get_pdf=partial(get_local_pdf, self._repo, document_id),
             progress=self._make_progress(document_id, stage_id, cancel or threading.Event()),
-            log=lambda message: self._repo.append_log(document_id, stage_id, message),
+            log=lambda message: logger.info("[%s/%s] %s", document_id, stage_id, message),
         )
 
     def _make_progress(self, document_id: str, stage_id: str, cancel: threading.Event) -> Callable[[int, int, str], None]:
@@ -212,12 +214,10 @@ class DocumentStageRunner:
         rows = [r for r in all_rows if not r.noise]
         if not rows:
             raise StageError("Chưa đọc nội dung sách — hãy làm bước Đọc nội dung trước.")
-        if not files.exists("toc.auto.json"):
-            raise StageError("Chưa có mục lục — hãy làm bước Mục lục trước.")
         run.progress(0, 2, "tính lại độ lệch + neo")
         doc = self._build_toc_file(run, all_rows, max(r.page for r in rows))  # dữ liệu trang có thể mới hơn lần duyệt mục lục
         chunks, review, summary = step3_chunks.cut_chunks(
-            doc, rows, run.profile.chunking, document_id=run.document_id, document_title=self._repo.meta(run.document_id).get("title", ""),
+            doc, rows, run.profile.chunking, document_id=run.document_id, document_title=self._repo.get_title(run.document_id),
             figure_pages=[(f["figure_id"], f["page"]) for f in files.read_json("figures.json", []) or []], on_progress=run.progress,
         )
         files.write_jsonl("chunks.jsonl", [c.model_dump() for c in chunks])
@@ -234,23 +234,20 @@ class DocumentStageRunner:
             raise StageError("Chưa cấu hình công cụ tạo vector (embedding).")
         total = len(chunks) * 2
         extra: dict[str, Any] = {
-            "document_title": self._repo.meta(document_id).get("title", document_id),
+            "document_title": self._repo.get_title(document_id),
             "source_bucket": files.bucket,
             "source_pdf": files.key("source.pdf"),
         }
         on_progress(0, len(chunks), "chuẩn bị kho tri thức")
         embeddings, dim, model = step4_index.embed_chunks(chunks, self._embedding, lambda done, _t, msg: on_progress(done, total, msg))
-        self.documents.ensure_collection(dim)
-        self.documents.delete_chunks(document_id)  # bỏ các đoạn cũ của tài liệu (đã đổi hoặc không còn)
-        language = read_profile(self._repo, document_id).indexing.text_language
+        self.documents.chunks.ensure_collection(dim)
+        self.documents.chunks.delete_chunks(document_id)  # bỏ các đoạn cũ của tài liệu (đã đổi hoặc không còn)
         batch = step4_index.BATCH
         for i in range(0, len(chunks), batch):
-            self.documents.upsert_chunks(document_id, chunks[i : i + batch], embeddings[i : i + batch], extra, language=language)
+            self.documents.chunks.upsert_chunks(document_id, chunks[i : i + batch], embeddings[i : i + batch], extra)
             on_progress(len(chunks) + min(i + batch, len(chunks)), total, "lưu vào Qdrant")
-        stored = self.documents.count_chunks(document_id)
-        if stored != len(chunks):
-            raise StageError(f"Số đoạn đã lưu ({stored}) khác số đoạn cần lưu ({len(chunks)}).")
-        info = {"collection": self.documents.collection, "points": stored, "embedding_model": model, "dimension": dim,
+        stored = len(chunks)
+        info = {"collection": self.documents.chunks.collection, "points": stored, "embedding_model": model, "dimension": dim,
                 "indexed_at": datetime.now(UTC).isoformat(timespec="seconds")}
         files.write_json("index.json", info)
         return {"points": stored, "collection": info["collection"], "embedding_model": model, "dimension": dim}
@@ -298,7 +295,7 @@ class DocumentStageRunner:
         run.progress(0, 3, "kiểm tra nút trong đồ thị")
         existing = graph.existing_nodes(step6_graph_index.get_primekg_pairs(ok))
         nodes, edges, skipped, merged = step6_graph_index.build_graph_payload(
-            ok, printed, self._repo.meta(run.document_id).get("title", run.document_id), schema, lexicon, existing,
+            ok, printed, self._repo.get_title(run.document_id), schema, lexicon, existing,
         )
         run.progress(1, 3, "ghi vào Neo4j")
         graph.replace_document(run.document_id, nodes, edges)

@@ -15,10 +15,12 @@ from pathlib import Path
 from qdrant_client import QdrantClient
 
 from app.infra.qdrant_client import QdrantVectorClient
+from app.services.document_chunk_index import DocumentChunkIndex
 from app.services.document_service import DocumentService
 from app.infra.llm_client import LLMClient, LLMError
 from derma_shared.errors import PipelineError
 from app.models.document_stage import get_blocking_deps
+from app.services.document_chunk_index import DocumentChunkIndex
 from app.services.document_service import get_temp_root
 from app.repositories.document_repository import DocumentRepository
 from app.services.file_store_service import FileStoreService
@@ -29,7 +31,7 @@ from pipeline.document_ingest.stages import StageError
 from pipeline.document_ingest.stages import step2_toc as T
 from pipeline.document_ingest.types import TocDoc, TocEntry
 from pipeline.document_ingest.stages.step3_chunks import build_chunks, est_tokens, build_toc_nodes
-from pipeline.document_ingest.tests.memory_infra import MemoryMinio
+from pipeline.document_ingest.tests.memory_infra import MemoryBlobCache, MemoryMinio
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
@@ -149,14 +151,14 @@ class Base(unittest.TestCase):
         BaseModel.metadata.create_all(engine, tables=[File.__table__, Document.__table__, DocumentStage.__table__, DocumentOverride.__table__])  # type: ignore[list-item]
         self.addCleanup(engine.dispose)
         self.repo = DocumentRepository(FileStoreService(self.minio, "books-test"), sessionmaker(bind=engine, expire_on_commit=False))  # type: ignore[arg-type]
-        self.vectors = DocumentService(self.repo, self.qdrant, "document_chunks_test")  # type: ignore[arg-type]
-        self.runner = DocumentIngestPipelineService(self.vectors, self.repo, embedding=FakeEmbedding())  # type: ignore[arg-type]
+        self.vectors = DocumentService(self.repo, DocumentChunkIndex(self.qdrant, "document_chunks_test"))  # type: ignore[arg-type]
+        self.runner = DocumentIngestPipelineService(self.vectors, embedding=FakeEmbedding())  # type: ignore[arg-type]
         self.addCleanup(lambda: shutil.rmtree(get_temp_root() / "tbook", ignore_errors=True))
         self.document_id = "tbook"
         self.files = self.repo.files_for("tbook")
         self.repo.create("Test", {}, default_profile("tbook"), {}, document_id="tbook")
         self.files.write_jsonl("pages.jsonl", _pages())
-        self.llm = LLMClient("fake", cache_dir=root / "_cache", fn=toc_llm)
+        self.llm = LLMClient("fake", cache=MemoryBlobCache(), fn=toc_llm)
 
     def run_toc(
         self, opts: dict | None = None, llm: LLMClient | None = None
@@ -185,7 +187,7 @@ class TocStageTest(Base):
 
         out = self.run_toc(
             {"pages": "2-3"},
-            LLMClient("fake", cache_dir=Path(self.tmp.name) / "_spy", fn=spy),
+            LLMClient("fake", cache=MemoryBlobCache(), fn=spy),
         )
         self.assertEqual(
             (out["toc_pages"], out["pages_source"], out["entries"]),
@@ -345,7 +347,7 @@ class TocStageTest(Base):
         self.files.write_jsonl("pages.jsonl", pages)
         out = self.run_toc(
             {"pages": "2-3"},
-            LLMClient("fake", cache_dir=Path(self.tmp.name) / "_fl", fn=flaky),
+            LLMClient("fake", cache=MemoryBlobCache(), fn=flaky),
         )
         self.assertTrue(any("trang mục lục 3" in w for w in out["warnings"]))
         self.assertEqual(out["entries"], 4)

@@ -21,9 +21,6 @@ class Settings(SharedSettings):
 
     # DB riêng của service (migration khởi tạo viết tay trong `migrations/`)
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/knowledge"
-    DATABASE_POOL_PRE_PING: bool = True
-    DATABASE_EXPIRE_ON_COMMIT: bool = False
-    DATABASE_AUTOFLUSH: bool = False
 
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_API_KEY: str = ""
@@ -41,27 +38,13 @@ class Settings(SharedSettings):
 
     MINIO_DOCUMENTS_BUCKET: str = "derma-documents"
 
-    # id ngắn -> "provider:model" cho bước AI đọc mục lục; khoá provider đọc từ biến môi trường (.env)
-    AGENT_MODEL_CHOICES: dict[str, str] = {
-        "deepseek-v4-pro": "deepseek:deepseek-v4-pro",
-        "deepseek-v4-flash": "deepseek:deepseek-flash",
-        "gemma4-26b": "openrouter:google/gemma-4-26b-a4b-it",
-    }
-    AGENT_DEFAULT_MODEL_ID: str = "gemma4-26b"
-
     # Provider LLM và embedding (OpenRouter), dùng cho bước đọc mục lục và bước index
     EMBEDDING_MODEL: str = "qwen/qwen3-embedding-8b"
     EMBEDDING_DIM: int = 4096
     AGENT_MODEL: str = "openrouter:google/gemma-4-26b-a4b-it"
     AGENT_TEMPERATURE: float = 0.3
-    AGENT_THINKING_LEVEL: str = "medium"
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     OPENROUTER_API_KEY: str = ""
-    OPENAI_API_KEY: str = ""
-    DEEPSEEK_API_KEY: str = ""
-    LOCAL_LLM_BASE_URL: str = "http://localhost:11434/v1"
-    LOCAL_LLM_API_KEY: str = "local"
-    LOCAL_LLM_TIMEOUT: float = 300.0
 
 
 settings = Settings()

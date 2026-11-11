@@ -12,8 +12,9 @@ from app.api import internal_case_api
 from app.api.deps import get_case_index_service, get_clinical_http, get_patient_journey_service
 from app.api.exception_handler import register_exception_handlers
 from app.config.settings import settings
-from app.dto.request.case import CaseInput
-from app.services.case_index_service import CaseIndexService, build_case_payload, get_point_id
+from app.dto.api import CaseInput
+from app.infra.qdrant_client import get_point_id
+from app.services.case_index_service import CaseIndexService, build_case_payload
 from app.services.patient_journey_service import PatientJourneyService
 
 HEADERS = {"X-Internal-Key": settings.INTERNAL_API_KEY}
@@ -83,7 +84,7 @@ class CaseIndexTest(unittest.TestCase):
         qdrant = FakeQdrant()
         CaseIndexService(qdrant, FakeEmbedding()).index_case(make_case())  # type: ignore[arg-type]
         self.assertEqual(len(qdrant.points), 1)
-        self.assertEqual(qdrant.points[0].id, get_point_id("r1"))
+        self.assertEqual(qdrant.points[0].id, get_point_id("case:r1"))
         self.assertEqual(qdrant.points[0].payload["diagnosis"], "Eczema")
 
 
@@ -122,7 +123,7 @@ class FakeIndex:
     def __init__(self) -> None:
         self.indexed: list[str] = []
 
-    async def index_case_async(self, case: CaseInput) -> None:
+    def index_case(self, case: CaseInput) -> None:
         if case.report_id == "bad":
             raise RuntimeError("embedding lỗi")
         self.indexed.append(case.report_id)

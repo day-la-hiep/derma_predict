@@ -5,7 +5,6 @@ import json
 import re
 import threading
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 from typing import Protocol
@@ -17,13 +16,6 @@ def sha(*parts: str) -> str:
         h.update(p.encode("utf-8"))
         h.update(b"\x00")
     return h.hexdigest()
-
-
-def get_chat_model(model_id: str) -> Any:
-    """Chat model LangChain theo id (provider:model hoặc id ngắn trong `settings.AGENT_MODEL_CHOICES`); cấu hình provider ở `agent/llm.py`."""
-    from app.infra.llm import get_model
-
-    return get_model(model_id)
 
 
 class LLMError(RuntimeError):
@@ -89,13 +81,11 @@ class LLMClient:
         self,
         model: str = "",
         *,
-        cache_dir: Path | None = None,
         cache: BlobCache | None = None,
         fn: Callable[[str, str], str] | None = None,
     ):
         """Cache phản hồi theo hash"""
         self.model_id = model
-        self.cache_dir = cache_dir
         self._cache = cache
         self._fn = fn
         self._model: Any = None
@@ -112,8 +102,7 @@ class LLMClient:
     def _resolved_model(self) -> str:
         from app.config.settings import settings
 
-        m = self.model_id or settings.AGENT_DEFAULT_MODEL_ID
-        return settings.AGENT_MODEL_CHOICES.get(m, m)
+        return self.model_id or settings.AGENT_MODEL
 
     def _invoke(self, system: str, user: str) -> str:
         if self._fn is not None:
@@ -121,7 +110,9 @@ class LLMClient:
         from langchain_core.messages import HumanMessage, SystemMessage
 
         if self._model is None:
-            self._model = get_chat_model(self._resolved_model())
+            from app.infra.llm import get_model
+
+            self._model = get_model(self._resolved_model())
         resp = self._model.invoke(
             [SystemMessage(content=system), HumanMessage(content=user)]
         )
@@ -136,25 +127,14 @@ class LLMClient:
         return f"{key[:2]}/{key}.json"
 
     def _cache_read(self, key: str) -> str | None:
-        if self.cache_dir is not None:
-            p = self.cache_dir / key[:2] / f"{key}.json"
-            return p.read_text(encoding="utf-8") if p.exists() else None
         if self._cache is None:
             return None
         raw = self._cache.get_bytes(self._cache_key(key))
         return None if raw is None else raw.decode("utf-8")
 
     def _cache_write(self, key: str, text: str) -> None:
-        if self.cache_dir is not None:
-            p = self.cache_dir / key[:2] / f"{key}.json"
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(text, encoding="utf-8")
-            return
-        if self._cache is None:
-            return
-        self._cache.put_bytes(
-            self._cache_key(key), text.encode("utf-8"), "application/json"
-        )
+        if self._cache is not None:
+            self._cache.put_bytes(self._cache_key(key), text.encode("utf-8"), "application/json")
 
     def complete_json(
         self, system: str, user: str, *, name: str = "", retries: int = 2

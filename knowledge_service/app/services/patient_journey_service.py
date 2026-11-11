@@ -4,8 +4,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any, LiteralString
 
-from app.dto.request.case import CaseInput
-from app.dto.response.patient_graph import GraphEdgeOutput, GraphNodeOutput, PatientJourneyGraphOutput
+from app.dto.api import CaseInput, GraphEdgeOutput, GraphNodeOutput, PatientJourneyGraphOutput
 from app.infra.neo4j_client import Neo4jClient
 
 logger = logging.getLogger(__name__)

@@ -7,7 +7,6 @@ from nltk.stem import SnowballStemmer
 from app.infra.bm25.stopwords import get_stopwords
 from app.infra.text_clean import clean_text
 
-LANGUAGES = ("vi", "en", "mixed")
 _WORD_RE = re.compile(r"[^\W_]+(?:[-/][^\W_]+)*")  # "il-17", "5-fu" là một từ
 _stemmer = SnowballStemmer("english")
 

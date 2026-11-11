@@ -62,7 +62,8 @@ async def _listen_cancel() -> None:
         try:
             data = json.loads(str(msg["data"]))
             event = _cancels.get((data["document_id"], data["stage_id"]))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("message Dừng không hợp lệ: %s", exc)
             continue
         if event is not None:
             event.set()

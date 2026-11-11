@@ -3,7 +3,7 @@ import re
 from collections.abc import Callable
 
 from app.dto.base.graph_schema import GraphEntityTypeDefinition, GraphRelationDefinition
-from app.dto.request.graph_schema import EntityTypeCreate, EntityTypeUpdate, RelationCreate, RelationUpdate
+from app.dto.api import EntityTypeCreate, EntityTypeUpdate, RelationCreate, RelationUpdate
 from derma_shared.errors import ConflictError, InvalidError
 from app.models.graph_schema import GraphEntityType, GraphRelation
 from app.repositories.graph_schema_repository import GraphSchemaRepository

@@ -22,7 +22,7 @@ class ExtractionConfig(_Model):
 
 class LLMConfig(_Model):
     enabled: bool = True
-    # id ngắn trong `settings.AGENT_MODEL_CHOICES` hoặc "provider:model". Rỗng = model mặc định của agent.
+    # "openrouter:<tên model>". Rỗng = `settings.AGENT_MODEL`.
     model: str = ""
 
 
@@ -32,12 +32,6 @@ class ChunkingConfig(_Model):
     # Chunk không bao giờ vượt ranh giới của mục có cấp <= số này (0 part, 1 section, 2 mục, 3 mục con).
     boundary_level: int = Field(default=3, ge=0, le=3)
     breadcrumb: bool = True  # thêm đường dẫn mục lục vào `context_text` (dùng khi embed)
-
-
-class IndexingConfig(_Model):
-    # Ngôn ngữ chính của sách, quyết định cách xử lý chữ cho tìm từ khoá (BM25): vi = tách từ ghép tiếng Việt, en = stem tiếng Anh
-    # (bỏ bước tách từ chậm), mixed = cả hai.
-    text_language: Literal["vi", "en", "mixed"] = "mixed"
 
 
 class GraphConfig(_Model):
@@ -52,5 +46,4 @@ class Profile(_Model):
     extraction: ExtractionConfig = ExtractionConfig()
     llm: LLMConfig = LLMConfig()
     chunking: ChunkingConfig = ChunkingConfig()
-    indexing: IndexingConfig = IndexingConfig()
     graph: GraphConfig = GraphConfig()

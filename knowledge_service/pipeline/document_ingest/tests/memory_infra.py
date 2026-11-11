@@ -38,3 +38,16 @@ class MemoryMinio:
     def delete_prefix(self, bucket: str, prefix: str) -> None:
         for k in self.list_keys(bucket, prefix):
             del self.objects[k]
+
+
+class MemoryBlobCache:
+    """Cache phản hồi LLM trong bộ nhớ (cùng giao diện `BlobCache` của `LLMClient`)."""
+
+    def __init__(self) -> None:
+        self.blobs: dict[str, bytes] = {}
+
+    def get_bytes(self, name: str) -> bytes | None:
+        return self.blobs.get(name)
+
+    def put_bytes(self, name: str, data: bytes, content_type: str | None = None) -> None:
+        self.blobs[name] = data

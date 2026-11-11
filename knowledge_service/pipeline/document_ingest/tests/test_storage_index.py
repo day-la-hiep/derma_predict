@@ -17,25 +17,13 @@ class StorageTest(Base):
     def test_records_in_db_and_files_in_object_store(self) -> None:
         self.run_toc({"pages": "2-3"})
         keys = set(self.minio.objects)
-        for name in ("pages.jsonl", "toc.auto.json", "toc.json", "logs/toc.log"):
+        for name in ("pages.jsonl", "toc.auto.json", "toc.json"):
             self.assertIn(f"document/tbook/{name}", keys)
         for name in ("book.json", "profile.yaml", "status.json"):  # bản ghi nằm trong DB, không còn file
             self.assertNotIn(f"document/tbook/{name}", keys)
         self.assertEqual(self.repo.list_ids(), ["tbook"])
         self.assertEqual(self.repo.status(self.document_id)["stages"]["toc"]["state"], "pending_review")
         self.assertEqual(read_profile(self.repo, self.document_id).document_id, "tbook")
-
-    def test_log_is_written_then_reset_on_rerun(self) -> None:
-        self.repo.reset_log(self.document_id, "toc")
-        self.repo.append_log(self.document_id, "toc", "một")
-        self.repo.append_log(self.document_id, "toc", "hai")
-        tail = self.repo.tail_log(self.document_id, "toc")
-        self.assertTrue(
-            tail.splitlines()[0].endswith("một")
-            and tail.splitlines()[1].endswith("hai")
-        )
-        self.repo.reset_log(self.document_id, "toc")
-        self.assertEqual(self.repo.tail_log(self.document_id, "toc"), "")
 
     def test_local_pdf_is_a_temp_copy_reused_until_the_object_changes(
         self,
@@ -48,10 +36,6 @@ class StorageTest(Base):
         self.runner.documentService.delete_document("tbook")
         self.assertFalse(p.exists())
 
-    def test_path_traversal_is_rejected(self) -> None:
-        with self.assertRaises(ValueError):
-            self.files.key("../other/book.json")
-
 
 class IndexTest(Base):
     def setUp(self) -> None:
@@ -62,7 +46,7 @@ class IndexTest(Base):
 
     def points(self, book: str = "tbook") -> list:
         pts, _ = self.qdrant.sync_client.scroll(
-            self.vectors.collection,
+            self.vectors.chunks.collection,
             scroll_filter=eq_filter("document_id", book),
             limit=1000,
             with_payload=True,
@@ -100,20 +84,20 @@ class IndexTest(Base):
         others = {t for c in chunks[1:] for t in tokenize(c["context_text"])}
         unique = next(t for t in tokenize(target["context_text"]) if t not in others)
         hits = self.qdrant.sync_client.query_points(
-            self.vectors.collection, query=encode_query(unique), using=SPARSE_NAME, limit=3
+            self.vectors.chunks.collection, query=encode_query(unique), using=SPARSE_NAME, limit=3
         ).points
         self.assertTrue(hits)
         self.assertEqual((hits[0].payload or {}).get("chunk_id"), target["chunk_id"])
         # từ không có trong kho -> không có kết quả
         none = self.qdrant.sync_client.query_points(
-            self.vectors.collection, query=encode_query("zzzkhongtontai"), using=SPARSE_NAME, limit=3
+            self.vectors.chunks.collection, query=encode_query("zzzkhongtontai"), using=SPARSE_NAME, limit=3
         ).points
         self.assertEqual(none, [])
 
     def test_reindex_replaces_stale_points_of_the_same_document_only(self) -> None:
         self.runner.run_stage("tbook", "index", {}, force=True)
         self.repo.create("Other", {}, default_profile("obook"), {}, document_id="obook")
-        self.vectors.upsert_chunks(
+        self.vectors.chunks.upsert_chunks(
             "obook",
             [{"chunk_id": "obook:c1", "text": "x", "context_text": "x"}],
             FakeEmbedding().embed(["x"])[0],

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Annotated
 
@@ -6,9 +7,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.api.deps import get_case_index_service, get_clinical_http, get_patient_journey_service, require_internal_key
-from app.dto.common import ApiResponse
-from app.dto.request.case import CaseInput
-from app.dto.response.patient_graph import PatientJourneyGraphOutput
+from app.dto.api import ApiResponse, CaseInput, PatientJourneyGraphOutput
 from app.services.case_index_service import CaseIndexService
 from app.services.patient_journey_service import PatientJourneyService
 
@@ -35,7 +34,7 @@ class HistoryHintsOutput(BaseModel):
 
 @router.post("/cases", response_model=ApiResponse[None])
 async def index_case(body: CaseInput, case_index: CaseIndex, journey: Journey) -> ApiResponse[None]:
-    await case_index.index_case_async(body)
+    await asyncio.to_thread(case_index.index_case, body)
     await journey.sync_case(body)
     return ApiResponse(data=None)
 
@@ -50,7 +49,7 @@ async def reindex_cases(case_index: CaseIndex, journey: Journey, clinical: Clini
         cases = [CaseInput.model_validate(item) for item in response.json()["data"]]
         for case in cases:
             try:
-                await case_index.index_case_async(case)
+                await asyncio.to_thread(case_index.index_case, case)
                 await journey.sync_case(case)
                 indexed += 1
             except Exception:  # noqa: BLE001

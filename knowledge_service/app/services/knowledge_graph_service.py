@@ -152,7 +152,6 @@ class KnowledgeGraphService:
     ) -> dict[str, Any]:
         """Chọn phenotype nên HỎI tiếp để phân biệt các bệnh đang cân nhắc"""
         names = list(dict.fromkeys(n.strip() for n in diseases if n.strip()))[:5]
-        top_k = min(max(top_k, 1), 5)
         if len(names) < 2:
             return {"questions": [], "note": "Cần ít nhất 2 bệnh để phân biệt."}
         known = set(known_phenotype_ids or [])

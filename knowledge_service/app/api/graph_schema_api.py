@@ -7,8 +7,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import get_document_graph_service, get_graph_schema_service, require_admin
 from app.dto.base.graph_schema import GraphEntityTypeDefinition, GraphRelationDefinition
-from app.dto.common import ApiResponse
-from app.dto.request.graph_schema import EntityTypeCreate, EntityTypeUpdate, RelationCreate, RelationUpdate
+from app.dto.api import ApiResponse, EntityTypeCreate, EntityTypeUpdate, RelationCreate, RelationUpdate
 from app.services.document_graph_service import DocumentGraphService
 from app.services.graph_schema_service import GraphSchemaService
 

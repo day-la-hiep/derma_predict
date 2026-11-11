@@ -6,9 +6,8 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any, LiteralString, cast
 
-from app.dto.base.document import DocumentTriple, GraphNodeRef
-from app.dto.request.document import TripleUpdate
-from app.dto.response.document import GraphNodeOutput, TripleListOutput, TripleOutput
+from app.dto.base.document import DocumentTriple
+from app.dto.api import TripleListOutput, TripleOutput, TripleUpdate
 from derma_shared.errors import ConflictError, InvalidError, NotFoundError
 from app.infra.neo4j_client import Neo4jClient
 from app.repositories.document_repository import DocumentRepository
@@ -164,62 +163,33 @@ class DocumentGraphService:
         rows = self._triples(document_id)
         ql = q.strip().lower()
         picked = [t for t in rows
-                  if (not status or t.status == status or (status == "new" and "new" in (t.subject.link_method, t.object.link_method)))
+                  if (not status or t.status == status)
                   and (not relation or t.relation == relation)
                   and (not ql or any(ql in x.lower() for x in (t.subject.text, t.subject.name, t.object.text, t.object.name, t.evidence)))]
         start = (max(page, 1) - 1) * page_size
-        ov = self._repo.overrides.get(document_id, "graph")
         return TripleListOutput(
             items=[TripleOutput.model_validate(t.model_dump()) for t in picked[start : start + page_size]],
             total=len(picked), page=page, page_size=page_size,
             counts={
                 "all": len(rows),
                 **{s: sum(1 for t in rows if t.status == s) for s in ("ok", "unlinked", "rejected")},
-                "new": sum(1 for t in rows if "new" in (t.subject.link_method, t.object.link_method)),
                 "by_relation": {r: sum(1 for t in rows if t.relation == r) for r in sorted({t.relation for t in rows})},
             },
-            accepted_nodes=list(ov.get("accepted_nodes") or []),
         )
 
     def update_triples(self, document_id: str, body: TripleUpdate) -> None:
         """Lưu sửa tay vào override (stage `graph`); caller áp lại bước để `triples.jsonl` và tóm tắt cập nhật."""
-        if not (body.rejected or body.restored or body.relink or body.accept_nodes or body.unaccept_nodes):
+        if not (body.rejected or body.restored):
             raise InvalidError("Không có thay đổi nào để lưu.")
         files = self._repo.files_for(document_id)
         if not files.exists("triples.auto.jsonl"):
             raise ConflictError("Hãy chạy bước Trích quan hệ trước.")
         ids = {x["triple_id"] for x in files.read_jsonl("triples.auto.jsonl")}
-        for tid in [*body.rejected, *body.restored, *[r.triple_id for r in body.relink]]:
+        for tid in [*body.rejected, *body.restored]:
             if tid not in ids:
                 raise NotFoundError(tid)
         ov = self._repo.overrides.get(document_id, "graph")
         ov["rejected"] = sorted((set(ov.get("rejected") or []) | set(body.rejected)) - set(body.restored))
-        ov["accepted_nodes"] = sorted((set(ov.get("accepted_nodes") or []) | set(body.accept_nodes)) - set(body.unaccept_nodes))
-        relink: dict[str, dict[str, Any]] = dict(ov.get("relink") or {})
-        lex = self.lexicon()
-        auto = {x["triple_id"]: DocumentTriple.model_validate(x) for x in files.read_jsonl("triples.auto.jsonl")}
-        for r in body.relink:
-            picked: GraphNodeRef = getattr(auto[r.triple_id], r.side)
-            e = lex.get(picked.type, r.node_id) if r.node_id is not None else None
-            if r.node_id is not None and e is None:
-                raise NotFoundError(f"{picked.type}:{r.node_id}")
-            term = (picked.type, picked.text, picked.en)
-            # chủ đề của mục xuất hiện ở hàng chục triple (khi là đầu, khi là đuôi): sửa một lần cho tất cả
-            targets = [(tid, sd) for tid, t in auto.items() for sd in ("subject", "object")
-                       if (r.same_term and (getattr(t, sd).type, getattr(t, sd).text, getattr(t, sd).en) == term)
-                       or (tid == r.triple_id and sd == r.side)]
-            for tid, sd in targets:
-                cur = dict(relink.get(tid) or {})
-                if e is None:  # bỏ sửa tay, quay về kết quả máy
-                    cur.pop(sd, None)
-                else:
-                    side: GraphNodeRef = getattr(auto[tid], sd)
-                    cur[sd] = side.model_copy(update={"kg": e.kg, "node_id": e.id, "name": e.name, "link_method": "manual"}).model_dump()
-                if cur:
-                    relink[tid] = cur
-                else:
-                    relink.pop(tid, None)
-        ov["relink"] = relink
         self._repo.overrides.write(document_id, "graph", ov)
 
     async def query_document_graph(
@@ -234,7 +204,6 @@ class DocumentGraphService:
             return []
         if not entity or not entity.strip():
             return []
-        lim = max(1, min(limit, 50))
         rel_filter = relation.strip().upper() if relation else None
 
         # Chiều xuôi: matched node là chủ thể
@@ -253,7 +222,7 @@ class DocumentGraphService:
                        r.display_relation AS display, 'out' AS direction
                 LIMIT $lim
             """),
-            entity=entity.strip(), rel=rel_filter, lim=lim,
+            entity=entity.strip(), rel=rel_filter, lim=limit,
         )
         # Chiều ngược: matched node là đối tượng
         in_rows = await self.neo4j.run(
@@ -271,7 +240,7 @@ class DocumentGraphService:
                        r.display_relation AS display, 'in' AS direction
                 LIMIT $lim
             """),
-            entity=entity.strip(), rel=rel_filter, lim=lim,
+            entity=entity.strip(), rel=rel_filter, lim=limit,
         )
         rows = list(out_rows) + list(in_rows)
         # dedup theo (subject, relation, object)
@@ -283,7 +252,7 @@ class DocumentGraphService:
                 continue
             seen.add(key)
             out.append(r)
-        return out[:lim]
+        return out[:limit]
 
     async def chunks_for_entities(self, names: list[str], limit: int = 20) -> list[str]:
         """`chunk_id` mà cạnh DOC của các thực thể trỏ tới, nhiều cạnh nhất trước. Khớp tên chính xác trước, không có mới khớp chứa."""

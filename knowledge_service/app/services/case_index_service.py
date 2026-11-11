@@ -1,19 +1,13 @@
-import asyncio
-import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from qdrant_client.models import PointStruct
 
 from app.config.settings import settings
-from app.dto.request.case import CaseInput
+from app.dto.api import CaseInput
 from app.infra.bm25 import SPARSE_NAME, encode_document
 from app.infra.embedding_client import EmbeddingClient
-from app.infra.qdrant_client import QdrantVectorClient, eq_filter
-
-
-def get_point_id(case_id: str) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"case:{case_id}"))
+from app.infra.qdrant_client import QdrantVectorClient, eq_filter, get_point_id
 
 
 def build_case_text(case: CaseInput, age: int | None) -> str:
@@ -82,14 +76,11 @@ class CaseIndexService:
         payload = build_case_payload(case)
         vectors, _, _ = self._embedding.embed([payload["text"]])
         point = PointStruct(
-            id=get_point_id(case.report_id),
+            id=get_point_id(f"case:{case.report_id}"),
             vector={"": vectors[0], SPARSE_NAME: encode_document(payload["text"], "mixed")},
             payload=payload,
         )
         self._qdrant.upsert_points_sync(self._collection, [point])
-
-    async def index_case_async(self, case: CaseInput) -> None:
-        await asyncio.to_thread(self.index_case, case)
 
     def delete_case(self, case_id: str) -> None:
         self._qdrant.delete_by_filter_sync(self._collection, eq_filter("case_id", case_id))

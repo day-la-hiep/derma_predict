@@ -1,4 +1,5 @@
 """Hàm biến đổi của pipeline gọi trực tiếp: không cần MinIO, SQLite hay Qdrant."""
+from pipeline.document_ingest.tests.memory_infra import MemoryBlobCache
 import tempfile
 import unittest
 from pathlib import Path
@@ -71,7 +72,7 @@ class PureStagesTest(unittest.TestCase):
 
     def test_read_toc_then_build_toc_gives_offset_and_anchors(self) -> None:
         rows = _page_rows()
-        llm = LLMClient("fake", cache_dir=self.root / "_cache", fn=toc_llm)
+        llm = LLMClient("fake", cache=MemoryBlobCache(), fn=toc_llm)
         auto = read_toc(lambda: _blank_pdf(self.root, 11), rows, ExtractionConfig(), llm, None, pages_opt="2-3")
         self.assertEqual((auto.toc_pages, auto.pages_source, len(auto.entries)), ([2, 3], "user", 7))
         doc = mapping.build_toc(auto, {}, rows, count_pages(rows, lambda: _blank_pdf(self.root, 11)))
@@ -80,7 +81,7 @@ class PureStagesTest(unittest.TestCase):
 
     def test_cut_chunks_needs_offset_and_returns_review(self) -> None:
         rows = _page_rows()
-        llm = LLMClient("fake", cache_dir=self.root / "_cache", fn=toc_llm)
+        llm = LLMClient("fake", cache=MemoryBlobCache(), fn=toc_llm)
         auto = read_toc(lambda: _blank_pdf(self.root, 11), rows, ExtractionConfig(), llm, None, pages_opt="2-3")
         doc = mapping.build_toc(auto, {}, rows, 11)
         args = dict(document_id="d", document_title="Book", figure_pages=[], on_progress=lambda *_: None)

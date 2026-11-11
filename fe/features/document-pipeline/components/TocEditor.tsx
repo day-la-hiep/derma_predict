@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { Check, Hash, ListTree, Pencil, Plus, RefreshCw, Trash2, Undo2, X } from "lucide-react";
+import { Check, Hash, ListTree, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -168,7 +168,7 @@ function OffsetCard({
 }: {
   doc: TocDoc;
   pending: boolean;
-  onSave: (offset: number | null) => void;
+  onSave: (offset: number) => void;
   onRefresh: () => void;
 }) {
   const [v, setV] = useState(doc.offset == null ? "" : String(doc.offset));
@@ -197,11 +197,6 @@ function OffsetCard({
         <Button variant="outline" size="sm" disabled={pending || v === "" || v === "-" || String(doc.offset ?? "") === v} onClick={() => onSave(parseInt(v, 10))}>
           Nhập tay
         </Button>
-        {info.source === "user" && (
-          <Button variant="ghost" size="sm" disabled={pending} onClick={() => onSave(null)}>
-            <Undo2 /> Dùng giá trị tự tính
-          </Button>
-        )}
         <span className="text-muted-foreground">
           {doc.offset == null
             ? "Chưa xác định (cần đọc xong nội dung sách, hoặc nhập tay)."
@@ -310,7 +305,7 @@ export function TocEditor({
               key={`${doc.offset}|${doc.offset_info?.source}`}
               doc={doc}
               pending={pending}
-              onSave={(o) => update.mutate(o == null ? { clear_offset: true } : { offset: o })}
+              onSave={(o) => update.mutate({ offset: o })}
               onRefresh={() => recompute.mutate()}
             />
           </PopoverContent>
@@ -408,17 +403,12 @@ export function TocEditor({
                     <Button variant="ghost" size="icon-xs" onClick={() => setAdd({ open: true, entry: e })} title="Thêm mục ngay sau mục này" aria-label="Thêm mục sau">
                       <Plus />
                     </Button>
-                    {e.edited && !e.added && (
-                      <Button variant="ghost" size="icon-xs" disabled={pending} onClick={() => update.mutate({ revert: [e.id] })} title="Quay về kết quả AI đọc ban đầu" aria-label="Quay về kết quả AI đọc ban đầu">
-                        <Undo2 />
-                      </Button>
-                    )}
                     <Button
                       variant="ghost"
                       size="icon-xs"
                       disabled={pending}
-                      onClick={() => update.mutate(e.added ? { removed_added: [e.id] } : { deleted: [e.id] })}
-                      title="Xóa mục"
+                      onClick={() => update.mutate({ deleted: [e.id] })}
+                      title="Xóa mục (muốn lấy lại thì chạy lại bước Mục lục)"
                       aria-label="Xóa mục"
                     >
                       <Trash2 />

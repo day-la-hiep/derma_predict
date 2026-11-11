@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import app.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
-from app.api.deps import close_clients, get_document_file_store, get_rabbitmq_client
+from app.api.deps import close_clients, get_rabbitmq_client
 from app.api.document_api import router as document_router
 from app.api.exception_handler import register_exception_handlers
 from app.api.graph_schema_api import router as graph_schema_router
@@ -19,7 +19,6 @@ from app.config.settings import log_startup_infra, settings
 async def lifespan(_: FastAPI):
     log_startup_infra()
     await get_rabbitmq_client().connect()
-    await get_document_file_store().ensure_bucket_async()
     yield
     await close_clients()
 

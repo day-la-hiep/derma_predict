@@ -277,18 +277,13 @@ def extract_triples(chunks: list[DocumentChunk], llm: LLMClient, lexicon: Entity
 
 # ---------------------------------------------------------------- override của người duyệt
 def apply_overrides(triples: list[DocumentTriple], ov: dict[str, Any], schema: GraphSchema = CORE_SCHEMA) -> list[DocumentTriple]:
-    """`rejected`: loại triple; `relink`: {triple_id: {"subject"|"object": GraphNodeRef}}; `accepted_nodes`: nút mới được chấp nhận."""
-    rejected, accepted = set(ov.get("rejected") or []), set(ov.get("accepted_nodes") or [])
-    relink: dict[str, dict[str, Any]] = ov.get("relink") or {}
+    """`rejected`: loại triple."""
+    rejected = set(ov.get("rejected") or [])
     out = []
     for t in triples:
         t = t.model_copy(deep=True)
-        for side, ref in (relink.get(t.triple_id) or {}).items():
-            if side in ("subject", "object"):
-                setattr(t, side, GraphNodeRef.model_validate(ref))
-        sides = (t.subject, t.object)
         # nút mới của loại do bác sĩ định nghĩa tự được chấp nhận (không có từ điển chuẩn để đối chiếu)
-        linked = all(s.node_id and (s.link_method != "new" or s.node_id in accepted or is_doc_type(schema, s.type)) for s in sides)
+        linked = all(s.node_id and (s.link_method != "new" or is_doc_type(schema, s.type)) for s in (t.subject, t.object))
         t.status = "rejected" if t.triple_id in rejected else "ok" if linked else "unlinked"
         out.append(t)
     return out

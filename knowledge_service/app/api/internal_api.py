@@ -9,7 +9,7 @@ from app.api.deps import (
     get_retrieval_service,
     require_internal_key,
 )
-from app.dto.common import ApiResponse
+from app.dto.api import ApiResponse
 from app.services.document_graph_service import DocumentGraphService
 from app.services.kg_intent_service import INTENTS, run_intent
 from app.services.knowledge_graph_service import KnowledgeGraphService

@@ -5,7 +5,7 @@ python -m unittest pipeline.document_ingest.tests.test_graph_schema -v"""
 import json
 import unittest
 
-from app.dto.request.graph_schema import EntityTypeCreate, EntityTypeUpdate, RelationCreate, RelationUpdate
+from app.dto.api import EntityTypeCreate, EntityTypeUpdate, RelationCreate, RelationUpdate
 from derma_shared.errors import ConflictError, InvalidError
 from app.models.graph_schema import GraphEntityType, GraphRelation
 from app.repositories.graph_schema_repository import GraphSchemaRepository
@@ -41,7 +41,7 @@ class SchemaBase(GraphBase):
         for t in (GraphEntityType.__table__, GraphRelation.__table__):
             t.create(bind, checkfirst=True)  # type: ignore[attr-defined]
         self.schema = GraphSchemaService(GraphSchemaRepository(sessions))
-        self.runner = DocumentIngestPipelineService(self.vectors, self.repo, embedding=FakeEmbedding(), graph=self.graph,  # type: ignore[arg-type]
+        self.runner = DocumentIngestPipelineService(self.vectors, embedding=FakeEmbedding(), graph=self.graph,  # type: ignore[arg-type]
                                                     graph_schema=self.schema)
         self.gllm._fn = llm_with_custom_slot
 

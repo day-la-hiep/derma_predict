@@ -19,6 +19,7 @@ from app.infra.qdrant_client import QdrantVectorClient
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.graph_schema_repository import GraphSchemaRepository
 from app.services.case_index_service import CaseIndexService
+from app.services.document_chunk_index import DocumentChunkIndex
 from app.services.document_graph_service import DocumentGraphService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
 from app.services.document_service import DocumentService
@@ -120,7 +121,7 @@ def get_document_graph_service() -> DocumentGraphService:
 @cache
 def get_document_service() -> DocumentService:
     return DocumentService(
-        get_document_repository(), get_qdrant_client(), settings.QDRANT_DOCUMENT_COLLECTION,
+        get_document_repository(), DocumentChunkIndex(get_qdrant_client(), settings.QDRANT_DOCUMENT_COLLECTION),
         graph=get_document_graph_service(),
     )
 
@@ -129,7 +130,6 @@ def get_document_service() -> DocumentService:
 def get_document_ingest_pipeline_service() -> DocumentIngestPipelineService:
     return DocumentIngestPipelineService(
         get_document_service(),
-        get_document_repository(),
         docling=get_docling_client(),
         embedding=get_embedding_client(),
         rabbitmq=get_rabbitmq_client(),

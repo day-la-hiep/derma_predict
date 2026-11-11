@@ -48,7 +48,7 @@ nằm ở `app/` theo quy ước của Core:
 | Điều khiển pipeline (`DocumentIngestPipelineService`: kiểm tra, ghi `running` + publish queue, chạy bước, dừng, duyệt, áp lại override; bảng dispatch `_runners`/`_reappliers`) | `app/services/document_ingest_pipeline_service.py` |
 | Tiến trình chạy bước (consume `document_ingest_queue`) | `app/workers/document_ingest_worker.py` |
 | Đồ thị sách: tìm nút, danh sách / sửa quan hệ, ghi Neo4j | `app/services/document_graph_service.py`, `app/infra/neo4j_client.py` |
-| API / DTO | `app/api/document_api.py`, `app/dto/request/document.py`, `app/dto/response/document.py` |
+| API / DTO | `app/api/document_api.py`, `app/dto/api.py` |
 | **Tạo/giữ/đóng mọi instance** ở trên (`get_document_service()`, `get_document_ingest_pipeline_service()`...) | `app/api/deps.py` |
 | Schema cấu hình sách (`Profile`, Pydantic) | `app/models/document_profile.py` |
 | MinIO giả cho test | `tests/memory_infra.py` |

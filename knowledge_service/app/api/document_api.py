@@ -12,17 +12,19 @@ from app.api.deps import (
     get_document_service,
     require_admin,
 )
-from app.dto.common import ApiResponse
-from app.dto.request.document import RunStageInput, DocumentSettings, TocUpdate, TripleUpdate
-from app.dto.response.document import (
+from app.dto.api import (
+    ApiResponse,
+    ChunkListOutput,
+    DocumentOutput,
+    DocumentSettings,
+    DocumentSummary,
+    FigureListOutput,
+    RunStageInput,
     SourcePageOutput,
     TocOutput,
-    DocumentOutput,
-    DocumentSummary,
-    ChunkListOutput,
-    FigureListOutput,
-    GraphNodeOutput,
+    TocUpdate,
     TripleListOutput,
+    TripleUpdate,
 )
 from app.services.document_graph_service import DocumentGraphService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
@@ -152,22 +154,6 @@ async def reapply_stage(
     document_id: str, stage_id: str, svc: Service
 ) -> ApiResponse[DocumentOutput]:
     return ApiResponse(data=await _call(svc.reapply, document_id, stage_id))
-
-
-@router.get(
-    "/documents/{document_id}/stages/{stage_id}/log",
-    response_model=ApiResponse[str],
-    operation_id="getTocStageLog",
-)
-async def stage_log(
-    document_id: str,
-    stage_id: str,
-    documents: Documents,
-    lines: Annotated[int, Query(ge=1, le=2000)] = 200,
-) -> ApiResponse[str]:
-    return ApiResponse(
-        data=await _call(documents.stage_log, document_id, stage_id, lines)
-    )
 
 
 # ------------------------------------------------------------------ trang nguồn
@@ -306,17 +292,3 @@ async def list_triples(
 )
 async def update_triples(document_id: str, body: TripleUpdate, svc: Service) -> ApiResponse[DocumentOutput]:
     return ApiResponse(data=await _call(svc.update_triples, document_id, body))
-
-
-@router.get(
-    "/graph/nodes",
-    response_model=ApiResponse[list[GraphNodeOutput]],
-    operation_id="searchGraphNodes",
-)
-async def search_graph_nodes(
-    graph: Graph,
-    type: str,
-    q: str = "",
-    limit: Annotated[int, Query(ge=1, le=50)] = 20,
-) -> ApiResponse[list[GraphNodeOutput]]:
-    return ApiResponse(data=await _call(graph.search_nodes, type, q, limit))

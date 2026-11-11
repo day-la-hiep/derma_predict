@@ -124,33 +124,35 @@ class ApiTest(Base):
     def test_settings_roundtrip_and_validation(self) -> None:
         s = self.c.get(f"{self.base}/documents/tbook/settings").json()["data"]
         self.assertEqual(
-            (s["engine"], s["max_tokens"], s["boundary_level"]),
-            ("pdftotext", 400, 3),
+            (s["engine"], s["title"]),
+            ("pdftotext", "Test"),
         )
-        s.update(
-            {
-                "max_tokens": 200,
-                "engine": "docling",
-                "title": "Mới",
-                "noise_pages": ["1-3", " "],
-            }
-        )
+        s.update({"engine": "docling", "title": " Mới "})
         got = self.c.put(f"{self.base}/documents/tbook/settings", json=s).json()[
             "data"
         ]
         self.assertEqual(
-            (got["max_tokens"], got["engine"], got["title"], got["noise_pages"]),
-            (200, "docling", "Mới", ["1-3"]),
+            (got["engine"], got["title"]),
+            ("docling", "Mới"),
         )
         self.assertEqual(
             self.c.get(f"{self.base}/documents/tbook").json()["data"]["title"],
             "Mới",
         )
-        s["max_tokens"] = 5
+        s["engine"] = "khac"
         self.assertEqual(
             self.c.put(f"{self.base}/documents/tbook/settings", json=s).status_code,
             422,
         )
+
+    def test_added_toc_entry_is_removed_for_good_when_deleted(self) -> None:
+        self.seed_chunks()
+        url = f"{self.base}/documents/tbook/toc"
+        titles = lambda: [e["title"] for e in self.c.get(url).json()["data"]["entries"]]  # noqa: E731
+        self.assertEqual(self.c.patch(url, json={"added": [{"title": "Mục thêm tay", "level": 2}]}).status_code, 200)
+        added = next(e for e in self.c.get(url).json()["data"]["entries"] if e["title"] == "Mục thêm tay")
+        self.assertEqual(self.c.patch(url, json={"deleted": [added["id"]]}).status_code, 200)
+        self.assertNotIn("Mục thêm tay", titles())
 
     def test_toc_edit_becomes_override_and_chunks_are_filterable(self) -> None:
         self.seed_chunks()
@@ -291,12 +293,6 @@ class ApiTest(Base):
         st = self.wait_state("ingest", {"pending_review", "failed"})
         self.assertEqual(
             (st["state"], st["summary"]["pages"]), ("pending_review", 3)
-        )
-        self.assertIn(
-            "xong",
-            self.c.get(f"{self.base}/documents/tbook/stages/ingest/log").json()[
-                "data"
-            ],
         )
 
     def test_cancel_stops_a_running_stage(self) -> None:

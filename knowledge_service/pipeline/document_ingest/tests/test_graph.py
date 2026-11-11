@@ -2,12 +2,13 @@
 
 python -m unittest pipeline.document_ingest.tests.test_graph -v"""
 
+from pipeline.document_ingest.tests.memory_infra import MemoryBlobCache
 import json
 import unittest
 from pathlib import Path
 from typing import Any
 
-from app.dto.request.document import TripleRelink, TripleUpdate
+from app.dto.api import TripleUpdate
 from app.infra.llm_client import LLMClient
 from app.services.document_graph_service import DocumentGraphService
 from app.services.document_ingest_pipeline_service import DocumentIngestPipelineService
@@ -116,9 +117,9 @@ class GraphBase(Base):
         self.graph = FakeGraph(self.repo)
         self.graph.set_lexicon(lexicon())
         self.vectors.graph = self.graph
-        self.runner = DocumentIngestPipelineService(self.vectors, self.repo, embedding=FakeEmbedding(), graph=self.graph)  # type: ignore[arg-type]
+        self.runner = DocumentIngestPipelineService(self.vectors, embedding=FakeEmbedding(), graph=self.graph)  # type: ignore[arg-type]
         self.files.write_jsonl("chunks.jsonl", CHUNKS)
-        self.gllm = LLMClient("fake", cache_dir=Path(self.tmp.name) / "_gcache", fn=graph_llm)
+        self.gllm = LLMClient("fake", cache=MemoryBlobCache(), fn=graph_llm)
 
     def run_graph(self) -> dict:
         return self.runner.run_stage("tbook", "graph", {}, force=True, llm=self.gllm)
@@ -169,47 +170,22 @@ class GraphStageTest(GraphBase):
         self.assertEqual((comp["object"]["node_id"], comp["status"]), (None, "unlinked"))
         self.assertEqual(comp["subject"]["node_id"], "DERMO:0000001")
 
-    def test_new_entity_is_proposed_but_needs_acceptance(self) -> None:
+    def test_new_entity_is_proposed_but_stays_unlinked(self) -> None:
         p = read_profile(self.repo, "tbook")
         p.graph.allow_new_entities = True
         self.repo.update_meta("tbook", profile=p.model_dump(mode="json"))
         self.run_graph()
         comp = self.triples()[("RESULTS_IN", "viêm cầu thận cấp")]
         self.assertEqual((comp["object"]["kg"], comp["object"]["link_method"], comp["status"]), ("doc", "new", "unlinked"))
-        self.runner.update_triples("tbook", TripleUpdate(accept_nodes=[comp["object"]["node_id"]]))
-        self.assertEqual(self.triples()[("RESULTS_IN", "viêm cầu thận cấp")]["status"], "ok")
 
-    def test_review_overrides_survive_a_rerun(self) -> None:
+    def test_rejected_triples_survive_a_rerun(self) -> None:
         self.run_graph()
-        t = self.triples()
-        pos, comp = t[("DISEASE_PHENOTYPE_POSITIVE", "bọng nước nông")], t[("RESULTS_IN", "viêm cầu thận cấp")]
-        self.runner.update_triples("tbook", TripleUpdate(
-            rejected=[pos["triple_id"]],
-            relink=[TripleRelink(triple_id=comp["triple_id"], side="object", node_id="DERMO:0000001")]))
+        pos = self.triples()[("DISEASE_PHENOTYPE_POSITIVE", "bọng nước nông")]
+        self.runner.update_triples("tbook", TripleUpdate(rejected=[pos["triple_id"]]))
         self.run_graph()
-        t = self.triples()
-        self.assertEqual(t[("DISEASE_PHENOTYPE_POSITIVE", "bọng nước nông")]["status"], "rejected")
-        self.assertEqual(t[("RESULTS_IN", "viêm cầu thận cấp")]["object"]["link_method"], "manual")
-
-    def test_relinking_a_topic_applies_to_every_triple_using_it(self) -> None:
-        self.graph.lexicon().add(LexEntry("777", "contagious impetigo", "disease", "MONDO", "primekg"))
-        self.run_graph()
-        t = self.triples()
-        ind = t[("INDICATION", "mupirocin bôi")]  # chủ đề "Chốc" là đuôi ở cạnh này, là đầu ở cạnh triệu chứng
-        self.runner.update_triples("tbook", TripleUpdate(relink=[TripleRelink(triple_id=ind["triple_id"], side="object", node_id="777")]))
-        t = self.triples()
-        self.assertEqual(t[("DISEASE_PHENOTYPE_POSITIVE", "bọng nước nông")]["subject"]["node_id"], "777")
-        self.runner.update_triples("tbook", TripleUpdate(
-            relink=[TripleRelink(triple_id=ind["triple_id"], side="object", node_id=None, same_term=False)]))
-        t = self.triples()
-        self.assertEqual(t[("INDICATION", "mupirocin bôi")]["object"]["node_id"], "5984")
-        self.assertEqual(t[("DISEASE_PHENOTYPE_POSITIVE", "bọng nước nông")]["subject"]["node_id"], "777")
-
-    def test_relink_to_unknown_node_is_refused(self) -> None:
-        self.run_graph()
-        tid = next(iter(self.triples().values()))["triple_id"]
-        with self.assertRaises(Exception):
-            self.runner.update_triples("tbook", TripleUpdate(relink=[TripleRelink(triple_id=tid, side="object", node_id="nope")]))
+        self.assertEqual(self.triples()[("DISEASE_PHENOTYPE_POSITIVE", "bọng nước nông")]["status"], "rejected")
+        self.runner.update_triples("tbook", TripleUpdate(restored=[pos["triple_id"]]))
+        self.assertEqual(self.triples()[("DISEASE_PHENOTYPE_POSITIVE", "bọng nước nông")]["status"], "ok")
 
     def test_missing_lexicon_is_a_reviewer_facing_error(self) -> None:
         self.graph.set_lexicon(EntityLexicon())
