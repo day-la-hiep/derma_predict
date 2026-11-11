@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, Check, ChevronDown, Play, RotateCcw, ScrollText } from "lucide-react";
+import { Ban, Check, ChevronDown, Play, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -89,7 +89,6 @@ export function StagePanel({
   onRun,
   onCancel,
   onApprove,
-  onLog,
   onNext,
 }: {
   stage: Stage;
@@ -98,7 +97,6 @@ export function StagePanel({
   onRun: () => void;
   onCancel: () => void;
   onApprove: () => void;
-  onLog: () => void;
   /** nhảy sang bước kế tiếp (hiện sau khi duyệt) */
   onNext?: () => void;
 }) {
@@ -249,13 +247,6 @@ export function StagePanel({
             <Button variant="ghost" size="sm" onClick={onNext}>
               Bước tiếp →
             </Button>
-          )}
-          {(stage.started_at || running) && (
-            <Hint content="Xem nhật ký xử lý của bước này.">
-              <Button variant="ghost" size="sm" onClick={onLog}>
-                <ScrollText /> Nhật ký
-              </Button>
-            </Hint>
           )}
         </div>
       </div>

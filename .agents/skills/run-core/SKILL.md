@@ -5,7 +5,7 @@ description: Run, start, drive, smoke-test and typecheck the Derma core backend 
 
 # Run `core` (FastAPI + agent worker)
 
-Paths are relative to `core/`. Two processes: the API (`main.py`, port 3050) and the agent
+Paths are relative to `archive/core/`. Two processes: the API (`main.py`, port 3050) and the agent
 worker (`agent/worker.py`). A chat turn only runs when a client opens the SSE stream, so
 the driver (`.claude/skills/run-core/driver.py`, stdlib only) does create → stream → print.
 
@@ -28,7 +28,7 @@ DeepSeek/OpenRouter key). Deps: `uv sync`.
 uv run python main.py > /tmp/api.log 2>&1 &
 # 2. worker — MUST be running or chat turns hang until timeout
 uv run python -u -m agent.worker > /tmp/worker.log 2>&1 &
-# 3. drive it (skill lives at repo root, not under core/ — hence ../)
+# 3. drive it (skill lives at repo root, not under archive/core/ — hence ../)
 D=../.claude/skills/run-core/driver.py
 python3 $D health                                   # database/redis/rabbitmq ok
 python3 $D models                                   # valid --model ids

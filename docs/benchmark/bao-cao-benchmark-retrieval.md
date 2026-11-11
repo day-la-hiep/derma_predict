@@ -55,7 +55,7 @@ Chỉ số: hit@k (top-k có ít nhất một chunk đúng), recall@10 (tỉ l�
 | semantic_rerank | 0.88 | 0.88 | 0.96 | 0.96 | 0.90 | 0.90 |
 | bm25_expand_rerank | 0.83 | 0.88 | 0.96 | 0.96 | 0.88 | 0.88 |
 
-Khoảng tin cậy 95% đầy đủ của từng ô nằm trong `core/benchmark/data/retrieval/runs/ragas-v1/report.md`.
+Khoảng tin cậy 95% đầy đủ của từng ô nằm trong `archive/core/benchmark/data/retrieval/runs/ragas-v1/report.md`.
 
 ### So sánh cặp (hiệu hit@5, CI 95%)
 

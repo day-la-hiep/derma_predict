@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { useActiveProfile } from "@/features/patient-profile/hooks";
+import { FollowupButton } from "@/features/followup";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { formatDateTime } from "../constants";
 import { useBookAppointment, useCancelMyAppointment, useMyAppointments, usePatientEpisodes } from "../hooks";
@@ -135,6 +136,7 @@ export function AppointmentsView({ onBack }: { onBack: () => void }) {
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {a.encounterId && <FollowupButton encounterId={a.encounterId} role="patient" />}
                   <StatusBadge status={a.status} />
                   {(a.status === "requested" || a.status === "confirmed") && (
                     <Button size="sm" variant="ghost" disabled={cancel.isPending} onClick={() => setCancelling(a.id)} className="text-muted-foreground">

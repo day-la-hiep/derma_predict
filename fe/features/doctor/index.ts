@@ -1,11 +1,9 @@
-export { DoctorConsultationPage } from "./components/DoctorConsultationPage";
 export { MedicalHistoryPage } from "./components/MedicalHistoryPage";
 export { PatientJourneyDialog } from "./components/PatientJourneyDialog";
 export { PatientJourneyCanvas } from "./components/PatientJourneyCanvas";
 export { PatientJourneyTimeline } from "./components/PatientJourneyTimeline";
-export { useDoctorStore } from "./store";
 export { adaptDraft, adaptFinalizeReport, adaptPatient, doctorApi, errorMessage, toFinalizeBody } from "./api";
-export { SuggestionPanel } from "./components/FinalizeConsultationDialog";
+export { SuggestionPanel } from "./components/SuggestionPanel";
 export { EMPTY_FINALIZE, FinalizeReportForm } from "./components/FinalizeReportForm";
 export { patientSubtitle } from "./components/PatientProfileDetails";
 export * from "./constants";

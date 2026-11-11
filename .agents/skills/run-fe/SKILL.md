@@ -1,6 +1,6 @@
 ---
 name: run-fe
-description: Run, start, drive, and screenshot the Derma frontend (Next.js app in `fe/`, chat UI at /chats + admin book-ingest UI at /admin/documents, talks to core on :3050). Use when asked to run the frontend, start the Next dev server, check a UI change, screenshot a page, or verify fe talks to the real backend (not mock data).
+description: Run, start, drive, and screenshot the Derma frontend (Next.js app in `fe/`, chat UI at /chats + admin book-ingest UI at /admin/documents, talks to the gateway on :3040). Use when asked to run the frontend, start the Next dev server, check a UI change, screenshot a page, or verify fe talks to the real backend (not mock data).
 ---
 
 # Run `fe` (Next.js)
@@ -13,12 +13,14 @@ driver is the `claude-in-chrome` MCP browser tools (`navigate` + `computer` scre
 ## Prerequisites
 
 - Node (`node -v` — verified with v24.18.0) + pnpm (`pnpm -v` — verified with 11.9.0).
-- `.env.local` (copy `.env.local.example`). Key vars actually in use:
-  `NEXT_PUBLIC_API_URL=http://localhost:3050/api/v1`, `BACKEND_URL=http://localhost:3050`,
-  `NEXT_PUBLIC_USE_MOCK=false` (true uses fake localStorage data instead of core — check this
-  first if a page looks right but data looks canned).
-- `core` backend running and reachable on :3050 (see `.claude/skills/run-core/`) — the chat
-  page and `/admin/documents` both fetch real data from it.
+- `fe/.env.local` (copy `.env.local.example`). Next tự đọc file này khi chạy `pnpm dev`; **không
+  gán `BACKEND_URL=...` ngoài command line** (biến process đè `.env.local`, làm env không có tác dụng).
+  Key vars: `BACKEND_URL=http://localhost:3040` (gateway; bỏ trống = mặc định này),
+  `NEXT_PUBLIC_API_URL=/api/v1`, `NEXT_PUBLIC_USE_MOCK=false` (true uses fake localStorage data
+  instead of the backend — check this first if a page looks right but data looks canned).
+  Đổi `.env.local` phải restart `pnpm dev`; `BACKEND_URL` chỉ đọc lúc khởi động (`next.config.ts`).
+- Gateway :3040 + các service (`make gateway identity consultation clinical knowledge ai`, xem
+  `makefile`) đang chạy — chat và `/admin/documents` lấy dữ liệu thật qua gateway.
 
 ## Setup
 
@@ -29,6 +31,7 @@ pnpm install   # already present in this repo — node_modules populated, skip i
 ## Run (agent path)
 
 ```bash
+cd fe   # chạy trong fe/ để Next thấy .env.local
 # 1. dev server (skip if curl already answers — port 3010 is often the user's own dev server, reuse it, don't kill it)
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3010
 pnpm dev > /tmp/fe.log 2>&1 &
@@ -52,7 +55,7 @@ tabs_close_mcp(tabId)                         # clean up when done
 Verified 2026-10-03 against the live dev server: `/chats` renders the chat UI with real
 conversation history ("Da mặt bị mụn trứng cá nên chăm sóc..."); `/admin/documents` renders the
 book-ingest admin UI with two real books (Fitzpatrick's Color Atlas, FritzPatrick Clinical
-Disease) and their stage progress — i.e. both pages are pulling live data from `core`, not
+Disease) and their stage progress — i.e. both pages are pulling live data from the backend, not
 `NEXT_PUBLIC_USE_MOCK` fixtures.
 
 Logs -> `/tmp/fe.log`. Stop: `lsof -ti:3010 -sTCP:LISTEN | xargs -r kill` (only if you started
@@ -85,8 +88,8 @@ this before trusting a production-path change (e.g. anything in `next.config.ts`
 - `navigate` with a bare `localhost:3010` (no scheme) defaults to **https://**, which this
   dev server doesn't serve — screenshot then fails with `Frame with ID 0 is showing error
   page`. Always pass `http://localhost:3010/...` explicitly.
-- Port 3010 (and core's 3050) are frequently already running as the user's own dev servers —
+- Port 3010 (and gateway's 3040) are frequently already running as the user's own dev servers —
   `curl` first; reuse rather than relaunch/kill.
 - `NEXT_PUBLIC_USE_MOCK=true` makes the UI look fully functional from localStorage alone with
   no backend running — if verifying an integration change, check this env var is `false` and
-  that `core` is actually up, or the test proves nothing.
+  that the gateway is actually up, or the test proves nothing.

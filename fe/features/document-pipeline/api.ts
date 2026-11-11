@@ -12,7 +12,6 @@ import type {
   TocUpdate,
   TripleList,
   TripleUpdate,
-  GraphNode,
 } from "./types";
 
 /** Thông báo lỗi hiển thị cho người dùng: ưu tiên `detail` của FastAPI. */
@@ -60,8 +59,6 @@ export const documentApi = {
   cancelStage: (documentId: string, stage: StepId) => unwrap<Document>(api.post(`${base(documentId)}/stages/${stage}/cancel`)),
   approveStage: (documentId: string, stage: StepId) => unwrap<Document>(api.post(`${base(documentId)}/stages/${stage}/approve`)),
   reapplyStage: (documentId: string, stage: StepId) => unwrap<Document>(api.post(`${base(documentId)}/stages/${stage}/reapply`)),
-  stageLog: (documentId: string, stage: StepId, lines = 300) =>
-    unwrap<string>(api.get(`${base(documentId)}/stages/${stage}/log`, { params: { lines } })),
 
   page: (documentId: string, page: number) => unwrap<SourcePage>(api.get(`${base(documentId)}/pages/${page}`)),
   /** Ảnh cần header Authorization nên tải bằng axios (blob) rồi dùng object URL. */
@@ -95,7 +92,6 @@ export const documentApi = {
       })
     ),
   updateTriples: (documentId: string, body: TripleUpdate) => unwrap<Document>(api.patch(`${base(documentId)}/triples`, body)),
-  searchNodes: (type: string, q: string) => unwrap<GraphNode[]>(api.get(`${root}/graph/nodes`, { params: { type, q } })),
   exportChunks: async (documentId: string) =>
     (await api.get(`${base(documentId)}/chunks/export`, { responseType: "blob", timeout: 0 })).data as Blob,
 };

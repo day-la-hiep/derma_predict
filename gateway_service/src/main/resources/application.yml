@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 3000
+          # Core cũ đang giữ cổng 3050; gateway chạy 3040 tới khi nghiệm thu xong thì mới đổi FE sang đây
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowed-origin-patterns: '*'
+                allowed-methods: '*'
+                allowed-headers: '*'
+                exposed-headers: '*'
+          # Đường dẫn dài/cụ thể phải đứng trước: một số route con của /doctor và /patient-profiles thuộc clinical, phần còn lại thuộc service khác.
+          routes:
+            - id: clinical
+              uri: ${CLINICAL_URL:http://localhost:3053}
+              predicates:
+                - Path=/api/v1/appointments,/api/v1/appointments/**,/api/v1/doctor/appointments,/api/v1/doctor/appointments/**,/api/v1/doctor/encounters/**,/api/v1/doctor/finalize-reports,/api/v1/doctor/patient-profiles/**,/api/v1/doctor/patients/**,/api/v1/patient-profiles/*/episodes,/api/v1/patient-profiles/*/finalize-reports
+            - id: consultation
+              uri: ${CONSULTATION_URL:http://localhost:3052}
+              predicates:
+                - Path=/api/v1/conversations,/api/v1/conversations/**,/api/v1/followup-channels/**,/api/v1/doctor/followup-channels,/api/v1/doctor/followup-channels/**,/api/v1/video-calls/**,/api/v1/uploads,/api/v1/files/**,/api/v1/models
+            - id: identity
+              uri: ${IDENTITY_URL:http://localhost:3051}
+              predicates:
+                - Path=/api/v1/auth/**,/api/v1/patient-profiles,/api/v1/patient-profiles/**
+            - id: knowledge
+              uri: ${KNOWLEDGE_URL:http://localhost:3054}
+              predicates:
+                - Path=/api/v1/admin/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+server:
+  port: ${GATEWAY_PORT:3040}

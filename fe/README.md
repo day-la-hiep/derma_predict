@@ -1,6 +1,6 @@
 # Derma Hospital — Frontend (`fe/`)
 
-Next.js (App Router) + TypeScript. Gọi Core ở `NEXT_PUBLIC_API_URL` (mặc định `http://localhost:3050/api/v1`).
+Next.js (App Router) + TypeScript. Gọi gateway qua rewrite `/api/v1` (`BACKEND_URL`, mặc định `http://localhost:3040`).
 
 ## Chạy
 

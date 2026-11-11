@@ -106,7 +106,7 @@ function FactRow({
   );
 }
 
-/** Thân form chốt báo cáo kết luận — chốt từ ca tư vấn */
+/** Thân form chốt báo cáo kết luận — chốt từ lần khám */
 export function FinalizeReportForm({ value, onChange }: { value: FinalizeInput; onChange: (v: FinalizeInput) => void }) {
   const set = <K extends keyof FinalizeInput>(k: K, v: FinalizeInput[K]) => onChange({ ...value, [k]: v });
   const setFact = (i: number, f: FactDraft) => set("facts", value.facts.map((x, j) => (j === i ? f : x)));

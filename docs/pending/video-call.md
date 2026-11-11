@@ -1,6 +1,7 @@
 # [Pending] Gọi thoại / video giữa bác sĩ và bệnh nhân
 
 > **Trạng thái:** giai đoạn 1–4 đã cài (xem [notice](../notice/video-call.md)); chọn phương án không đổi schema (giữ 3 trạng thái, bác sĩ khởi tạo).
+> Cuộc gọi nay gắn với **kênh theo dõi sau khám** (`conversation_id`), không còn phiên tư vấn; chỉ bác sĩ của kênh gọi được, khi kênh còn mở.
 > Còn lại: kiểm thử trình duyệt thật, TURN khác mạng, hết giờ phía server, thông báo cuộc gọi đến ngoài hội thoại đang mở.
 
 ## Hiện trạng
@@ -59,7 +60,7 @@ Kết luận: bác sĩ ↔ bệnh nhân 1-1 → P2P + coturn. SFU chỉ khi có 
 
 | Lựa chọn | Đánh giá |
 |---|---|
-| coturn tự host (thêm vào `docker-compose.yml`) | **Chọn.** Time-limited credential (HMAC) do Core cấp |
+| coturn tự host (thêm vào `deploy/docker-compose.yml`) | **Chọn.** Time-limited credential (HMAC) do Core cấp |
 | STUN công cộng của Google | Chỉ dev, không có relay |
 | Twilio/Metered TURN | Dễ nhưng tốn tiền, phụ thuộc ngoài; dự phòng khi không có IP public |
 
@@ -71,7 +72,7 @@ Kết luận: bác sĩ ↔ bệnh nhân 1-1 → P2P + coturn. SFU chỉ khi có 
 - Ai gọi ai: đề xuất bác sĩ của phiên `active` khởi tạo, bệnh nhân nhận; tái dùng `room_access`.
 
 ### Giai đoạn 1 — Hạ tầng
-- Thêm `coturn` vào `docker-compose.yml` (`use-auth-secret`, dải cổng UDP relay).
+- Thêm `coturn` vào `deploy/docker-compose.yml` (`use-auth-secret`, dải cổng UDP relay).
 - Biến `TURN_URL`, `TURN_SECRET` trong settings (không commit secret).
 - Dev chạy HTTPS (`next dev --experimental-https`) hoặc dùng `localhost` cho cả hai tab.
 

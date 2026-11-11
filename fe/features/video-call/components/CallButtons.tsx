@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { useCallStore } from "../store";
 
-/** Nút gọi của bác sĩ; chỉ bật khi ca đang `active` (server cũng kiểm tra lại). */
+/** Nút gọi của bác sĩ trong kênh theo dõi; chỉ bật khi kênh còn mở (server cũng kiểm tra lại). */
 export function CallButtons({ conversationId, disabled }: { conversationId: string; disabled?: boolean }) {
   const phase = useCallStore((s) => s.phase);
   const startCall = useCallStore((s) => s.startCall);
@@ -13,7 +13,7 @@ export function CallButtons({ conversationId, disabled }: { conversationId: stri
 
   return (
     <div className="flex items-center gap-1">
-      <Hint content="Gọi thoại cho bệnh nhân. Chỉ gọi được khi bạn đang phụ trách ca.">
+      <Hint content="Gọi thoại cho bệnh nhân. Chỉ gọi được khi kênh theo dõi còn mở.">
         <Button
           variant="outline"
           size="iconSm"

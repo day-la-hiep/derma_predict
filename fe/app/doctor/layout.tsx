@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { DoctorShell } from "@/features/doctor/components/DoctorShell";
 
 export const metadata: Metadata = {
-  title: "Báo cáo tư vấn bác sĩ | Derma AI",
-  description: "Màn hình bác sĩ xem báo cáo AI kết luận từ hội thoại với bệnh nhân",
+  title: "Khu bác sĩ | Derma AI",
+  description: "Lịch khám, theo dõi sau khám và lịch sử khám của bác sĩ",
 };
 
 export default function DoctorLayout({

@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: consultation
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/consultation}
+    username: ${DATABASE_USER:postgres}
+    password: ${DATABASE_PASSWORD:postgres}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DB:0}
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
+
+server:
+  port: 3052
+
+derma:
+  jwt:
+    secret: ${JWT_SECRET_KEY:derma-secret-key-change-in-production-datn-2026}
+  internal-api-key: ${INTERNAL_API_KEY:derma-internal-key-change-in-production}
+  ai-url: ${AI_URL:http://localhost:3055}
+  identity-url: ${IDENTITY_URL:http://localhost:3051}
+  # id ngắn hiển thị cho FE; AI map sang "provider:model" thật (services/ai/app/config/settings.py::AGENT_MODEL_CHOICES)
+  models: deepseek-v4-pro,deepseek-v4-flash,gemma4-26b
+  default-model: gemma4-26b
+  # event còn trong Redis Stream bao lâu; SSE mới mở sẽ phát lại event trong cửa sổ này (bù đoạn POST → mở SSE)
+  stream-replay-seconds: 30
+  # lượt AI ở trạng thái queued/streaming quá lâu mà không có kết quả thì bị đóng bằng câu báo lỗi
+  stale-turn-minutes: 10
+  # Bucket ảnh đính kèm đã có sẵn (tạo bằng `make init-db`); service không tự tạo bucket để khỏi vô tình sinh bucket mới
+  minio:
+    endpoint: ${MINIO_ENDPOINT:localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:minio}
+    secret-key: ${MINIO_SECRET_KEY:minio123}
+    secure: ${MINIO_SECURE:false}
+    bucket: ${MINIO_BUCKET:derma-attachments}
+  # WebRTC: STUN đủ cho NAT thường; mạng di động/firewall cần TURN (coturn trong docker-compose.yml). turn-url rỗng = chỉ STUN
+  webrtc:
+    stun-urls: ${STUN_URLS:stun:stun.l.google.com:19302}
+    turn-url: ${TURN_URL:}
+    turn-secret: ${TURN_SECRET:derma-turn-secret}
+    turn-credential-ttl-seconds: ${TURN_CREDENTIAL_TTL_SECONDS:3600}
+    metered-host: ${METERED_TURN_HOST:standard.relay.metered.ca}
+    metered-username: ${METERED_TURN_USERNAME:}
+    metered-credential: ${METERED_TURN_CREDENTIAL:}

@@ -1,10 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-    // nén gzip làm Next gom các event SSE khi proxy /api/v1 sang Core nên chat mất realtime
+    // nén gzip làm Next gom các event SSE khi proxy /api/v1 sang gateway nên chat mất realtime
     compress: false,
     async rewrites() {
-        const backendUrl = process.env.BACKEND_URL || "http://localhost:3050";
+        const backendUrl = process.env.BACKEND_URL || "http://localhost:3040";
         return [
             {
                 source: "/api/v1/:path*",

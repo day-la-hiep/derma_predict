@@ -1,0 +1,91 @@
+"""Bounded context Tài liệu: sách / guideline số hoá qua pipeline ingest."""
+
+from typing import Literal
+
+from pydantic import BaseModel, field_validator
+
+from app.dto.base.shared import File
+
+
+class DocumentChunk(BaseModel):
+    """Một đoạn chunk theo khung mục lục của `Document` — CHỈ tồn tại khi `Document.type ==
+    "book"` (các loại khác không qua pipeline chunk). Nguồn:
+    `pipeline/document_ingest/stages/step3_chunks.py::build_chunks` (`chunks.jsonl`)."""
+
+    chunk_id: str
+    seq: int
+    document_id: str
+    text: str
+    context_text: str
+    toc_path: list[str] = []
+    toc_node_ids: list[str] = []
+    figure_ids: list[
+        str
+    ] = []  # ảnh nằm trong khoảng trang của chunk (xem `DocumentFigure`)
+    level: int
+    pages_hint: list[int]
+    boundary: bool
+    suspect: bool
+    page_start: int
+    page_end: int
+    page_printed_start: int
+    page_printed_end: int
+    tokens: int
+    chars: int
+
+
+class GraphNodeRef(BaseModel):
+    """Một đầu của `DocumentTriple`: chữ trong sách + nút graph đã khớp. `kg="doc"` = thực thể mới đề xuất từ sách
+    (chưa có trong PrimeKG/DermO), chỉ nạp khi người duyệt chấp nhận."""
+
+    kg: Literal["primekg", "dermo", "doc"]
+    type: str  # `pipeline/document_ingest/graph_schema.py::ENTITY_TYPES`
+    text: str  # chữ trong sách
+    en: str = ""  # tên tiếng Anh LLM đưa ra để khớp
+    node_id: str | None = None  # None = chưa khớp
+    name: str = ""  # tên nút đã khớp
+    link_method: str = ""  # exact | llm | manual | new
+
+
+class DocumentTriple(BaseModel):
+    """Một quan hệ trích từ sách (`triples.jsonl`, bước `graph`). `subject` -> `object` đúng chiều cạnh trong Neo4j;
+    `slot` (ô LLM điền) cho biết đầu nào là chủ đề của mục sách."""
+
+    triple_id: str  # tất định theo nội dung để override của người duyệt giữ được khi chạy lại
+    document_id: str
+    slot: str
+    relation: str  # relationship type Neo4j, vd INDICATION, RESULTS_IN
+    subject: GraphNodeRef
+    object: GraphNodeRef
+    evidence: str  # câu trích nguyên văn trong chunk
+    chunk_ids: list[str]
+    pages: list[int]
+    status: Literal["ok", "unlinked", "rejected"]
+
+
+class DocumentFigure(BaseModel):
+    """Một ảnh (hình minh hoạ, sơ đồ, biểu đồ) được trích từ trang của `Document` type "book". Nguồn: bước Đọc nội dung
+    (engine docling) -> `figures.json`. `caption` là chữ chú thích đi kèm trong sách để tìm kiếm, không phải mô tả do AI sinh."""
+
+    figure_id: str
+    document_id: str
+    page: int
+    seq: int
+    bbox: list[float] | None = None  # [trái, trên, phải, dưới] trên trang PDF
+    image_file: File
+    caption: str = ""
+
+
+class NewDocument(BaseModel):
+    """Đầu vào tạo tài liệu mới — validate tại đây. Mã tài liệu do DB sinh khi tạo."""
+
+    title: str
+    engine: Literal["pdftotext", "docling"] = "pdftotext"
+
+    @field_validator("title")
+    @classmethod
+    def _title_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Vui lòng nhập tên tài liệu.")
+        return v

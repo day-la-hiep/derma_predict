@@ -1,11 +1,11 @@
 ---
 name: derma-core-conventions
-description: Conventions for the Derma `core/` backend and its LangGraph agent — how files are organized (`app/` vs `agent/`), the request→RabbitMQ→worker→Redis→SSE flow, and the step-by-step way to add an endpoint, DTO, model, agent tool, middleware or prompt change. Use whenever the user asks to add or modify a tool, middleware, endpoint, service, repository, DTO, model, the agent graph or system prompt, asks where code should live, why an import is circular, or how a chat turn flows through core — even if they don't say "convention".
+description: Conventions for the Derma `archive/core/` backend and its LangGraph agent — how files are organized (`app/` vs `agent/`), the request→RabbitMQ→worker→Redis→SSE flow, and the step-by-step way to add an endpoint, DTO, model, agent tool, middleware or prompt change. Use whenever the user asks to add or modify a tool, middleware, endpoint, service, repository, DTO, model, the agent graph or system prompt, asks where code should live, why an import is circular, or how a chat turn flows through core — even if they don't say "convention".
 ---
 
-# Derma `core/` — flow and file conventions
+# Derma `archive/core/` — flow and file conventions
 
-Paths are relative to `core/`. Two independent processes share code but never import each
+Paths are relative to `archive/core/`. Two independent processes share code but never import each
 other's runtime: **Core** (FastAPI, `main.py`, package `app/`) and the **Agent worker**
 (`python -m agent.worker`, package `agent/`). To run/drive/typecheck them, use `/run-core`.
 Detailed backend-layer rules live in `docs/quy-uoc.md` (read it for DI, DTO/ORM split, envelope
@@ -74,6 +74,18 @@ That's why shared helpers sit in `common.py`: a middleware importing `pre_diagno
 assemble the agent) raised `ImportError ... partially initialized module`. If something is needed by
 both sides, move it down into `common.py`, don't import upward.
 
+## Layering rule — keep it flat (đơn giản hoá)
+
+Một request đi đúng ba tầng: **`api` → `service` → `repository`** (infra client chỉ được service gọi trực tiếp
+khi không có SQL, vd Redis/Qdrant/MinIO). Mục tiêu: đọc một endpoint là lần được tới SQL mà không phải nhảy qua lớp bọc.
+
+- `api` chỉ map request/response rồi gọi **một** hàm service; không gọi repository, không chứa logic.
+- `service` chứa nghiệp vụ; gọi repository của **chính domain mình**. Cần dữ liệu domain khác → gọi service của domain đó, không import repository của họ.
+- `repository` chỉ có truy vấn; mỗi method làm một việc cụ thể, không gọi service.
+- **Không thêm lớp chuyển tiếp**: class/hàm chỉ gọi lại đúng một hàm khác mà không thêm logic (adapter, manager, helper-class, facade) thì xoá, gọi thẳng. Thêm lớp mới phải trả lời được "nó làm gì mà lớp dưới không làm".
+- Provider trong `deps.py` chỉ lắp dependency, không chứa logic; không lồng registry/factory nhiều tầng.
+- Hướng đích là microservice theo domain (`docs/pending/microservice-split.md`): mỗi domain gói gọn api/service/repository/model của mình, domain khác chỉ gọi qua service. Code mới đặt theo domain, không tạo thêm phụ thuộc chéo (FK/repository) giữa các domain.
+
 ## `dto/base` is the business entity layer — gate changes here
 
 `app/dto/base/` holds the canonical business entities (patient, doctor, document, conversation,
@@ -102,7 +114,7 @@ if the routes need a logged-in user). Update `docs/openapi.yaml`/`api-doc.md`.
 
 **Add a model** — file in `app/models/`, subclass `Base`, import it in `app/models/__init__.py`
 (the aggregator — otherwise `Base.metadata` doesn't see it and Alembic autogenerate misses it).
-Schema is Alembic-managed (`core/migrations/`, no `create_all` in `main.py`): after adding/changing
+Schema is Alembic-managed (`archive/core/migrations/`, no `create_all` in `main.py`): after adding/changing
 a model run `uv run alembic revision --autogenerate -m "..."`, read the generated file, then
 `uv run alembic upgrade head` (see `/run-core`).
 

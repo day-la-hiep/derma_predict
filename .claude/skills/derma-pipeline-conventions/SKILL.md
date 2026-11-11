@@ -1,11 +1,11 @@
 ---
 name: derma-pipeline-conventions
-description: Conventions for the Derma document-ingest pipeline (`core/pipeline/document_ingest/` — PDF document → table-of-contents-anchored chunks → Qdrant, admin UI at /admin/documents) — the 6-stage model (ingest/toc/chunks/index + graph/graph_index → Neo4j), the pure-function stage contract, the `app/dto/base/document.py` business entities (`Document`/`DocumentChunk`/`DocumentTriple`/`DocumentStage`/`DocumentStageOverride`), where transformation logic vs infra clients vs persistence go, and how to add or modify a stage. Use whenever the user asks to add/modify a pipeline stage, touches `pipeline/document_ingest/`, `app/services/document_*.py`, `app/repositories/document_repository.py`, asks about document/book/TOC/chunk ingestion, or asks where document-ingest code should live — even if they don't say "pipeline" or "convention".
+description: Conventions for the Derma document-ingest pipeline (`archive/core/pipeline/document_ingest/` — PDF document → table-of-contents-anchored chunks → Qdrant, admin UI at /admin/documents) — the 6-stage model (ingest/toc/chunks/index + graph/graph_index → Neo4j), the pure-function stage contract, the `app/dto/base/document.py` business entities (`Document`/`DocumentChunk`/`DocumentTriple`/`DocumentStage`/`DocumentStageOverride`), where transformation logic vs infra clients vs persistence go, and how to add or modify a stage. Use whenever the user asks to add/modify a pipeline stage, touches `pipeline/document_ingest/`, `app/services/document_*.py`, `app/repositories/document_repository.py`, asks about document/book/TOC/chunk ingestion, or asks where document-ingest code should live — even if they don't say "pipeline" or "convention".
 ---
 
 # Derma document-ingest pipeline (`pipeline/document_ingest/`) — conventions
 
-Paths are relative to `core/`. Turns an uploaded PDF (currently: textbooks, `Document.type ==
+Paths are relative to `archive/core/`. Turns an uploaded PDF (currently: textbooks, `Document.type ==
 "book"`) into table-of-contents-anchored chunks in Qdrant, reviewed stage-by-stage by a human via
 `/admin/documents` (FE: `derma-fe-conventions`'s `features/document-pipeline/`). No CLI — Core records `running` and publishes to RabbitMQ, the Ingest Worker (`make ingest-worker`) runs each stage;
 everything lives in Postgres (`documents`, `document_stages`,
@@ -37,7 +37,7 @@ PDF → ingest (text/page)  → toc (LLM reads TOC, human reviews) → mapping (
 `graph` gets enabled relations only, `graph_index` all). The registry `pipeline/document_ingest/graph_schema.py` (`ENTITY_TYPES`, `SLOTS`) drives the prompt,
 entity matching, Neo4j loading and the FE labels — **to add an entity type or relation, add it there** (plus
 `RELATION_LABELS`/`ENTITY_LABELS` in FE `constants.ts`). Names are matched against `EntityLexicon` (the nodes of the base
-graph — `nodes.csv` + DermO `terms.json` built by `core/graph_base`, loaded by `DocumentGraphService.lexicon()` from `settings.GRAPH_LEXICON_DIR`).
+graph — `nodes.csv` + DermO `terms.json` built by `archive/core/graph_base`, loaded by `DocumentGraphService.lexicon()` from `settings.GRAPH_LEXICON_DIR`).
 PrimeKG ids are unique only per node type, so nodes are always addressed by `(type, id)` / Neo4j label + id, never by `Entity.id` alone.
 Reviewer overrides (stage `graph`): `rejected`, `relink` (per triple side, expanded to every triple with the same
 term), `accepted_nodes` (new `doc_*` entities, only when `profile.graph.allow_new_entities`). Gotchas (PrimeKG id
@@ -71,6 +71,8 @@ class is also literally named `Document`/`DocumentStage`/`DocumentOverride` (sam
 entity layer, different module) — `app/services/document_service.py` doesn't import both at once,
 so there's no clash there, but if a future change needs both in one file, alias the ORM import
 (`from app.models.document import Document as DocumentOrm`).
+
+Tầng gọi tuân `derma-core-conventions` mục "Layering rule": api → service → repository, không thêm lớp chuyển tiếp; khi gộp/xoá lớp trong chuỗi `DocumentService` / `DocumentIngestPipelineService` / `DocumentStageRunner` phải sửa bảng bên dưới cùng lúc.
 
 ## Three-layer split (this is the part people get wrong)
 
@@ -187,7 +189,7 @@ MinIO/Postgres/Qdrant service needs to be running for these tests.
 ## Code style
 
 Same as `derma-core-conventions` (Vietnamese comments explaining *why*, basic-mode pyright, async
-I/O) — this pipeline lives inside `core/` and follows the same rules, including **no long module
+I/O) — this pipeline lives inside `archive/core/` and follows the same rules, including **no long module
 docstring at the top of a file and no multi-line function docstrings** (at most one line; put a
 non-obvious algorithm decision in a short comment next to the code, or in `README.md`). Stage-level prose
 ("sách", "cuốn sách") still refers to the book being processed — that's fine to leave as-is since

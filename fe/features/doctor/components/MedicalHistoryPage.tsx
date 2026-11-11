@@ -17,7 +17,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { cn } from "@/lib/utils";
 import { TIME_FILTERS, URGENCY_CONFIG, URGENCY_ORDER } from "../constants";
 import { useMyFinalizeReports } from "../hooks";
-import { doctorPaths, parseDoctorRoute } from "../routes";
+import { doctorPaths, parseRecordsReportId } from "../routes";
 import type { Urgency } from "../types";
 import { FinalizeReportDetail } from "./FinalizeReportDetail";
 import { FinalizeReportTable } from "./FinalizeReportTable";
@@ -69,8 +69,7 @@ export function MedicalHistoryPage() {
   const [days, setDays] = useState<string>("30");
   const [urgency, setUrgency] = useState<Urgency | "all">("all");
   const router = useRouter();
-  const route = parseDoctorRoute(usePathname());
-  const selectedId = route.kind === "records" ? (route.reportId ?? null) : null;
+  const selectedId = parseRecordsReportId(usePathname());
   const { data: all = [], isLoading } = useMyFinalizeReports(useDebouncedValue(query.trim()));
   // mốc "bây giờ" cố định khi mở màn để bộ lọc thời gian không đổi giữa các lần render
   const [now] = useState(() => Date.now());

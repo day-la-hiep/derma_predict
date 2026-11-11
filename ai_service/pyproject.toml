@@ -1,0 +1,38 @@
+[project]
+name = "derma-ai"
+version = "0.1.0"
+description = "Service ai: tác nhân lập luận LangGraph (công cụ tra cứu qua knowledge, phân loại ảnh CNN, memory dài hạn); nhận lượt qua POST /internal/turns"
+requires-python = ">=3.12"
+dependencies = [
+    "derma-shared",
+    "fastapi[standard]>=0.141.1",
+    "httpx>=0.27",
+    "langchain-deepseek>=1.1.0",
+    "langchain-openai>=1.6.2",
+    "langchain-openrouter>=0.2.9",
+    "langchain[google-genai]>=0.3",
+    "langgraph>=0.2",
+    "langgraph-checkpoint-postgres>=3.2.0",
+    "pillow>=10.0",
+    "psycopg-pool>=3.3.3",
+    "psycopg[binary]>=3.2",
+    "torch>=2.4",
+    "torchvision>=0.19",
+]
+
+[tool.uv.sources]
+derma-shared = { path = "../shared", editable = true }
+# CNN phân loại ảnh chỉ cần inference, không cần CUDA: dùng index CPU của PyTorch cho nhẹ
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple/"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.pyright]
+include = ["app", "tests"]

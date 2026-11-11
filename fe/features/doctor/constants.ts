@@ -1,6 +1,4 @@
 import {
-  Clock,
-  CheckCircle2,
   CircleDot,
   Activity,
   Microscope,
@@ -9,7 +7,6 @@ import {
   AlertTriangle,
   ImageIcon,
   HelpCircle,
-  HandHelping,
   User,
   Calendar,
   HeartPulse,
@@ -18,7 +15,7 @@ import {
   Network,
   type LucideIcon,
 } from "lucide-react";
-import type { ClinicalFactType, ConsultationStatus, FactOrigin, Urgency } from "./types";
+import type { ClinicalFactType, FactOrigin, Urgency } from "./types";
 
 /** Cấu hình hiển thị theo loại Dữ kiện lâm sàng (bám sát cột clinical_facts.fact_type trong DB) */
 export interface FactTypeConfig {
@@ -79,88 +76,6 @@ export const FACT_TYPE_CONFIG: Record<ClinicalFactType, FactTypeConfig> = {
       "bg-gray-100 text-gray-700 dark:bg-gray-800/50 dark:text-gray-400 border-gray-200 dark:border-gray-700/50",
   },
 };
-
-/** Cấu hình hiển thị trạng thái phiên tư vấn (consultation_sessions.status) */
-export interface StatusConfig {
-  label: string;
-  hint: string;
-  dotClass: string;
-  icon: LucideIcon;
-  color: string;
-  badgeClass: string;
-}
-
-export const STATUS_CONFIG: Record<ConsultationStatus, StatusConfig> = {
-  pending: {
-    label: "Chờ",
-    hint: "Chờ nhận ca: bệnh nhân đã yêu cầu bác sĩ, chưa có bác sĩ tiếp nhận.",
-    dotClass: "bg-amber-500",
-    icon: Clock,
-    color: "text-amber-500 dark:text-amber-400",
-    badgeClass:
-      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-400",
-  },
-  active: {
-    label: "Đang",
-    hint: "Đang tư vấn: bác sĩ đã nhận ca và đang trao đổi với bệnh nhân.",
-    dotClass: "bg-emerald-500",
-    icon: CircleDot,
-    color: "text-emerald-500 dark:text-emerald-400",
-    badgeClass:
-      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-400",
-  },
-  resolved: {
-    label: "Xong",
-    hint: "Đã hoàn thành: phiên đã đóng, chỉ xem lại.",
-    dotClass: "bg-muted-foreground/40",
-    icon: CheckCircle2,
-    color: "text-muted-foreground",
-    badgeClass: "border-border bg-muted text-muted-foreground",
-  },
-};
-
-/** Cấu hình nút hành động tiếp quản / đóng phiên tư vấn */
-export interface StatusActionConfig {
-  label: string;
-  hint: string;
-  icon: LucideIcon;
-  buttonClass: string;
-  action: "accept" | "resolve" | null;
-}
-
-export const STATUS_ACTION_CONFIG: Record<ConsultationStatus, StatusActionConfig> = {
-  pending: {
-    label: "Nhận ca",
-    hint: "Nhận ca tư vấn: bác sĩ tiếp quản cuộc trò chuyện từ AI và có thể nhắn trực tiếp cho bệnh nhân.",
-    icon: HandHelping,
-    buttonClass:
-      "bg-gradient-to-r from-brand to-brand-secondary text-brand-foreground hover:shadow-accent",
-    action: "accept",
-  },
-  active: {
-    label: "Đóng ca",
-    hint: "Đóng phiên tư vấn: mở form chốt báo cáo kết luận (điền sẵn dữ kiện của ca), chốt xong ca chuyển sang chế độ chỉ xem.",
-    icon: CheckCircle2,
-    buttonClass:
-      "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:shadow-lg",
-    action: "resolve",
-  },
-  resolved: {
-    label: "Đã đóng",
-    hint: "Phiên tư vấn đã hoàn tất.",
-    icon: CheckCircle2,
-    buttonClass: "",
-    action: null,
-  },
-};
-
-/** Các lựa chọn lọc ca tư vấn trên thanh sidebar */
-export const FILTER_OPTIONS: { value: ConsultationStatus | "all"; label: string }[] = [
-  { value: "all", label: "Tất cả" },
-  { value: "pending", label: "Chờ" },
-  { value: "active", label: "Đang" },
-  { value: "resolved", label: "Xong" },
-];
 
 /** Mức khẩn cấp bác sĩ chốt cho báo cáo kết luận */
 export const URGENCY_CONFIG: Record<Urgency, { label: string; hint: string; badgeClass: string }> = {

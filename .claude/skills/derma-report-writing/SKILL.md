@@ -1,9 +1,9 @@
 ---
 name: derma-report-writing
-description: Quy ước viết báo cáo đồ án Derma Hospital trong `bao_cao_latex/` (LaTeX, tiếng Việt) với văn phong kỹ thuật, câu ngắn, ít tính từ. Dùng mỗi khi viết, sửa, rút gọn, dịch hoặc rà soát nội dung các chương, mục mở đầu, kết luận, bảng, hình, công thức của báo cáo; khi người dùng nói "viết chương", "viết mục", "sửa câu từ", "làm gọn báo cáo", "bao_cao_latex", kể cả khi không nhắc tên skill.
+description: Quy ước viết báo cáo đồ án Derma Hospital trong `report/bao_cao_latex/` (LaTeX, tiếng Việt) với văn phong kỹ thuật, câu ngắn, ít tính từ. Dùng mỗi khi viết, sửa, rút gọn, dịch hoặc rà soát nội dung các chương, mục mở đầu, kết luận, bảng, hình, công thức của báo cáo; khi người dùng nói "viết chương", "viết mục", "sửa câu từ", "làm gọn báo cáo", "report/bao_cao_latex", kể cả khi không nhắc tên skill.
 ---
 
-# Viết báo cáo đồ án (`bao_cao_latex/`)
+# Viết báo cáo đồ án (`report/bao_cao_latex/`)
 
 Người đọc là hội đồng chấm đồ án. Họ cần biết hệ thống làm gì, bằng cách nào, kết quả ra sao. Câu dài và tính từ khen ngợi làm loãng thông tin và khó kiểm chứng, nên văn phong dưới đây ưu tiên sự kiện đo được.
 
@@ -57,5 +57,5 @@ Tên mô hình, số lớp, tham số mà tài liệu không ghi thì hỏi ngư
 1. Đọc `main.tex` và chương liên quan để khớp cấu trúc, nhãn và thuật ngữ đã dùng.
 2. Đọc nguồn trong bảng trên.
 3. Viết, rồi tự rà một lượt: gạch các tính từ đánh giá, tách câu dài, thay khẳng định chung bằng sự kiện.
-4. Biên dịch kiểm tra: `cd bao_cao_latex && xelatex -interaction=nonstopmode -halt-on-error main.tex` (chạy hai lần nếu đổi mục lục hoặc tham chiếu). Báo lỗi nếu có; nói rõ nếu chưa xem PDF.
+4. Biên dịch kiểm tra: `cd report/bao_cao_latex && xelatex -interaction=nonstopmode -halt-on-error main.tex` (chạy hai lần nếu đổi mục lục hoặc tham chiếu). Báo lỗi nếu có; nói rõ nếu chưa xem PDF.
 5. Cuối câu trả lời liệt kê các chỗ để TODO hoặc chưa đối chiếu được với code.

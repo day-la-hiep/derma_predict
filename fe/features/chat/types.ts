@@ -185,14 +185,6 @@ export type FlatStreamEvent =
       conversationId: string;
       message: unknown;
     }
-  /** Ca tư vấn của hội thoại đổi trạng thái (bác sĩ nhận / đóng ca). */
-  | {
-      type: "consultation.updated";
-      conversationId: string;
-      sessionId: string;
-      status: "pending" | "active" | "resolved";
-      doctorId: string | null;
-    }
   /** Tool bắt đầu chạy; `stepId` trùng với `message.tool_result` sau đó để cùng một bước. */
   | {
       type: "message.tool_start";

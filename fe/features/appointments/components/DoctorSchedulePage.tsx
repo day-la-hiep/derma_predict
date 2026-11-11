@@ -5,6 +5,7 @@ import { Brain, CalendarDays, CheckCircle2, Inbox, Loader2, Play } from "lucide-
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FollowupButton } from "@/features/followup";
 import { PatientInfoCard } from "@/features/doctor/components/PatientInfoCard";
 import { AiSummaryView } from "@/features/doctor/components/AiSummaryView";
 import { cn } from "@/lib/utils";
@@ -203,6 +204,7 @@ function Actions({ d }: { d: DoctorAppointmentDetail }) {
           <CheckCircle2 className="size-4" /> Chốt kết luận
         </Button>
       )}
+      {d.encounterId && <FollowupButton encounterId={d.encounterId} role="doctor" className="h-10 w-full rounded-xl" />}
       {pre && (
         <div className="flex gap-2">
           {d.status === "confirmed" && (
@@ -282,7 +284,7 @@ function Center({ d }: { d: DoctorAppointmentDetail }) {
 export function DoctorSchedulePage() {
   const { data: list = [], isLoading } = useDoctorAppointments();
   const [selected, setSelected] = useState<string | null>(null);
-  // chưa chọn thì mở lịch đầu tiên, giống cổng vào của màn ca tư vấn
+  // chưa chọn thì mở lịch đầu tiên, giống màn Theo dõi
   const activeId = selected ?? list[0]?.id ?? null;
   const { data: d } = useDoctorAppointment(activeId);
 

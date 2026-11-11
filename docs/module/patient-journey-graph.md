@@ -15,11 +15,11 @@ Mỗi bệnh nhân có một đồ thị tri thức cá nhân (Personal Knowledg
 | | `fe/features/doctor/components/PatientJourneyTimeline.tsx` | Chế độ xem thẻ timeline chi tiết từng phiên |
 | **FE API & Hooks** | `fe/features/doctor/api.ts` (`getPatientJourneyGraph`) | Gọi API lấy dữ liệu đồ thị |
 | | `fe/features/doctor/hooks.ts` (`usePatientJourneyGraph`) | TanStack Query hook query theo `patientId` |
-| **API Backend** | `core/app/api/doctor_api.py` | `GET /api/v1/doctor/patient-profiles/{profile_id}/journey-graph` |
-| **Service Backend** | `core/app/services/patient_graph_service.py` | Quản lý Cypher queries đồng bộ và truy vấn graph từ Neo4j |
-| | `core/app/services/consultation_service.py` | Gọi sync phiên & facts tiền tư vấn |
-| | `core/app/services/finalize_report_service.py` | Gọi sync chẩn đoán & lời khuyên khi bác sĩ đóng ca |
-| **DTO Backend** | `core/app/dto/response/patient_graph.py` | `PatientJourneyGraphOutput`, `GraphNodeOutput`, `GraphEdgeOutput` |
+| **API Backend** | `archive/core/app/api/doctor_api.py` | `GET /api/v1/doctor/patient-profiles/{profile_id}/journey-graph` |
+| **Service Backend** | `archive/core/app/services/patient_graph_service.py` | Quản lý Cypher queries đồng bộ và truy vấn graph từ Neo4j |
+| | `archive/core/app/services/consultation_service.py` | Gọi sync phiên & facts tiền tư vấn |
+| | `archive/core/app/services/finalize_report_service.py` | Gọi sync chẩn đoán & lời khuyên khi bác sĩ đóng ca |
+| **DTO Backend** | `archive/core/app/dto/response/patient_graph.py` | `PatientJourneyGraphOutput`, `GraphNodeOutput`, `GraphEdgeOutput` |
 
 ---
 

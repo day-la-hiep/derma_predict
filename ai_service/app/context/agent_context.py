@@ -1,0 +1,45 @@
+"""Context riêng cho từng lần chạy graph"""
+import asyncio
+from dataclasses import dataclass, field
+from typing import Any, TypedDict
+
+
+class ImageResult(TypedDict):
+    hints: list[tuple[str, dict[str, Any], str]]
+    # Kết quả riêng của làn ảnh để bước gộp kiểm tra chéo với giả thuyết của làn chữ: nhãn CNN (disease, confidence) và các đoạn mô tả.
+    candidates: list[dict[str, Any]]
+    descriptions: list[str]
+
+
+@dataclass
+class AgentContext:
+    user_id: str
+    conversation_id: str
+    # Hồ sơ bệnh nhân của hội thoại: khoá của memory dài hạn; rỗng (test, debug) thì không đọc / ghi memory.
+    patient_profile_id: str = ""
+    # FE cần để gắn event vào đúng tin nhắn đang stream; rỗng khi test không stream.
+    message_id: str = ""
+    # `classify_skin_image` đối chiếu với danh sách này vì LLM hay chép sai object_key.
+    image_keys: list[str] = field(default_factory=list)
+    # "provider:model" đã resolve từ `Conversation.model`; rỗng thì `select_model` fallback `settings.AGENT_MODEL`.
+    model: str = ""
+    # Middleware append trực tiếp; worker giữ cùng reference nên đọc được sau `astream()` để Core lưu lại
+    # (SSE không replay được khi load lại hội thoại)..
+    reasoning_steps: list[dict[str, Any]] = field(default_factory=list)
+    # Ghi đè mức trần của graph cho riêng lượt này (None = dùng mặc định trong `graph/nodes.py`); chủ yếu để thử trong `agent/test/debug_app.py`.
+    max_tool_rounds: int | None = None
+    max_model_retries: int | None = None
+    # Memory dài hạn của người dùng, đọc một lần ở node đầu của lượt (`load_memory`); các node sau chỉ nối chuỗi này vào prompt, không chạm store.
+    memory_text: str = ""
+    # Làn ảnh (`image_flow`) đặt kết quả vào đây khi xong; `label_evidence` của làn chữ chờ nó. Dùng Future vì state graph cha chỉ được ghi khi cả hai làn kết thúc.
+    image_result: "asyncio.Future[ImageResult] | None" = None
+    # Fact hiện trạng trong DB (dài hạn + đợt đang hoạt động), nạp ở `build_context`; bảng là nguồn chính, state chỉ là bộ đệm.
+    known_facts: list[dict[str, Any]] = field(default_factory=list)
+    # Kết quả lâm sàng của lượt, các node ghi vào đây; `turn.py` gửi về Core khi lượt xong (cùng cách `reasoning_steps`).
+    turn_facts: list[dict[str, Any]] = field(default_factory=list)
+    turn_hypotheses: list[dict[str, Any]] = field(default_factory=list)
+    turn_images: list[dict[str, Any]] = field(default_factory=list)
+    # Số lần đã gọi theo tên hiển thị của tool trong lượt (vòng lặp tra cứu gọi lại cùng tool) → id bước không đè nhau.
+    tool_counts: dict[str, int] = field(default_factory=dict)
+    # Bước đã `tool_start` nhưng chưa có kết quả, theo tên; `emit_tool_step` lấy theo thứ tự để khớp start với result.
+    open_steps: dict[str, list[tuple[str, str]]] = field(default_factory=dict)

@@ -1,11 +1,9 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Ban, Check, Link2, RotateCcw, Search, Undo2 } from "lucide-react";
+import { ArrowRight, Ban, RotateCcw } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
-import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { Chips, EmptyState, Pager, SearchBox, StepTitle, selectCls } from "./bits";
@@ -26,59 +24,10 @@ const KG_TONE: Record<string, string> = {
 const METHOD_HINT: Record<string, string> = {
   exact: "Khớp chính xác tên (hoặc đồng nghĩa DermO).",
   llm: "AI chọn trong các nút có tên gần giống — nên kiểm tra.",
-  manual: "Bạn đã chọn nút này.",
-  new: "Thực thể mới, chưa có trong PrimeKG/DermO: chỉ được lưu khi bạn chấp nhận.",
 };
 
-/** Tìm nút cùng loại để gán tay cho một đầu của quan hệ. */
-function NodePicker({ side, onPick, onClose }: { side: GraphNodeRef; onPick: (id: string) => void; onClose: () => void }) {
-  const [q, setQ] = useState(side.en || side.text);
-  const [term, setTerm] = useState(q);
-  const res = useQuery({
-    queryKey: ["toc", "graph-nodes", side.type, term],
-    queryFn: () => documentApi.searchNodes(side.type, term),
-    enabled: term.trim().length >= 2,
-  });
-  return (
-    <div className="space-y-2 rounded-xl border border-border bg-muted/40 p-2">
-      <form
-        className="flex items-center gap-1.5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          setTerm(q);
-        }}
-      >
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tên tiếng Anh" className="h-8 rounded-lg text-xs" autoFocus />
-        <Button type="submit" size="icon-sm" variant="outline" aria-label="Tìm">
-          <Search />
-        </Button>
-        <Button type="button" size="sm" variant="ghost" onClick={onClose}>
-          Đóng
-        </Button>
-      </form>
-      <ul className="max-h-48 space-y-0.5 overflow-y-auto">
-        {(res.data ?? []).map((n) => (
-          <li key={`${n.kg}-${n.id}`}>
-            <button
-              type="button"
-              onClick={() => onPick(n.id)}
-              className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-left text-xs hover:bg-background"
-            >
-              <span className={cn("rounded px-1 font-mono text-[10px]", KG_TONE[n.kg])}>{n.source || n.kg}</span>
-              <span className="min-w-0 flex-1 truncate text-foreground">{n.name}</span>
-              <span className="font-mono text-[10px] text-muted-foreground">{n.id.length > 18 ? n.id.slice(0, 16) + "…" : n.id}</span>
-            </button>
-          </li>
-        ))}
-        {res.data && res.data.length === 0 && <li className="px-2 py-1 text-xs text-muted-foreground">Không tìm thấy nút.</li>}
-      </ul>
-    </div>
-  );
-}
-
-function Side({ r, picking, onPick, accepted }: { r: GraphNodeRef; picking: boolean; onPick: () => void; accepted: boolean }) {
+function Side({ r }: { r: GraphNodeRef }) {
   const labels = useSchemaLabels();
-  const isNew = r.link_method === "new";
   return (
     <div className="min-w-0 flex-1 space-y-0.5">
       <p className="text-[10px] text-muted-foreground">{labels.entity(r.type)}</p>
@@ -90,18 +39,12 @@ function Side({ r, picking, onPick, accepted }: { r: GraphNodeRef; picking: bool
           <Hint content={`${METHOD_HINT[r.link_method] ?? ""} ${r.node_id}`}>
             <span className={cn("inline-flex min-w-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px]", KG_TONE[r.kg])}>
               <span className="truncate">{r.name}</span>
-              {isNew && <span className="shrink-0 font-semibold">{accepted || labels.custom(r.type) ? "mới ✓" : "mới"}</span>}
               {r.link_method === "llm" && <span className="shrink-0 opacity-70">AI</span>}
             </span>
           </Hint>
         ) : (
           <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] text-destructive">chưa khớp</span>
         )}
-        <Hint content="Chọn nút đúng trong đồ thị. Áp dụng cho mọi quan hệ có cùng thuật ngữ này trong sách.">
-          <Button size="icon-xs" variant="ghost" onClick={onPick} aria-label="Chọn nút" className={cn(picking && "bg-muted")}>
-            <Link2 />
-          </Button>
-        </Hint>
       </div>
     </div>
   );
@@ -109,28 +52,22 @@ function Side({ r, picking, onPick, accepted }: { r: GraphNodeRef; picking: bool
 
 function TripleRow({
   t,
-  accepted,
   busy,
   onUpdate,
   onPreview,
 }: {
   t: Triple;
-  accepted: Set<string>;
   busy: boolean;
   onUpdate: (b: TripleUpdate) => void;
   onPreview: (p: number) => void;
 }) {
   const labels = useSchemaLabels();
-  const [picking, setPicking] = useState<"subject" | "object" | null>(null);
   const [full, setFull] = useState(false);
-  const sides = { subject: t.subject, object: t.object };
-  const newIds = [t.subject, t.object].filter((s) => s.link_method === "new" && s.node_id && !labels.custom(s.type)).map((s) => s.node_id as string);
-  const manual = (["subject", "object"] as const).filter((k) => sides[k].link_method === "manual");
   return (
     <>
-      <TableRow className={cn(t.status === "rejected" && "opacity-60", t.status === "unlinked" && "bg-amber-500/[0.07]", picking && "border-b-0")}>
+      <TableRow className={cn(t.status === "rejected" && "opacity-60", t.status === "unlinked" && "bg-amber-500/[0.07]")}>
         <TableCell className="w-52 max-w-52">
-          <Side r={t.subject} accepted={accepted.has(t.subject.node_id ?? "")} picking={picking === "subject"} onPick={() => setPicking(picking === "subject" ? null : "subject")} />
+          <Side r={t.subject} />
         </TableCell>
         <TableCell className="w-px">
           <span className="inline-flex items-center gap-1 whitespace-nowrap">
@@ -141,7 +78,7 @@ function TripleRow({
           </span>
         </TableCell>
         <TableCell className="w-52 max-w-52">
-          <Side r={t.object} accepted={accepted.has(t.object.node_id ?? "")} picking={picking === "object"} onPick={() => setPicking(picking === "object" ? null : "object")} />
+          <Side r={t.object} />
         </TableCell>
         <TableCell className="max-w-xs whitespace-normal">
           <button type="button" onClick={() => setFull(!full)} className="cursor-pointer text-left" title={full ? "Thu gọn" : "Xem đầy đủ"}>
@@ -157,23 +94,6 @@ function TripleRow({
         </TableCell>
         <TableCell>
           <div className="flex flex-wrap justify-end gap-1">
-            {manual.length > 0 && (
-              <Button size="xs" variant="ghost" disabled={busy} onClick={() => onUpdate({ relink: manual.map((side) => ({ triple_id: t.triple_id, side, node_id: null })) })}>
-                <Undo2 /> Bỏ sửa
-              </Button>
-            )}
-            {newIds.length > 0 &&
-              (newIds.every((id) => accepted.has(id)) ? (
-                <Button size="xs" variant="ghost" disabled={busy} onClick={() => onUpdate({ unaccept_nodes: newIds })}>
-                  <RotateCcw /> Bỏ chấp nhận
-                </Button>
-              ) : (
-                <Hint content="Chấp nhận thực thể mới cho mọi quan hệ dùng nó trong sách này.">
-                  <Button size="xs" variant="outline" disabled={busy} onClick={() => onUpdate({ accept_nodes: newIds })}>
-                    <Check /> Chấp nhận
-                  </Button>
-                </Hint>
-              ))}
             {t.status === "rejected" ? (
               <Button size="xs" variant="ghost" disabled={busy} onClick={() => onUpdate({ restored: [t.triple_id] })}>
                 <RotateCcw /> Khôi phục
@@ -186,20 +106,6 @@ function TripleRow({
           </div>
         </TableCell>
       </TableRow>
-      {picking && (
-        <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={6} className="whitespace-normal">
-            <NodePicker
-              side={sides[picking]}
-              onClose={() => setPicking(null)}
-              onPick={(id) => {
-                onUpdate({ relink: [{ triple_id: t.triple_id, side: picking, node_id: id }] });
-                setPicking(null);
-              }}
-            />
-          </TableCell>
-        </TableRow>
-      )}
     </>
   );
 }
@@ -216,7 +122,6 @@ export function TripleBrowser({ documentId, onPreview }: { documentId: string; o
   const update = useUpdateTriples(documentId);
   const data = list.data;
   const counts = data?.counts ?? {};
-  const accepted = new Set(data?.accepted_nodes ?? []);
 
   return (
     <div className="space-y-4">
@@ -232,7 +137,6 @@ export function TripleBrowser({ documentId, onPreview }: { documentId: string; o
               { value: "all", label: "Tất cả", count: counts.all },
               { value: "ok", label: "Đã khớp", count: counts.ok },
               { value: "unlinked", label: "Chưa khớp", count: counts.unlinked },
-              { value: "new", label: "Mới", count: counts.new },
               { value: "rejected", label: "Đã loại", count: counts.rejected },
             ]}
           />
@@ -269,7 +173,7 @@ export function TripleBrowser({ documentId, onPreview }: { documentId: string; o
             </TableHeader>
             <TableBody>
               {(data?.items ?? []).map((t) => (
-                <TripleRow key={t.triple_id} t={t} accepted={accepted} busy={update.isPending} onUpdate={(b) => update.mutate(b)} onPreview={onPreview} />
+                <TripleRow key={t.triple_id} t={t} busy={update.isPending} onUpdate={(b) => update.mutate(b)} onPreview={onPreview} />
               ))}
             </TableBody>
           </Table>

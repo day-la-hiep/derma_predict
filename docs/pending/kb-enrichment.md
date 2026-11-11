@@ -6,7 +6,7 @@ giàu KB. Chưa làm, chưa có entity trong `dto/base`. Tài liệu này ghi l�
 ## 1. Vấn đề
 
 KB hiện chỉ được bổ sung theo 2 cách, đều là nạp nguyên lô:
-- Script nạp guideline / KG (`core/data_ingest/`).
+- Script nạp guideline / KG (`archive/core/data_ingest/`).
 - Pipeline số hoá sách (`/admin/documents`).
 
 Chưa có cách bổ sung **từng mẩu tri thức nhỏ** phát hiện trong lúc dùng hệ thống, ví dụ:

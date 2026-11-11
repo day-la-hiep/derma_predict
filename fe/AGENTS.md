@@ -41,11 +41,11 @@ fe/
 - **`store.ts`** — Zustand store for chat state (conversations, messages, UI state)
 - **`types.ts`** — Chat type definitions (Message, Conversation, StreamEvent)
 
-### Doctor Consultation Feature (`fe/features/doctor/`)
-- **`store.ts`** — Zustand store for doctor view state (sessions, active session, messages)
-- **`types.ts`** — Types mapped from database schema (`consultation_sessions`, `pre_consultation_reports`, `clinical_facts`)
-- **`mockData.ts`** — Realistic clinical dermatology mock data for standalone UI development
-- **`components/`** — 3-panel UI: `SessionList`, `ChatViewer`, `ReportPanel`
+### Doctor & Follow-up Features (`fe/features/doctor/`, `fe/features/followup/`)
+- **`doctor/`** — khu bác sĩ: báo cáo kết luận (`MedicalHistoryPage`), dữ kiện lâm sàng, đồ thị hành trình; `types.ts` map từ `finalize_reports`, `clinical_facts`
+- **`appointments/`** — lịch khám, lần khám, chốt kết luận theo encounter (bệnh nhân đặt lịch, bác sĩ xử lý)
+- **`followup/`** — kênh chat bác sĩ ↔ bệnh nhân sau khám (`/followup-channels/*`); `FollowupButton` mở kênh của một lần khám, `FollowupPage` là màn `/doctor/followups`
+- **`video-call/`** — cuộc gọi trong kênh theo dõi (bác sĩ gọi, bệnh nhân nhận qua `CallLayer`)
 
 ### Services
 - **`chat.sse.ts`** — SSE client that subscribes to `GET /api/v1/conversations/{id}/stream` and emits events

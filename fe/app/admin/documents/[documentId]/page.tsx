@@ -14,7 +14,6 @@ import { FigureBrowser } from "@/features/document-pipeline/components/FigureBro
 import { PagePreview } from "@/features/document-pipeline/components/PagePreview";
 import { hasRunOptions, RunDialog } from "@/features/document-pipeline/components/RunDialog";
 import { SettingsDialog } from "@/features/document-pipeline/components/SettingsDialog";
-import { StageLogDialog } from "@/features/document-pipeline/components/StageLogDialog";
 import { StagePanel } from "@/features/document-pipeline/components/StagePanel";
 import { TocEditor } from "@/features/document-pipeline/components/TocEditor";
 import { TripleBrowser } from "@/features/document-pipeline/components/TripleBrowser";
@@ -134,7 +133,6 @@ export default function TocDocumentPage({ params }: { params: Promise<{ document
   const [previewPage, setPreviewPage] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [runOpen, setRunOpen] = useState(false);
-  const [logStage, setLogStage] = useState<StepId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // thu gọn khung xem trang nhớ theo trình duyệt (trang chỉ render ở client sau AccessGate)
   const [previewCollapsed, setPreviewCollapsedState] = useState(() => {
@@ -242,7 +240,6 @@ export default function TocDocumentPage({ params }: { params: Promise<{ document
             onRun={startRun}
             onCancel={() => cancel.mutate(step)}
             onApprove={() => approve.mutate(step)}
-            onLog={() => setLogStage(step)}
             onNext={nextStep ? () => pick(nextStep) : undefined}
           />
 
@@ -321,7 +318,6 @@ export default function TocDocumentPage({ params }: { params: Promise<{ document
           run.mutate({ stage: step, options });
         }}
       />
-      <StageLogDialog documentId={documentId} stage={logStage} running={data.running_stage === logStage} onClose={() => setLogStage(null)} />
       <SettingsDialog documentId={documentId} open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );

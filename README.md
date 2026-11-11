@@ -2,218 +2,210 @@
 
 Đồ án tốt nghiệp: hệ thống hỗ trợ tư vấn da liễu bằng AI, chia thành 7 module (mã `M1`–`M7` khớp [yêu cầu](docs/overview/requirements.md) và [phân rã chức năng](docs/overview/phan-ra-chuc-nang.md)):
 
-| Module | Người dùng | Làm gì | Tài liệu |
+| Module | Người dùng | Làm gì | Service |
 |---|---|---|---|
-| **M1. Tài khoản & hồ sơ bệnh nhân** | mọi người dùng | đăng ký / đăng nhập (JWT), vai trò bệnh nhân / bác sĩ / admin, một tài khoản nhiều hồ sơ bệnh nhân | [docs/overview/requirements.md](docs/overview/requirements.md) |
-| **M2. Chatbot tư vấn AI** | bệnh nhân | chat với trợ lý AI (kèm ảnh da). Agent LangGraph lọc intent, suy luận nhiều bước, tra sách / đồ thị tri thức / ca bệnh tương tự / phân loại ảnh, hỏi lại khi thiếu thông tin, stream realtime, nhớ thông tin bệnh nhân giữa các hội thoại | [docs/module/chat.md](docs/module/chat.md) |
-| **M3. Tư vấn với bác sĩ** | bệnh nhân, bác sĩ | xin tư vấn từ hội thoại AI; Worker sinh báo cáo tiền tư vấn + dữ kiện lâm sàng; bác sĩ nhận ca, nhắn trực tiếp, gọi video (WebRTC), xem hồ sơ + đồ thị hành trình bệnh nhân, chốt báo cáo kết luận | [docs/module/doctor-consultation.md](docs/module/doctor-consultation.md), [patient-journey-graph](docs/module/patient-journey-graph.md) |
-| **M4. Kho tri thức: số hoá tài liệu** | admin / bác sĩ | upload PDF → đọc chữ → AI đọc mục lục (người duyệt) → cắt chunk theo mục lục → nạp Qdrant | [docs/module/book-ingest-pipeline.md](docs/module/book-ingest-pipeline.md) |
-| **M5. Đồ thị tri thức** | admin, chatbot | PrimeKG + DermO (dựng bằng `graph_base/`), cạnh quan hệ AI trích từ sách (các bước `graph` / `graph_index` của pipeline, người duyệt), schema loại thực thể / quan hệ do admin định nghĩa | [docs/module/knowledge-graph.md](docs/module/knowledge-graph.md), [knowledge-graph-flow](docs/module/knowledge-graph-flow.md) |
-| **M6. Ca bệnh & dữ liệu ảnh** | bác sĩ | báo cáo kết luận đã chốt (kèm ảnh) được nạp Qdrant để chatbot tra ca tương tự; gán nhãn ảnh / xuất dataset CNN chưa làm | [docs/module/doctor-consultation.md](docs/module/doctor-consultation.md) |
-| **M7. Đặt lịch khám** | bệnh nhân, bác sĩ | hoãn, ngoài scope đồ án hiện tại | — |
-
-Tổng quan kiến trúc: [docs/overview/system-overview.md](docs/overview/system-overview.md).
+| **M1. Tài khoản & hồ sơ bệnh nhân** | mọi người dùng | đăng ký / đăng nhập (JWT), vai trò bệnh nhân / bác sĩ / admin, một tài khoản nhiều hồ sơ bệnh nhân, dị ứng / tiền sử | `identity` |
+| **M2. Chatbot tư vấn AI** | bệnh nhân | chat với trợ lý AI (kèm ảnh da): agent LangGraph lọc intent, suy luận nhiều bước, tra sách / đồ thị tri thức / ca bệnh tương tự / phân loại ảnh, hỏi lại khi thiếu thông tin | `consultation` + `ai` |
+| **M3. Tư vấn với bác sĩ** | bệnh nhân, bác sĩ | xin tư vấn từ hội thoại AI; bác sĩ nhận ca, nhắn trực tiếp, gọi video (WebRTC), chốt báo cáo kết luận | `consultation` + `clinical` |
+| **M4. Kho tri thức: số hoá tài liệu** | admin | upload PDF → đọc chữ → AI đọc mục lục (người duyệt) → cắt đoạn theo mục lục → nạp Qdrant | `knowledge` |
+| **M5. Đồ thị tri thức** | admin, chatbot | PrimeKG + DermO, cạnh quan hệ AI trích từ sách, schema loại thực thể / quan hệ do admin định nghĩa | `knowledge` |
+| **M6. Ca bệnh & dữ liệu ảnh** | bác sĩ | báo cáo kết luận đã chốt (kèm ảnh) được nạp Qdrant + đồ thị bệnh nhân để chatbot tra ca tương tự | `clinical` → `knowledge` |
+| **M7. Đặt lịch khám** | bệnh nhân, bác sĩ | bệnh nhân đặt lịch cho một đợt bệnh đã đủ thông tin; bác sĩ xác nhận, bắt đầu khám, chốt kết luận (đóng lần khám, lịch hẹn, đợt bệnh) | `clinical` |
 
 > Kết quả AI chỉ là gợi ý hỗ trợ, **không phải chẩn đoán y khoa**. Guideline đang chờ bác sĩ duyệt.
+
+Kiến trúc hiện tại là **microservice**. Monolith cũ (`archive/core/`) được giữ nguyên để tham khảo, không còn chạy bằng `make`. Các tài liệu trong `docs/` phần lớn vẫn mô tả monolith cũ; phần khác biệt của kiến trúc mới: [docs/notice/microservice-split.md](docs/notice/microservice-split.md).
 
 ## 1. Kiến trúc
 
 ```
-┌──────────────┐  REST + SSE  ┌──────────────────┐  RabbitMQ   ┌───────────────┐
-│ FE (Next.js) │─────────────▶│  Core (FastAPI)  │────────────▶│ Agent Worker  │
-│ /chats       │◀─────────────│  :3050 /api/v1   │◀────────────│ (LangGraph)   │
-│ /doctor/...  │              └──┬────┬────┬─────┘             └───────┬───────┘
-└──────────────┘                 │    │    │ document_ingest_queue     │
-                                 │    │    ▼                           │
-                                 │    │  ┌───────────────┐             │
-                                 │    │  │ Ingest Worker │             │
-                                 │    │  │ (pipeline sách)│            │
-                                 │    │  └───────────────┘   Redis Pub/Sub (event chat)
-        ┌──────────────┬─────────┴┐  ┌┴──────────┬──────────┐
-        │ PostgreSQL   │  MinIO   │  │ Qdrant    │  Neo4j   │
-        └──────────────┴──────────┘  └───────────┴──────────┘
+                       ┌──────────────────────────────────────────────────────────┐
+┌──────────────┐ REST  │ Gateway :3040 (Spring Cloud Gateway, chỉ định tuyến)     │
+│ FE (Next.js) │──────▶│  /auth, /patient-profiles           → identity     :3051 │
+│ :3010        │◀──SSE─│  /conversations, /doctor/consult…   → consultation :3052 │
+└──────────────┘       │  /appointments, /doctor/appoint…,                        │
+                       │  /…/finalize*, /…/episodes          → clinical     :3053 │
+                       │  /admin/**                          → knowledge    :3054 │
+                       └──────────────────────────────────────────────────────────┘
+
+ consultation ──REST /internal/turns──▶ ai :3055 (LangGraph)
+ ai ──REST──▶ knowledge (tìm kiếm sách / đồ thị / ca bệnh), consultation (lịch sử, kết quả lượt), clinical (fact, giả thuyết)
+ ai ──Redis Stream conversation:events:{id}──▶ consultation ──SSE──▶ FE
+ clinical ──REST──▶ knowledge (nạp ca đã chốt), consultation (đóng phiên), identity (hồ sơ)
+ knowledge ──RabbitMQ document_ingest_queue──▶ Ingest Worker (pipeline sách)
+
+ Mỗi service một database Postgres riêng (identity / consultation / clinical / knowledge / ai); Qdrant + Neo4j + MinIO do knowledge và ai dùng.
 ```
 
-- **FE** (`fe/`): Next.js App Router. Chat dùng Zustand + SSE; khu `/doctor` (bác sĩ + admin tài liệu / schema đồ thị) dùng TanStack Query và poll trạng thái.
-- **Core** (`core/app/`): REST + SSE gateway, là nơi **duy nhất ghi Postgres** (ngoại lệ: Worker ghi schema `langgraph` của checkpoint / memory). Đăng nhập JWT (`/auth/*`).
-  Không gọi LLM cho chat, chỉ publish turn sang Worker và forward nguyên văn event từ Redis ra SSE.
-- **Agent Worker** (`core/agent/`): tiến trình riêng, consume `agent_request_queue`, chạy chat graph (lọc intent → graph tiền chẩn đoán
-  **v1** `create_agent` + middleware hoặc **v2** `StateGraph` có hai làn chữ / ảnh, chọn bằng `AGENT_GRAPH_VERSION`), gọi LLM theo `AGENT_MODEL`
-  (OpenRouter / DeepSeek / Gemini / local), trả kết quả về `agent_response_queue`.
-- **Ingest Worker** (`core/app/workers/document_ingest_worker.py`): tiến trình riêng, consume `document_ingest_queue` và chạy từng bước pipeline sách. Core chỉ ghi `running` rồi publish.
-- **Pipeline** (`core/pipeline/document_ingest/`): chỉ biến đổi dữ liệu (`ingest → toc → chunks → index`, nhánh `chunks → graph → graph_index`).
-- **Hạ tầng**: Postgres (dữ liệu nghiệp vụ), Redis (Pub/Sub + key turn), RabbitMQ (Core ⇄ Worker, Core → Ingest Worker),
-  Qdrant (chunk sách, báo cáo kết luận), Neo4j (PrimeKG + DermO + cạnh trích từ sách), MinIO (ảnh đính kèm, file tài liệu).
+| Service | Công nghệ | Cổng | Sở hữu |
+|---|---|---|---|
+| `gateway_service` | Spring Cloud Gateway | 3040 | định tuyến theo đường dẫn, không verify JWT |
+| `identity_service` | Spring Boot | 3051 | tài khoản, bác sĩ, hồ sơ bệnh nhân, token |
+| `consultation_service` | Spring Boot | 3052 | hội thoại, tin nhắn, phiên tư vấn, cuộc gọi video, báo cáo tiền tư vấn |
+| `clinical_service` | Spring Boot | 3053 | đợt bệnh, fact, giả thuyết, lịch hẹn, lần khám, báo cáo kết luận |
+| `knowledge_service` | Python / FastAPI | 3054 | pipeline sách, Qdrant, Neo4j, tìm kiếm cho agent |
+| `ai_service` | Python / LangGraph | 3055 | agent chat, phân loại ảnh da (CNN) |
+
+- **Giao tiếp**: REST `/internal/*` giữa các service (header `X-Internal-Key`, không đi qua gateway); Redis Stream cho event chat (SSE có replay 30 giây, FE gửi `Last-Event-ID` khi nối lại); Redis Pub/Sub cho danh sách ca của bác sĩ và cuộc gọi; RabbitMQ chỉ còn cho pipeline sách. Hợp đồng chi tiết: [contracts/README.md](contracts/README.md).
+- **Xác thực**: chỉ `identity` phát JWT (HS256, khoá chung `JWT_SECRET_KEY`); mỗi service tự verify.
+- **Dữ liệu**: mỗi bảng thuộc đúng một service, tham chiếu chéo service chỉ bằng id (không FK). Chốt báo cáo không có transaction phân tán: lưu ở clinical trước, rồi mới gọi knowledge / consultation (xem mục 6).
 
 ## 2. Cấu trúc thư mục
 
 ```
-fe/                      Next.js
-  app/                   route: /chats, /doctor (ca tư vấn), /doctor/records, /admin/documents, /admin/graph-schema
-  features/chat/         store Zustand, types, components chat
-  features/{auth,doctor,patient-profile,video-call,settings}/  đăng nhập, khu bác sĩ, hồ sơ bệnh nhân, gọi video
-  features/document-pipeline/  api, hooks TanStack Query, components admin
-  features/graph-schema/ admin schema đồ thị (loại thực thể, quan hệ)
-  services/              HTTP client, SSE, adapter wire ↔ UI
-  components/ui/         UI primitive
-core/
-  main.py                entrypoint Core
-  app/                   api → services → repositories → models; dto/{base,request,response}; infra/
-  agent/                 worker.py, turn.py, graph/{v1,v2}, tools/, middleware/, prompt/, state/, test/ (debug app)
-  app/workers/           agent_response_consumer, document_ingest_worker
-  pipeline/document_ingest/   stages/, mapping.py, tests/
-  graph_base/            dựng đồ thị nền PrimeKG + DermO (download → build → load → verify)
-  benchmark/             benchmark retrieval / graph / RAG / e2e
-  migrations/            Alembic
-  data_ingest/           dữ liệu tĩnh cũ (nguồn guideline), chưa dọn
-scripts/                 script gốc repo (transfer-data.sh; scripts/backup/ gitignore)
-docs/overview/           tổng quan, bảng DB, yêu cầu, phân rã chức năng
-docs/module/             tài liệu từng module (chat, pipeline, đồ thị, tư vấn bác sĩ, video call, ...)
-docs/pending/            ý tưởng / hướng mở rộng chưa làm
-docs/benchmark/         kết quả đo retrieval
-docker-compose.yml       hạ tầng dev (Postgres, Redis, RabbitMQ, Qdrant, Neo4j, MinIO, coturn)
-docker-compose.prod.yml  stack production (xem DEPLOY.md)
+fe/                    Next.js App Router (/chats, /doctor, /admin); chat dùng Zustand + SSE, admin dùng TanStack Query
+gateway_service/       Spring Cloud Gateway: route trong src/main/resources/application.yml
+identity_service/      Spring Boot: controller → service → repository, Flyway, JWT (Nimbus), bcrypt
+consultation_service/  Spring Boot: hội thoại, SSE, phiên tư vấn, video call, upload ảnh (MinIO)
+clinical_service/      Spring Boot: đợt bệnh, lịch hẹn, lần khám, báo cáo kết luận
+knowledge_service/     Python: app/ (api → services → repositories), pipeline/document_ingest/, migrations/ (Alembic)
+ai_service/            Python: agent/ (graph, tools, prompt), app/ (REST nhận lượt chạy)
+shared/                thư viện Python dùng chung cho knowledge và ai (settings, log, JWT, Redis, MinIO, RabbitMQ)
+contracts/             hợp đồng liên service (README.md) + đặc tả route của monolith cũ
+deploy/                docker-compose.yml (hạ tầng), docker-compose.services.yml (6 service), docker-compose.prod.yml (core cũ), DEPLOY.md
+ml/                    model/ (checkpoint CNN), notebook/ (huấn luyện), data/ (dataset, gitignore)
+report/                bao_cao_latex/ (báo cáo), vp_derma/ (Visual Paradigm), thi_t_k_database.md
+scripts/               init-service-databases.sh, reseed-user-data.sh, transfer-data.sh
+docs/                  overview/ (tổng quan, bảng DB, yêu cầu), module/, notice/, pending/, benchmark/
+archive/core/          monolith cũ (FastAPI + agent + pipeline), đóng băng
+tmp/                   nháp, kế hoạch tạm (gitignore)
 ```
+
+Service Spring dùng Lombok (`@AllArgsConstructor`, `@Slf4j`) và MapStruct (`mapper/`) cho phần ghép entity → DTO.
 
 ## 3. Chạy dev
 
-Yêu cầu: Docker Compose v2, Python 3.12+ và [`uv`](https://docs.astral.sh/uv/), Node.js 20+ và `pnpm`,
-API key OpenRouter.
+Yêu cầu: Docker Compose v2, JDK 21 (dùng `./mvnw` có sẵn), Python 3.12+ và [`uv`](https://docs.astral.sh/uv/), Node.js 20+ và `pnpm`, API key OpenRouter.
 
 ```bash
-cp core/.env.example core/.env          # điền OPENROUTER_API_KEY
-cp fe/.env.local.example fe/.env.local  # NEXT_PUBLIC_USE_MOCK=false để gọi Core thật
+# 1. cấu hình (file .env đã gitignore)
+cp fe/.env.local.example fe/.env.local            # NEXT_PUBLIC_USE_MOCK=false để gọi backend thật
+# ai_service/.env và knowledge_service/.env: điền OPENROUTER_API_KEY và QDRANT_API_KEY (các biến khác có mặc định)
 
-make infra       # docker compose up -d: Postgres, Redis, RabbitMQ, Qdrant, Neo4j, MinIO
-make migrate     # alembic upgrade head
-make init-db     # bucket MinIO + dữ liệu mẫu — chạy sau migrate, chạy lại không tạo trùng
-make backend     # Core http://localhost:3050 (Swagger: /docs)
-make worker      # Agent Worker — bắt buộc để agent trả lời
-make ingest-worker  # Ingest Worker — bắt buộc để nút "Chạy" ở /admin/documents có tác dụng
-make frontend    # FE http://localhost:3010
+# 2. hạ tầng + database
+make infra                # Postgres, Redis, RabbitMQ, Qdrant, Neo4j, MinIO, coturn
+make services-db          # tạo 5 database identity/consultation/clinical/knowledge/ai (chạy lại không sao)
+make knowledge-migrate    # alembic cho database knowledge (service Spring tự chạy Flyway khi khởi động)
 
-make migrate-new m="mô tả"   # khi đổi model: sinh migration, đọc lại file trước khi `make migrate`
-make debug-app   # (tuỳ chọn) Streamlit chạy graph agent trực tiếp để xem luồng lập luận, không cần backend / worker
-
-make reindex-qdrant  # (khi đổi model embedding / nạp lại kho tri thức) nạp lại Qdrant từ MinIO/Postgres; dry=1 để xem trước
+# 3. service: mỗi lệnh một terminal
+make gateway              # :3040
+make identity             # :3051
+make consultation         # :3052
+make clinical             # :3053
+make knowledge            # :3054
+make knowledge-worker     # worker pipeline sách; không chạy thì nút "Chạy" ở /admin/documents không có tác dụng
+make ai                   # :3055 — bắt buộc để agent trả lời
+make frontend             # FE http://localhost:3010, gọi qua gateway :3040
 ```
 
-**Nạp dữ liệu đồ thị tri thức** (Neo4j mới tạo đang trống; chunk sách vào Qdrant qua giao diện `/admin/documents`), chạy ở thư mục gốc repo:
+**Chạy trong IntelliJ IDEA**: thư mục `.run/` chứa sẵn các cấu hình chạy dùng chung (IDE tự nhận):
 
-```bash
-make kg-download    # tải PrimeKG (~1 GB) và DermO từ nguồn gốc
-make kg-build
-make kg-load        # thêm reset=1 để xoá đồ thị cũ trước khi nạp (xoá cả cạnh trích từ sách)
-make kg-verify
-```
+| Cấu hình | Chạy |
+|---|---|
+| `AiApplication` | `ai_service/app/main.py` (:3055) |
+| `KnowledgeApplication` | `knowledge_service/app/main.py` (:3054) |
+| `KnowledgeWorker` | `python -m app.workers.document_ingest_worker` |
+| `KnowledgeMigrate` | `python -m alembic upgrade head` (chạy một lần) |
+| `DermaAll` | bật cùng lúc 4 service Spring (`GatewayApplication`, `IdentityApplication`, `ConsultationApplication`, `ClinicalApplication`) + 3 cấu hình Python ở trên |
 
-**Tài khoản mẫu** (`make init-db`, mật khẩu `123456`): `user-1` (bệnh nhân), `doctor-1` (bác sĩ), `admin-1` (admin). Đăng nhập ở `http://localhost:3010`; khu `/doctor/*` cần tài khoản bác sĩ.
+Các cấu hình Python dùng interpreter `<tên>_service/.venv` và thư mục làm việc là thư mục service (để đọc `.env`), nên cần chạy `uv sync` trong `ai_service` và `knowledge_service` một lần trước. Để chúng hiện trong cửa sổ **Services**: bấm `+` → *Run Configuration Type* → chọn *Python*. Hạ tầng (`make infra`, `make services-db`) vẫn chạy ngoài IDE.
 
-Chi tiết đồ thị nền: [core/graph_base/README.md](core/graph_base/README.md). (Script cũ trong `core/data_ingest/` chưa dọn, không dùng cho đồ thị nền nữa.)
+Chạy cả 6 service bằng Docker thay cho các lệnh `make <service>`: `make services-build && make services-up` (đọc `OPENROUTER_API_KEY` từ `.env` ở gốc repo).
 
-Chạy tối thiểu để chat: `make infra`, `migrate`, `init-db`, `backend`, `worker`, `frontend`. Muốn agent trả lời có căn cứ thì cần thêm chunk sách (Qdrant, qua `/admin/documents` + `make ingest-worker`) và đồ thị nền (`make kg-*`).
+**Tài khoản mẫu** (migration Flyway của identity, mật khẩu `123456`): `user-1` (bệnh nhân), `doctor-1` (bác sĩ), `admin-1` (admin). Đăng nhập ở `http://localhost:3010`; `/doctor/*` cần tài khoản bác sĩ, `/admin/*` cần admin.
 
-Tool `classify_skin_image` cần checkpoint CNN tại `SKIN_CNN_CHECKPOINT_PATH`. Tool `analyze_skin_image_multimodal` chỉ bật khi `AGENT_VISION_MODEL` không rỗng.
-Gọi video giữa hai mạng khác nhau cần TURN (`TURN_URL`, `TURN_SECRET`; coturn có trong `docker-compose.yml`), xem [docs/module/doctor-consultation.md](docs/module/doctor-consultation.md).
+**Dữ liệu tri thức**: database `knowledge` mới còn trống. Sách đã số hoá ở monolith cũ cần copy bảng (`documents`, `document_stages`, `document_overrides`, `files`) từ `derma_hospital_db` sang `knowledge` (trong `psql`: `COPY (SELECT <cột> FROM …) TO STDOUT` rồi `COPY … FROM STDIN`, liệt kê cột tường minh vì thứ tự cột hai DB khác nhau); file nằm ở MinIO và vector ở Qdrant nên giữ nguyên. Đồ thị nền PrimeKG + DermO nạp bằng script trong `archive/core/graph_base/` (xem [README của nó](archive/core/graph_base/README.md); makefile không còn target này). Nạp lại Qdrant + đồ thị bệnh nhân từ các báo cáo đã chốt: `make reindex-cases`.
+
+Một số tính năng cần thêm cấu hình: tool `classify_skin_image` cần checkpoint CNN ở `ml/model/model_output/` (`SKIN_CNN_CHECKPOINT_PATH`); mô tả ảnh bằng model vision cần `AGENT_VISION_MODEL` (mặc định trỏ model chạy local qua Ollama, không chạy thì bước này báo lỗi rồi bỏ qua, CNN vẫn chạy); gọi video giữa hai mạng khác nhau cần TURN (`TURN_URL`, `TURN_SECRET`; coturn có trong `deploy/docker-compose.yml`).
 
 ### Chuyển dữ liệu sang máy khác
 
-Dữ liệu sách BYT nằm ở Postgres, MinIO, Qdrant và Neo4j nên phải chuyển cả 4. Script đóng gói 4 volume vào `scripts/backup/` (gitignore):
+Dữ liệu nằm ở 4 volume Docker (Postgres, MinIO, Qdrant, Neo4j) nên phải chuyển cả 4. Script đóng gói vào `scripts/backup/` (gitignore):
 
 ```bash
-# máy cũ: tắt stack (không -v) rồi export
-docker compose down
+make infra-down            # máy cũ: tắt stack (không -v)
 make data-export
+# copy scripts/backup/ sang cùng vị trí ở máy mới
 
-# copy thư mục scripts/backup/ sang cùng vị trí ở máy mới (USB, scp -r, ...)
-
-# máy mới: clone repo, tạo core/.env, stack đang tắt
+# máy mới: clone repo, điền .env của ai_service/knowledge_service, stack đang tắt
 make data-restore          # hỏi 'yes' vì ghi đè 4 volume
-docker compose up -d       # KHÔNG chạy make migrate / make init-db
+make infra                 # KHÔNG chạy lại make services-db / knowledge-migrate
 ```
 
-- Copy **toàn bộ** 4 volume (cả chat, báo cáo kết luận, ảnh đính kèm), không chỉ sách BYT; Redis/RabbitMQ không theo sang.
-- Máy mới dùng cùng phiên bản image và cùng model embedding / tên collection Qdrant.
-- Prod: thêm `VOL_PREFIX=derma-hospital-prod_` (ví dụ `make data-export VOL_PREFIX=derma-hospital-prod_`).
-- Chỉ cần nạp lại Qdrant (đổi model embedding, mất collection) thì không cần chuyển volume: `make reindex-qdrant`, xem [docs/module/book-ingest-pipeline.md](docs/module/book-ingest-pipeline.md) mục Lưu trữ.
+Copy **toàn bộ** 4 volume (cả hội thoại, báo cáo, ảnh đính kèm); Redis và RabbitMQ không theo sang. Máy mới dùng cùng phiên bản image và cùng model embedding / tên collection Qdrant. Prod: thêm `VOL_PREFIX=derma-hospital-prod_`.
 
 ### Biến môi trường chính
 
+Service Spring đọc biến môi trường (có mặc định cho dev); service Python đọc thêm `.env` trong thư mục của chính nó.
+
 | Biến | Dùng cho |
 |---|---|
-| `DATABASE_URL`, `REDIS_*`, `RABBITMQ_URL`, `QDRANT_URL`, `NEO4J_*`, `MINIO_*` | kết nối hạ tầng, mặc định khớp `docker-compose.yml` |
-| `AGENT_MODEL`, `AGENT_TEMPERATURE`, `OPENROUTER_API_KEY` (hoặc key của provider khác) | model mặc định của agent; model người dùng được chọn là `AGENT_MODEL_CHOICES` trong `settings.py` |
-| `AGENT_GRAPH_VERSION` (`v1` mặc định, `v2`), `AGENT_TRIAGE_ENABLED`, `AGENT_VISION_MODEL` | chọn graph tiền chẩn đoán, bước lọc intent, model mô tả ảnh (đổi phải restart Worker) |
+| `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD` | database của từng service (mặc định `localhost:5432`, `postgres`/`postgres`, tên DB theo service) |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `RABBITMQ_URL`, `QDRANT_URL`, `QDRANT_API_KEY`, `NEO4J_*`, `MINIO_*` | hạ tầng; mặc định khớp `deploy/docker-compose.yml` |
+| `JWT_SECRET_KEY` | khoá ký JWT dùng chung; **đổi khi deploy** |
+| `INTERNAL_API_KEY` | khoá cho các lời gọi `/internal/*` giữa service; **đổi khi deploy** |
+| `IDENTITY_URL`, `CONSULTATION_URL`, `CLINICAL_URL`, `KNOWLEDGE_URL`, `AI_URL` | địa chỉ các service (mặc định `localhost:305x`) |
+| `OPENROUTER_API_KEY` (hoặc key provider khác), `AGENT_MODEL`, `AGENT_TEMPERATURE` | model mặc định của agent; model người dùng chọn là `AGENT_MODEL_CHOICES` trong settings |
+| `AGENT_GRAPH_VERSION`, `AGENT_TRIAGE_ENABLED`, `AGENT_VISION_MODEL` | chọn graph tiền chẩn đoán, bước lọc intent, model mô tả ảnh (đổi phải restart `ai`) |
 | `EMBEDDING_MODEL`, `EMBEDDING_DIM`, `RERANKER_MODEL`, `QDRANT_DOCUMENT_COLLECTION` | embedding + rerank qua OpenRouter; đổi model / số chiều thì phải reindex |
-| `JWT_SECRET_KEY`, `JWT_*_EXPIRE_*` | đăng nhập; **đổi `JWT_SECRET_KEY` khi deploy** |
-| `MINIO_DOCUMENTS_BUCKET`, `SKIN_CNN_CHECKPOINT_PATH` | bucket file tài liệu; checkpoint CNN phân loại ảnh |
-| `TURN_URL`, `TURN_SECRET` | TURN cho video call khi hai bên khác mạng |
-| `LANGSMITH_TRACING`, `LANGSMITH_API_KEY` | (tuỳ chọn) trace agent trên LangSmith |
+| `TURN_URL`, `TURN_SECRET`, `STUN_URLS` | video call khi hai bên khác mạng |
+| `NEXT_PUBLIC_USE_MOCK`, `NEXT_PUBLIC_API_URL`, `BACKEND_URL` | FE dùng mock hay backend thật, URL backend (`make frontend` đặt `BACKEND_URL` là gateway) |
 
-Đầy đủ biến và giá trị mặc định: `core/.env.example`, `core/app/config/settings.py`.
-| `NEXT_PUBLIC_USE_MOCK`, `NEXT_PUBLIC_API_URL` | FE dùng mock hay Core thật, URL Core |
-
-`.env` không được commit.
+Giá trị mặc định đầy đủ: `<tên>_service/src/main/resources/application.yml` (Spring), `<tên>_service/app/config/settings.py` và `shared/derma_shared/settings.py` (Python). `.env` không được commit.
 
 ## 4. Kiểm tra
 
 ```bash
-cd core && .venv/bin/python -m pyright app pipeline     # kiểu Python
-cd core && python -m unittest pipeline.document_ingest.tests.test_document_pipeline \
-  pipeline.document_ingest.tests.test_api pipeline.document_ingest.tests.test_storage_index \
-  pipeline.document_ingest.tests.test_graph pipeline.document_ingest.tests.test_graph_schema
-cd core && python -m unittest discover -s tests -t .     # memory, retrieval, reindex, video call, state tiền chẩn đoán
+make test              # 4 service Spring + shared + ai
+make knowledge-test    # chạy riêng: còn 2 test test_graph_schema lỗi từ trước (KeyError 'skipped'), không do kiến trúc mới
 cd fe && pnpm exec tsc --noEmit && pnpm lint
 ```
 
-Test pipeline không cần service thật (MinIO giả + SQLite + Qdrant in-memory).
+Test của service Spring dùng H2 (chế độ PostgreSQL) và mock client sang service khác; test Python dùng MinIO giả, SQLite, Qdrant in-memory. Test chưa thay được lần chạy thật với Postgres, Redis và LLM; luồng chat + ảnh + chốt báo cáo đã được chạy tay qua gateway và FE.
 
 ## 5. Quy ước
 
-Chi tiết trong các skill ở `.claude/skills/`; dưới đây là các điểm hay nhầm.
+Chi tiết trong các skill ở `.claude/skills/`:
 
 | Khu vực | Skill |
 |---|---|
-| `core/app/`, `core/agent/` (endpoint, DTO, model, service, tool, middleware, prompt) | [derma-core-conventions](.claude/skills/derma-core-conventions/SKILL.md) |
-| `core/pipeline/document_ingest/`, `app/services/document_*.py`, `document_repository.py` | [derma-pipeline-conventions](.claude/skills/derma-pipeline-conventions/SKILL.md) |
+| Viết / chuyển code trong các `<tên>_service/`, gateway, hợp đồng liên service | [derma-microservice-migration](.claude/skills/derma-microservice-migration/SKILL.md) |
 | `fe/` (trang, component, store, hook, SSE event) | [derma-fe-conventions](.claude/skills/derma-fe-conventions/SKILL.md) |
-| Chạy Core / Worker, gửi tin thử, pyright | [run-core](.claude/skills/run-core/SKILL.md) |
+| Monolith cũ: `archive/core/app`, `agent` | [derma-core-conventions](.claude/skills/derma-core-conventions/SKILL.md) |
+| Monolith cũ: pipeline sách | [derma-pipeline-conventions](.claude/skills/derma-pipeline-conventions/SKILL.md) |
 | Chạy FE, chụp màn hình | [run-fe](.claude/skills/run-fe/SKILL.md) |
-| Thử prompt / model / tool của agent | [experiment-agent-flow](.claude/skills/experiment-agent-flow/SKILL.md) |
+| Báo cáo đồ án (`report/bao_cao_latex/`) | [derma-report-writing](.claude/skills/derma-report-writing/SKILL.md) |
 
-**Backend**
-- Phân lớp `api` (chỉ map request/response) → `services` (nghiệp vụ) → `repositories` (stateless, nhận id trực
-  tiếp) → `models` (ORM).
-- Entity nghiệp vụ ở `app/dto/base/`, tách khỏi ORM (`app/models/`) và DTO wire (`app/dto/request|response/`).
-  Đổi `dto/base` phải được duyệt trước rồi mới cascade xuống model/repo/service.
-- Wire dùng snake_case, response bọc `{"data": ...}`.
-- Chỉ Core ghi Postgres; Worker trả kết quả qua RabbitMQ.
-- `pipeline/` không import `app.services` / `app.repositories`; stage nhận mọi thứ qua `StageContext`.
-  Lỗi người dùng sửa được dùng `StageError` / `InvalidError` (hiển thị nguyên văn trên UI).
-- Schema đổi qua Alembic (`make migrate-new m="..."`), **đọc lại file sinh ra**, không để autogenerate drop bảng có dữ liệu.
-- Python snake_case; docstring và comment tiếng Việt, giải thích **vì sao**.
+**Backend (mọi service)**
+- Phân lớp `controller` / `api` (chỉ map request/response) → `service` (nghiệp vụ) → `repository`; ít wrapper, tên hàm là động từ, comment tiếng Việt giải thích **vì sao**.
+- Wire dùng snake_case, response bọc `{"data": ...}`, lỗi `{"detail": "..."}`.
+- Mỗi bảng chỉ một service ghi; tham chiếu chéo service bằng id, tên hiển thị lưu sẵn (denormalize).
+- Spring: JPA entity field public, DTO là `record`, MapStruct cho entity → DTO, schema đổi bằng file Flyway viết tay (đọc lại trước khi chạy, giữ dữ liệu). Java gọi Python phải ép HTTP/1.1.
+- Python: `knowledge` đổi schema bằng Alembic; stage pipeline chỉ biến đổi dữ liệu, nhận mọi thứ qua `StageContext`.
 
 **Frontend**
-- `app/` chỉ là route mỏng; logic theo tính năng nằm ở `features/<feature>/`; gọi HTTP ở `services/`.
-- Chat: state trong Zustand store, event SSE được chuẩn hoá trong `store.ts`. Admin: TanStack Query hooks.
+- `app/` chỉ là route mỏng; logic theo tính năng ở `features/<feature>/`; gọi HTTP ở `services/`.
+- Chat: Zustand store, event SSE chuẩn hoá trong `store.ts`. Admin: TanStack Query hooks.
 
 ## 6. Hạn chế đã biết
 
-- Chat, hồ sơ, tư vấn, video call đã dùng JWT; API admin tài liệu / schema đồ thị (`/admin/*`) **chưa kiểm tra JWT / vai trò phía server**.
-- Checkpoint hội thoại (lịch sử của agent và `diag`) và long-term memory đều lưu Postgres (schema `langgraph`); chỉ chạy 1 Worker vì khoá chống chạy đè theo hội thoại nằm trong tiến trình.
-- Mỗi hội thoại một turn một lúc (không có Steer); đang chờ trả lời câu hỏi thì không gửi được tin mới.
-- Upload PDF đi qua Core; DB và MinIO không cùng transaction thật; chưa có job dọn object mồ côi.
-- v2 (hai làn chữ / ảnh) chưa chạy qua Worker + RabbitMQ + API thật và không có `ask_user`; mặc định vẫn là v1 (xem [docs/module/chat.md](docs/module/chat.md) mục Agent).
-- Video call dùng WebRTC, không ghi âm / ghi hình; khác mạng cần TURN. Guideline và kết quả AI chưa được bác sĩ duyệt.
+- Không có transaction phân tán và không có outbox: chốt báo cáo lưu ở clinical trước; nếu gọi knowledge lỗi thì ca thiếu trong Qdrant tới khi `make reindex-cases`; nếu đóng phiên ở consultation lỗi thì trả 502 và bác sĩ gửi lại (không tạo báo cáo thứ hai).
+- Ảnh chỉ gắn vào đợt bệnh khi xác định được duy nhất (giả thuyết trùng nhãn CNN top-1, hoặc hội thoại chỉ có một vùng); không thì bỏ ảnh và ghi cảnh báo ở clinical.
+- Database `knowledge` cần copy dữ liệu sách thủ công từ DB cũ; chưa có script.
+- Chưa kiểm: `interrupt()` resume bằng câu hỏi chọn, cuộc gọi video qua service mới, build image Docker và chạy `docker-compose.services.yml`.
+- Mỗi hội thoại một lượt một lúc; đang chờ trả lời câu hỏi thì không gửi được tin mới. Provider LLM đôi lúc trả 429; agent tự chuyển graph tiền chẩn đoán.
+- Upload PDF đi qua `knowledge`, DB và MinIO không cùng transaction thật; chưa có job dọn object mồ côi.
 - Đồ thị trích từ sách còn thưa và truy vấn khớp theo chuỗi, tên bệnh tiếng Việt thường không khớp.
+- Video call dùng WebRTC, không ghi hình; khác mạng cần TURN. Guideline và kết quả AI chưa được bác sĩ duyệt.
+- Gateway dùng Spring Boot 4.0.6 (Spring Cloud 2025.1 chưa hỗ trợ 4.1), các service Spring còn lại dùng 4.1.2.
 
 ## 7. Tài liệu khác
 
-- [DEPLOY.md](DEPLOY.md) — deploy production bằng Docker Compose (hiện mới mô tả phần chat).
-- [core/app/kien-truc-agent.md](core/app/kien-truc-agent.md), [core/app/kien-truc-memory.md](core/app/kien-truc-memory.md) —
-  thiết kế agent và memory (một phần mô tả thiết kế cũ; khi lệch, ưu tiên `docs/module/`).
-- [docs/overview/](docs/overview/) — [bảng DB](docs/overview/db-tables.md), [yêu cầu](docs/overview/requirements.md), [phân rã chức năng](docs/overview/phan-ra-chuc-nang.md).
-- [docs/module/](docs/module/) — [chat](docs/module/chat.md), [tư vấn với bác sĩ](docs/module/doctor-consultation.md), [pipeline sách](docs/module/book-ingest-pipeline.md), [đồ thị tri thức](docs/module/knowledge-graph.md) ([flow](docs/module/knowledge-graph-flow.md)), [đồ thị hành trình bệnh nhân](docs/module/patient-journey-graph.md).
-- [docs/pending/](docs/pending/) — ý tưởng chưa làm; [docs/benchmark/](docs/benchmark/) — đo retrieval; [core/benchmark/](core/benchmark/) — code benchmark.
+- [docs/notice/microservice-split.md](docs/notice/microservice-split.md) — kiến trúc microservice: ranh giới, điểm dễ hiểu nhầm, phần đã/chưa kiểm.
+- [contracts/README.md](contracts/README.md) — hợp đồng liên service (endpoint `/internal`, Redis, event SSE, JWT).
+- [deploy/DEPLOY.md](deploy/DEPLOY.md) — deploy bằng Docker Compose (hiện mới mô tả stack monolith cũ).
+- [docs/overview/](docs/overview/) — [tổng quan](docs/overview/system-overview.md), [bảng DB](docs/overview/db-tables.md), [yêu cầu](docs/overview/requirements.md), [phân rã chức năng](docs/overview/phan-ra-chuc-nang.md) (mô tả monolith cũ).
+- [docs/module/](docs/module/) — [chat](docs/module/chat.md), [tư vấn với bác sĩ](docs/module/doctor-consultation.md), [pipeline sách](docs/module/book-ingest-pipeline.md), [đồ thị tri thức](docs/module/knowledge-graph.md) (mô tả monolith cũ; logic nghiệp vụ vẫn đúng).
+- [docs/pending/](docs/pending/) — ý tưởng chưa làm; [docs/benchmark/](docs/benchmark/) — đo retrieval.
 - [fe/docs/backend-contract.md](fe/docs/backend-contract.md) — hợp đồng REST + SSE với FE.
-- [core/pipeline/document_ingest/README.md](core/pipeline/document_ingest/README.md) — chi tiết pipeline.
+- `archive/core/` — monolith cũ: [kiến trúc agent](archive/core/app/kien-truc-agent.md), [kiến trúc memory](archive/core/app/kien-truc-memory.md), [pipeline](archive/core/pipeline/document_ingest/README.md), [benchmark](archive/core/benchmark/).

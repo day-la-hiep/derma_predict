@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: identity
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/identity}
+    username: ${DATABASE_USER:postgres}
+    password: ${DATABASE_PASSWORD:postgres}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration,classpath:db/seed
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DB:0}
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+
+server:
+  port: 3051
+
+derma:
+  jwt:
+    secret: ${JWT_SECRET_KEY:derma-secret-key-change-in-production-datn-2026}
+    access-token-minutes: 30
+    refresh-token-days: 30
+  internal-api-key: ${INTERNAL_API_KEY:derma-internal-key-change-in-production}
+  clinical-url: ${CLINICAL_URL:http://localhost:3053}
+  consultation-url: ${CONSULTATION_URL:http://localhost:3052}

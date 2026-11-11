@@ -6,7 +6,7 @@ const RETRY_MAX_MS = 15000;
 
 interface SubscribeOptions {
   onData: (data: Record<string, unknown>) => void;
-  /** `reconnected=true` từ lần nối lại thứ 2 — nơi nên refetch dữ liệu vì Pub/Sub không replay. */
+  /** `reconnected=true` từ lần nối lại thứ 2 — nơi nên refetch dữ liệu (kênh Pub/Sub của hộp thư và cuộc gọi không replay). */
   onOpen?: (reconnected: boolean) => void;
 }
 
@@ -15,6 +15,8 @@ export function subscribeSse(path: string, { onData, onOpen }: SubscribeOptions)
   const controller = new AbortController();
   let attempt = 0;
   let opened = false;
+  // id event cuối đã nhận (Redis Stream của hội thoại có `id:`): gửi lại khi nối lại để server không phát lại event cũ
+  let lastEventId = "";
 
   const run = async () => {
     while (!controller.signal.aborted) {
@@ -25,6 +27,7 @@ export function subscribeSse(path: string, { onData, onOpen }: SubscribeOptions)
           headers: {
             Accept: "text/event-stream",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(lastEventId ? { "Last-Event-ID": lastEventId } : {}),
           },
           signal: controller.signal,
         });
@@ -53,6 +56,7 @@ export function subscribeSse(path: string, { onData, onOpen }: SubscribeOptions)
             const rawEvent = buffer.slice(0, boundary);
             buffer = buffer.slice(boundary + 2);
             for (const line of rawEvent.split("\n")) {
+              if (line.startsWith("id:")) lastEventId = line.slice(3).trim();
               if (!line.startsWith("data:")) continue;
               const data = line.slice(5).trim();
               if (!data || data === "[DONE]") continue;

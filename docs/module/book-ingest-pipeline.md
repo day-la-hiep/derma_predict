@@ -12,12 +12,12 @@ chunk trong khung đó và nạp vào Qdrant làm kho tri thức. Từ chunk, m�
 | Việc | File |
 |---|---|
 | FE | `fe/app/admin/documents/page.tsx` (danh sách + upload), `[documentId]/page.tsx` (chi tiết), `fe/features/document-pipeline/` (`api.ts`, `hooks.ts` TanStack Query, `components/` — `StagePanel`, `RunDialog`, `TocEditor`, `ChunkBrowser`, `FigureBrowser`, `PagePreview`, `StageLogDialog`, `SettingsDialog`) |
-| API | `core/app/api/document_api.py` (prefix `/api/v1/admin`) |
+| API | `archive/core/app/api/document_api.py` (prefix `/api/v1/admin`) |
 | Service | `document_service.py` (CRUD, cài đặt, mục lục, chunk, ảnh trang, Qdrant), `document_ingest_pipeline_service.py` (kiểm tra, chạy nền, dừng, duyệt, áp lại) |
 | Repository | `document_repository.py` (stateless, nhận `document_id`), `document_override_repository.py` (`repo.overrides`) |
 | Model / entity | `models/document.py`, `models/document_stage.py` (`STAGES`), `models/document_profile.py` (`Profile`); entity `dto/base/document.py` |
-| Biến đổi dữ liệu | `core/pipeline/document_ingest/` — `stages/{ingest,toc,chunks,index,graph,graph_index}.py`, `mapping.py`, `hierarchy.py`, `graph_schema.py`, `graph_link.py`, `textutil.py`, `profile.py` |
-| Worker | `core/app/workers/document_ingest_worker.py` (`make ingest-worker`) |
+| Biến đổi dữ liệu | `archive/core/pipeline/document_ingest/` — `stages/{ingest,toc,chunks,index,graph,graph_index}.py`, `mapping.py`, `hierarchy.py`, `graph_schema.py`, `graph_link.py`, `textutil.py`, `profile.py` |
+| Worker | `archive/core/app/workers/document_ingest_worker.py` (`make ingest-worker`) |
 | Đồ thị sách | `services/document_graph_service.py`, `models/graph_schema.py` + `api/graph_schema_api.py` (loại thực thể / quan hệ do bác sĩ định nghĩa), FE `fe/features/graph-schema/` |
 | Client hạ tầng | `app/infra/` — `minio_client`, `qdrant_client`, `llm_client`, `docling_client`, `embedding_client` |
 
@@ -153,7 +153,7 @@ lỗi thì rollback DB và xoá file đã ghi. `<id>` là UUID do DB sinh.
 Không cần service thật (MinIO giả + SQLite + Qdrant in-memory + embedding giả):
 
 ```bash
-cd core && python -m unittest pipeline.document_ingest.tests.test_document_pipeline \
+cd archive/core && python -m unittest pipeline.document_ingest.tests.test_document_pipeline \
   pipeline.document_ingest.tests.test_api pipeline.document_ingest.tests.test_storage_index \
   pipeline.document_ingest.tests.test_graph pipeline.document_ingest.tests.test_graph_schema
 ```

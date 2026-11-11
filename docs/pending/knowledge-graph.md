@@ -1,7 +1,7 @@
 # [Pending] Cải thiện nhánh Knowledge Graph
 
-Tool `knowledge_graph_query` (`core/agent/tools/hybrid_retrieval/kg_templates.py`,
-`core/app/services/knowledge_graph_service.py`) chạy được nhưng còn đơn giản. Tài liệu này ghi các điểm chưa làm để
+Tool `knowledge_graph_query` (`archive/core/agent/tools/hybrid_retrieval/kg_templates.py`,
+`archive/core/app/services/knowledge_graph_service.py`) chạy được nhưng còn đơn giản. Tài liệu này ghi các điểm chưa làm để
 chọn việc khi còn thời gian; không phải cam kết.
 
 ## 1. Việc chưa làm (theo mức ảnh hưởng)
@@ -16,7 +16,7 @@ chọn việc khi còn thời gian; không phải cam kết.
 | 6 | **Agent chỉ dùng 11 loại quan hệ** | `RELATION_LABELS` không có `DISEASE_PROTEIN`, `EXPOSURE_DISEASE`, `PHENOTYPE_PHENOTYPE` và toàn bộ quan hệ DermO (mục 3), nên chưa trả lời được câu hỏi cơ chế, tiếp xúc, biến chứng | Thêm vào `RELATION_LABELS` + template intent khi có nhu cầu (vd `DISEASE_PROTEIN` cho cơ chế, `RESULTS_IN` cho biến chứng, `EXPOSURE_DISEASE` cho dị ứng tiếp xúc) |
 | 7 | **KG và sách giáo khoa chưa liên kết** | Cùng một bệnh nhưng đoạn sách và nút KG không biết nhau; chỉ gặp nhau ở bước rerank | Gắn `dermo_id`/tên chuẩn vào payload chunk lúc `index` để lọc và trích nguồn chéo |
 | 8 | **Đánh giá chất lượng** | Chưa có số đo cho nhánh KG (chọn đúng thực thể? ứng viên đúng bao nhiêu?) | Bộ câu hỏi nhỏ có đáp án + script đo (xem `agent/test/try_retrieval.py`) |
-| 9 | **Nạp lại KG** | Đã có `core/graph_base/` (`make kg-download kg-build kg-load kg-verify`); script cũ trong `data_ingest/` chưa dọn | Dọn script cũ, chuyển prod (`reset-and-gen-data.sh`) sang `graph_base` |
+| 9 | **Nạp lại KG** | Đã có `archive/core/graph_base/` (`make kg-download kg-build kg-load kg-verify`); script cũ trong `data_ingest/` chưa dọn | Dọn script cũ, chuyển prod (`scripts/reset-and-gen-data.sh`) sang `graph_base` |
 | 10 | **Neo4j là phụ thuộc cứng của nhánh KG** | Neo4j chưa chạy thì nhánh KG báo `notes` và mất ứng viên chẩn đoán | Đã chịu lỗi từng nhánh; có thể thêm cache các truy vấn phổ biến |
 
 ## 2. Ràng buộc cần giữ
@@ -24,7 +24,7 @@ chọn việc khi còn thời gian; không phải cam kết.
 - Kết quả KG chỉ là **gợi ý**, không phải bằng chứng lâm sàng và không phải chẩn đoán: `hybrid_retrieval` đã báo
   `evidence_found=false` khi chỉ có KG mà không có đoạn sách, giữ nguyên hành vi này.
 - Thay đổi dữ liệu KG không được làm mất dữ liệu đã nạp (nạp lại phải idempotent).
-- Entity nghiệp vụ nằm ở `core/app/dto/base/`; nếu cần entity mới (vd cho M3.15) phải hỏi duyệt trước.
+- Entity nghiệp vụ nằm ở `archive/core/app/dto/base/`; nếu cần entity mới (vd cho M3.15) phải hỏi duyệt trước.
 
 ## 3. Danh mục quan hệ hiện có trong đồ thị nền
 

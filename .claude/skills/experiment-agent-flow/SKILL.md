@@ -5,7 +5,7 @@ description: Experiment with, compare and debug the Derma agent's reasoning flow
 
 # Experiment with the agent's reasoning flow
 
-Paths are relative to `core/`. The driver `.claude/skills/experiment-agent-flow/experiment.py`
+Paths are relative to `archive/core/`. The driver `.claude/skills/experiment-agent-flow/experiment.py`
 imports `agent.graph.chat_graph.build_agent_graph` (the chat graph: `triage` → `pre_diagnosis`; the overrides below apply to the pre-diagnosis graph) and runs it in-process with an empty
 `conversation_id` (so middleware emit nothing to Redis/SSE). It records every step
 (model → tool calls → tool results → answer), auto-answers `ask_user`, and prints a comparison of
@@ -15,7 +15,7 @@ tool sequences across variants. For the full stack over HTTP/SSE use `/run-core`
 
 - Neo4j, Qdrant (with the KB loaded — see `/run-core` gotchas) and `.env` with the LLM key:
   `docker compose -f ../docker-compose.yml up -d` (Postgres/RabbitMQ/Redis/MinIO are NOT needed).
-- `uv sync`. Run every command from `core/` with `uv run python` (first import loads the local
+- `uv sync`. Run every command from `archive/core/` with `uv run python` (first import loads the local
   embedding model, ~10 s).
 
 ## Run (agent path)
@@ -83,7 +83,7 @@ uv run python $E/experiment.py --cases $E/examples/cases.json --variants $E/exam
 - `ModuleNotFoundError: No module named 'app.core'` → the driver's settings import is stale after
   a core refactor; fix is `from app.config.settings import settings` (not `app.core.config`).
   Verified fixed 2026-10-03, smoke-tested with `$E "Chào bạn" --model deepseek-v4-flash --quiet`
-  (`1/1 run đạt`). If this recurs after another refactor, check `core/app/config/settings.py`
+  (`1/1 run đạt`). If this recurs after another refactor, check `archive/core/app/config/settings.py`
   still exists at that path and update the import.
 - `KeyError: 'deepseek-v4-x'` from `resolve_model` → not in `AGENT_MODEL_CHOICES`; use a listed id
   or a full `provider:model`.

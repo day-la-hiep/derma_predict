@@ -1,0 +1,10 @@
+# Build context là REPO ROOT nên pattern tính từ gốc repo
+**
+!shared
+!ai_service
+!ml/model/model_output/AdaptiveCNN_SkinDisease_v5_best.pth
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.env
+!**/.env.example

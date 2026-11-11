@@ -1,7 +1,7 @@
 # [Lưu ý] Tool mô tả ảnh bằng model multimodal (MedGemma)
 
-Tool `analyze_skin_image_multimodal` (`core/agent/tools/skin_image_multimodal.py`, hàm gọi model ở
-`core/agent/common/vision.py`) cho agent "nhìn" ảnh qua một model multimodal và bổ sung mô tả cho kết quả CNN
+Tool `analyze_skin_image_multimodal` (`archive/core/agent/tools/skin_image_multimodal.py`, hàm gọi model ở
+`archive/core/agent/common/vision.py`) cho agent "nhìn" ảnh qua một model multimodal và bổ sung mô tả cho kết quả CNN
 `classify_skin_image`. Tool mô tả chung ở [chat.md](../module/chat.md).
 
 ## Cấu hình model theo role

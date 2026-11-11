@@ -19,7 +19,7 @@ FE chạy trên laptop (`pnpm dev`, cổng 3010), expose ra ngoài bằng tunnel
 - **Lưu ý:** `NEXT_PUBLIC_API_URL` được nhúng lúc khởi động nên phải restart `pnpm dev`. Token đăng nhập nằm trong `localStorage` theo từng origin, mỗi domain / địa chỉ phải đăng nhập riêng. Sau khi đổi, trình duyệt có thể còn cache bundle cũ: hard reload hoặc xoá site data.
 
 ### 3. SSE không realtime qua tunnel (chưa kiểm chứng)
-- **Nghi vấn:** khi proxy qua rewrite, Next mặc định nén gzip response nên các event bị gom lại. Core trả `Cache-Control: no-cache` + `X-Accel-Buffering: no` nhưng không có `no-transform` (`core/app/api/conversation_api.py`, `doctor_api.py`).
+- **Nghi vấn:** khi proxy qua rewrite, Next mặc định nén gzip response nên các event bị gom lại. Core trả `Cache-Control: no-cache` + `X-Accel-Buffering: no` nhưng không có `no-transform` (`archive/core/app/api/conversation_api.py`, `doctor_api.py`).
 - **Đã sửa:** `compress: false` trong `fe/next.config.ts`. Cần restart `pnpm dev`.
 - **Nếu vẫn không realtime:** thêm `no-transform` vào `Cache-Control` của hai endpoint SSE ở Core; kiểm tra tunnel (cloudflared / Cloudflare) có buffer `text/event-stream` không.
 - **Chưa làm:** chưa gửi tin nhắn chat thật qua domain để xác nhận, vì chưa có tài khoản test.

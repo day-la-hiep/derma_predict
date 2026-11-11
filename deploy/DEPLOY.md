@@ -1,0 +1,164 @@
+# Deploy production bằng `deploy/docker-compose.prod.yml`
+
+Hướng dẫn dựng toàn bộ stack (Postgres, Redis, RabbitMQ, Qdrant, Neo4j, MinIO + Core API + Agent
+Worker + FE) trong Docker và nạp đủ dữ liệu. Tunnel/reverse-proxy (Cloudflare Tunnel, nginx…) tự
+cấu hình riêng, trỏ vào cổng `3010` của `derma-fe`.
+
+## 1. Kiến trúc container
+
+| Service | Vai trò | Ghi chú |
+|---|---|---|
+| `derma-fe` | Next.js, **cổng 3010 publish ra host** | Tự proxy `/api/v1/*` sang `derma-core-api` |
+| `derma-core-api` | FastAPI (REST + SSE) | Cổng 3050, chỉ trong mạng Docker |
+| `agent-worker` | LangGraph agent | Cùng image với core-api, khác `command` |
+| `postgres` `redis` `rabbitmq` `qdrant` `neo4j` `minio` | Hạ tầng | Không publish port ra host |
+
+Các container gọi nhau bằng **tên service** (DNS nội bộ Docker), không dùng `localhost`.
+`deploy/docker-compose.prod.yml` tự ghi đè các biến kết nối (`DATABASE_URL`, `NEO4J_URL`, …) lên
+`archive/core/.env`, nên bạn không cần sửa chúng.
+
+## 2. Chuẩn bị (làm 1 lần)
+
+### 2.1. Đảm bảo đủ file trên máy deploy
+
+Các file sau **phải có** trước khi build, kiểm tra kỹ vì có file không nằm trong git:
+
+| File | Trong git? | Ghi chú |
+|---|---|---|
+| `archive/core/data-ingest/01_normalize/output/kg/primekg/derma_nodes.csv`, `derma_edges.csv` | Có (sau khi sửa `.gitignore`) | ~3MB, nạp Neo4j |
+| `archive/core/data-ingest/01_normalize/output/kg/dermo/dermo_kg.json` | Có | Nạp Neo4j |
+| `archive/core/data-ingest/01_normalize/output/diseases/*.json` | Có | Dữ liệu 87 bệnh đã chuẩn hoá; hiện chưa có script nạp nào đọc (guideline KB cũ đã bỏ) |
+| `ml/model/model_output/AdaptiveCNN_SkinDisease_v5_best.pth` | **Chưa** (44MB) | Nếu thiếu, `docker build` core lỗi ở bước `COPY`. Commit hoặc copy tay lên server |
+| `fe/pnpm-workspace.yaml` | Có | Bắt buộc, thiếu thì `pnpm install` lỗi |
+| `.env`, `archive/core/.env` | **Không** (ignore) | Tạo ở bước 2.2 và 2.3 |
+
+### 2.2. File `.env` ở thư mục gốc (mật khẩu hạ tầng)
+
+```bash
+cp deploy/.env.prod.example .env
+```
+
+Điền mật khẩu. Sinh chuỗi random: `python3 -c "import secrets; print(secrets.token_urlsafe(24))"`.
+
+**Các giá trị bị từ chối (container crash-loop):**
+- `NEO4J_PASSWORD` **không được** là `neo4j`.
+- `MINIO_ROOT_PASSWORD` phải **≥ 8 ký tự**, `MINIO_ROOT_USER` ≥ 3 ký tự.
+
+> Mật khẩu Postgres/RabbitMQ/Neo4j/MinIO chỉ có hiệu lực **lần đầu** khi volume được tạo. Đổi sau đó
+> không ăn (xem mục 6, "Đổi mật khẩu").
+
+### 2.3. File `archive/core/.env` (cấu hình ứng dụng)
+
+```bash
+cp archive/core/.env.example archive/core/.env
+```
+
+Điền tối thiểu:
+
+| Biến | Giá trị |
+|---|---|
+| `OPENROUTER_API_KEY` | Key từ https://openrouter.ai/keys |
+| `AGENT_MODEL` | Mặc định `openrouter:google/gemma-4-26b-a4b-it` (bản **trả phí**, cần credit OpenRouter; bản `:free` bị chặn khi dùng tool-calling) |
+
+Không cần sửa `DATABASE_URL`, `NEO4J_URL`, `MINIO_*`, … — compose tự ghi đè.
+Không cần `GOOGLE_API_KEY` (embedding và reranker gọi qua OpenRouter, dùng chung `OPENROUTER_API_KEY`).
+
+## 3. Khởi chạy
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml up -d --build
+```
+
+Lần build đầu mất vài phút (image core ~ vài GB do torch + model embedding được tải sẵn vào image).
+Kiểm tra:
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml ps
+```
+
+Cả 9 container phải `Up`; `postgres`, `redis`, `rabbitmq`, `neo4j`, `minio` phải `healthy`.
+
+## 4. Nạp dữ liệu (bắt buộc — DB mới hoàn toàn trống)
+
+```bash
+./reset-and-gen-data.sh
+```
+
+Script chạy trong container `derma-core-api`, nạp đồ thị tri thức vào Neo4j:
+
+| Nguồn | Đích | Dùng bởi |
+|---|---|---|
+| PrimeKG (36k node, 474k cạnh) | Neo4j | `knowledge_graph_query`, gợi ý câu hỏi của `record_reasoning` |
+| DermO (3.4k thuật ngữ) | Neo4j | `knowledge_graph_query` |
+| Chunk sách (pipeline `document_ingest`) | Qdrant `derma_document_chunks_v4` | `hybrid_retrieval` (semantic + BM25), `semantic_search`, `keyword_search` — **không** nạp bằng script này mà qua giao diện admin `/doctor/documents` (cần chạy `document-ingest-worker`) |
+
+- Chạy lại nhiều lần không sao (idempotent).
+- `./reset-and-gen-data.sh --reset` — **xoá sạch** rồi nạp lại từ đầu (dùng khi đổi dữ liệu/model embedding).
+- Mất khoảng 1–2 phút. Phải chạy **sau khi** `derma-core-api` đã start.
+
+Chuyển dữ liệu sách đã nạp (Postgres, MinIO, Qdrant, Neo4j) sang máy khác: xem `docs/module/chuyen-du-lieu-sang-may-khac.md`.
+
+Nếu thiếu bước này agent vẫn chạy nhưng các tool tra cứu trả về rỗng, câu trả lời sẽ nghèo/sai.
+
+## 5. Kiểm tra sau khi chạy
+
+```bash
+# 1. FE proxy tới backend được không (kỳ vọng {"status":"ok"})
+curl -s http://localhost:3010/api/v1/health
+
+# 2. Tạo hội thoại (kỳ vọng HTTP 201):
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:3010/api/v1/conversations \
+  -H "Content-Type: application/json" \
+  -d '{"userId":"user-1","initMessage":"","title":"test"}'
+
+# 3. Dữ liệu đã nạp
+docker compose -f deploy/docker-compose.prod.yml exec -T derma-core-api python -c "
+import asyncio
+from app.api.deps import get_qdrant_client
+from app.config.settings import settings
+print('Chunk sách trong Qdrant:', asyncio.run(get_qdrant_client().count(settings.QDRANT_DOCUMENT_COLLECTION)))"   # 0 tới khi index sách đầu tiên ở /doctor/documents
+```
+
+Rồi mở `http://<host>:3010`, đăng ký/đăng nhập, gửi thử một tin nhắn.
+
+## 6. Xử lý sự cố
+
+| Triệu chứng | Nguyên nhân | Cách xử lý |
+|---|---|---|
+| `minio` / `neo4j` restart liên tục | Mật khẩu không hợp lệ (mục 2.2) | Sửa `.env` rồi `docker compose -f deploy/docker-compose.prod.yml up -d minio neo4j` |
+| Đổi mật khẩu Neo4j/Postgres mà không có tác dụng | Chỉ áp dụng khi tạo volume lần đầu | Xoá volume của service đó (`docker compose -f deploy/docker-compose.prod.yml down`, `docker volume rm derma-hospital-prod_<tên>_data`) rồi `up`, nạp lại data. **Mất dữ liệu** |
+| FE gọi API lỗi `ECONNREFUSED 127.0.0.1:3050` (500 ở `/api/v1/...`) | `BACKEND_URL` được **bake lúc `next build`** (build arg), env runtime không có tác dụng | Đổi `args.BACKEND_URL` của `derma-fe` rồi `up -d --build derma-fe` |
+| `POST /conversations` → 500 `fk_conversations_user_id_users` | Thiếu user `user-1` (FE hard-code) | Core tự tạo user này khi khởi động; chỉ cần build lại/khởi động lại `derma-core-api` bản mới |
+| Chat trả "hệ thống gặp sự cố…" | LLM lỗi (hết credit OpenRouter, rate limit, sai key) | Xem `docker compose -f deploy/docker-compose.prod.yml logs agent-worker` |
+| Tool tra cứu trả rỗng | Chưa nạp data | Chạy `./reset-and-gen-data.sh` |
+| `docker build` core lỗi `COPY model/...: not found` | Thiếu checkpoint CNN | Xem mục 2.1 |
+| `pnpm install` lỗi `ERR_PNPM_IGNORED_BUILDS` | Thiếu `fe/pnpm-workspace.yaml` (`allowBuilds`) | Đảm bảo file này có trong build context |
+
+Xem log: `docker compose -f deploy/docker-compose.prod.yml logs -f derma-core-api agent-worker`.
+
+## 7. Vận hành thường ngày
+
+```bash
+# Cập nhật code
+git pull
+docker compose -f deploy/docker-compose.prod.yml up -d --build          # build lại những service đổi
+
+# Chỉ đổi prompt/code agent
+docker compose -f deploy/docker-compose.prod.yml up -d --build derma-core-api agent-worker
+
+# Dừng (giữ dữ liệu)
+docker compose -f deploy/docker-compose.prod.yml down
+
+# Dừng và XOÁ TOÀN BỘ dữ liệu (Postgres, Qdrant, Neo4j, MinIO, ...)
+docker compose -f deploy/docker-compose.prod.yml down -v
+```
+
+Dữ liệu nằm trong các named volume (`postgres_data`, `qdrant_data`, `neo4j_data`, `minio_data`, …);
+`down` không xoá, `down -v` mới xoá.
+
+## 8. Lưu ý bảo mật
+
+- Chỉ `derma-fe:3010` publish ra host. Đặt tunnel/reverse-proxy phía trước và dùng HTTPS.
+- Các route chat/tài liệu/upload/bác sĩ chưa kiểm tra JWT phía server (chỉ `/auth/*` cấp token), nên đừng mở ra Internet
+  mà không có lớp bảo vệ phía trước. Chat vẫn nhận `user_id` từ client chứ chưa lấy từ token.
+- Không commit `.env` và `archive/core/.env` (đã được ignore).

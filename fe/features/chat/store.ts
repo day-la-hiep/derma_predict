@@ -45,8 +45,6 @@ interface ChatState {
   messagesByConversation: Record<string, ChatMessage[]>;
   /** số luồng AI đang chạy theo từng hội thoại -> cho phép gửi song song */
   activeStreams: Record<string, number>;
-  /** trạng thái ca tư vấn bác sĩ của từng hội thoại (chỉ biết sau khi có event hoặc lúc gửi tin) */
-  consultationByConversation: Record<string, "pending" | "active" | "resolved">;
   /** Quản lý trạng thái khung nhập (draft text, skill, files) theo từng conversationId */
   inputsByConversation: Record<string, ConversationInputState>;
   connected: boolean;
@@ -428,31 +426,6 @@ export const useChatStore = create<ChatState>((set, get) => {
         }));
         break;
       }
-      case "message.created": {
-        const incoming = toChatMessage(event.message as ApiChatMessage);
-        // tin của chính bệnh nhân đã có sẵn ở FE (optimistic) — chỉ lấy tin bác sĩ và tin mốc phiên từ room
-        if (incoming.role !== "doctor" && !incoming.messageType?.startsWith("consultation_")) break;
-        set((state) => {
-          const list = state.messagesByConversation[event.conversationId];
-          if (!list || list.some((m) => m.id === incoming.id)) return state;
-          return {
-            messagesByConversation: {
-              ...state.messagesByConversation,
-              [event.conversationId]: [...list, incoming],
-            },
-          };
-        });
-        break;
-      }
-      case "consultation.updated": {
-        set((state) => ({
-          consultationByConversation: {
-            ...state.consultationByConversation,
-            [event.conversationId]: event.status,
-          },
-        }));
-        break;
-      }
       case "document.started": {
         patchMessage(event.messageId, (m) => ({
           ...m,
@@ -488,7 +461,6 @@ export const useChatStore = create<ChatState>((set, get) => {
     activeId: null,
     messagesByConversation: {},
     activeStreams: {},
-    consultationByConversation: {},
     inputsByConversation: {},
     connected: false,
     loadingConversations: false,
@@ -724,10 +696,6 @@ export const useChatStore = create<ChatState>((set, get) => {
                   activeStreams: {
                     ...state.activeStreams,
                     [activeId]: Math.max(0, (state.activeStreams[activeId] ?? 0) - 1),
-                  },
-                  consultationByConversation: {
-                    ...state.consultationByConversation,
-                    [activeId]: "active" as const,
                   },
                 }),
           };
