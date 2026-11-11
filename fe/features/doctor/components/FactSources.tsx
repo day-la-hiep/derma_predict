@@ -2,7 +2,7 @@
 
 import { Quote } from "lucide-react";
 import { ImageThumbnail } from "@/features/chat/components/ImageThumbnail";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 import type { SnapshotMessage } from "../types";
 
 const SENDER_LABEL: Record<SnapshotMessage["sender"], string> = {
@@ -11,11 +11,6 @@ const SENDER_LABEL: Record<SnapshotMessage["sender"], string> = {
   doctor: "Bác sĩ",
 };
 
-function formatTime(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return `${d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} ${d.toLocaleDateString("vi-VN")}`;
-}
 
 /** Trích tin gốc làm bằng chứng cho một dữ kiện (đã chép vào snapshot lúc chốt) */
 export function FactSources({ sources, compact = false }: { sources: SnapshotMessage[]; compact?: boolean }) {
@@ -27,7 +22,7 @@ export function FactSources({ sources, compact = false }: { sources: SnapshotMes
           <p className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
             <Quote className="size-3" />
             <span className="font-medium">{SENDER_LABEL[m.sender]}</span>
-            <span>· {formatTime(m.createdAt)}</span>
+            <span>· {formatDateTime(m.createdAt)}</span>
           </p>
           <p className={cn("mt-0.5 whitespace-pre-line text-xs text-foreground/90", compact && "line-clamp-2")}>
             {m.content}

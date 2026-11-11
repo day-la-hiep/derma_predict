@@ -68,8 +68,8 @@ function RowActions({ a, onFinalize, onPreview, onOpenDetail }: { a: DoctorAppoi
         </Hint>
       )}
       {a.status === "in_progress" && a.encounterId && (
-        <Hint content="Chốt kết luận">
-          <Button size="sm" variant="ghost" onClick={onFinalize} aria-label="Chốt kết luận" className={cn(icon, "text-brand hover:bg-brand/10 hover:text-brand")}>
+        <Hint content="Kết luận">
+          <Button size="sm" variant="ghost" onClick={onFinalize} aria-label="Kết luận" className={cn(icon, "text-brand hover:bg-brand/10 hover:text-brand")}>
             <ClipboardCheck className="size-4" />
           </Button>
         </Hint>

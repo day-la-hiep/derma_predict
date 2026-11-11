@@ -69,7 +69,7 @@ function StatusActions({ d, onFinalize }: { d: DoctorAppointmentDetail; onFinali
       )}
       {d.status === "in_progress" && d.encounterId && (
         <Button variant="brand" size="sm" onClick={onFinalize} className={btn}>
-          <CheckCircle2 className="size-4" /> Chốt kết luận
+          <CheckCircle2 className="size-4" /> Kết luận
         </Button>
       )}
       {d.status === "confirmed" && (
@@ -305,13 +305,13 @@ export function AppointmentDetailPage({ appointmentId }: { appointmentId: string
     // relative z-40: nổi trên dải nền đặc sát đáy của khung (z-30) để không che mất ô nhập
     <div className={cn("-mx-4 -my-6 sm:-mx-6 lg:relative lg:z-40 lg:-mx-8 lg:flex lg:h-dvh lg:overflow-hidden", panel.dragging && "select-none")}>
       <div className="flex min-w-0 flex-1 flex-col lg:min-h-0">
-        <div className="z-10 flex shrink-0 items-center gap-3 border-b border-border bg-background/95 px-4 py-4 backdrop-blur sm:px-6 lg:px-8">
+        <div className="z-10 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background/95 px-4 backdrop-blur sm:px-6 lg:px-8">
           <Hint content="Về danh sách ca khám">
-            <Link href={doctorPaths.home} aria-label="Về danh sách ca khám" className="flex size-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-              <ArrowLeft className="size-5" />
+            <Link href={doctorPaths.home} aria-label="Về danh sách ca khám" className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+              <ArrowLeft className="size-4" />
             </Link>
           </Hint>
-          <h1 className="font-serif text-2xl font-bold tracking-tight text-foreground">Chi tiết ca khám</h1>
+          <h1 className="font-serif text-lg font-bold tracking-tight text-foreground">Chi tiết ca khám</h1>
         </div>
         <div className="flex-1 space-y-6 px-4 py-6 sm:px-6 lg:overflow-y-auto lg:px-8">
           {isLoading ? (
@@ -334,7 +334,7 @@ export function AppointmentDetailPage({ appointmentId }: { appointmentId: string
                 <FactRows facts={[...d.episode.facts, ...d.longTermFacts]} />
               </Section>
               <AiSuggestions d={d} />
-              <Section title="Hành trình bệnh">
+              <Section title="Lịch sử khám">
                 <div className="h-[36rem] overflow-hidden rounded-xl border border-border">
                   <PatientJourneyView patientId={d.patient.id} />
                 </div>
@@ -386,7 +386,7 @@ export function AppointmentDetailPage({ appointmentId }: { appointmentId: string
               </div>
             )}
             <div className={cn("flex min-h-0 flex-1 flex-col", panel.collapsed && "lg:hidden")}>
-              <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
+              <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-5">
                 <h2 className="font-serif text-lg font-bold tracking-tight text-foreground">Trao đổi với bệnh nhân</h2>
                 <Hint content="Thu gọn khung trao đổi">
                   <Button variant="ghost" size="iconSm" onClick={panel.toggle} aria-label="Thu gọn khung trao đổi" className="hidden rounded-lg text-muted-foreground hover:text-foreground lg:inline-flex">

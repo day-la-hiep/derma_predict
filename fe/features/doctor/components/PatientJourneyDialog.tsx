@@ -26,7 +26,7 @@ export function PatientJourneyDialog({ patientId, patientName, open: controlledO
       ) : (
         <DialogTrigger asChild>
           <Button variant="outline" size="sm" className="gap-1.5 border-brand/30 text-brand hover:bg-brand/10">
-            <Network className="size-3.5" /> Hành trình bệnh
+            <Network className="size-3.5" /> Lịch sử khám
           </Button>
         </DialogTrigger>
       )}
@@ -39,7 +39,7 @@ export function PatientJourneyDialog({ patientId, patientName, open: controlledO
                 <Network className="size-4" />
               </div>
               <div>
-                <DialogTitle className="font-serif text-lg font-bold text-foreground">Hành trình bệnh {patientName ? `· ${patientName}` : ""}</DialogTitle>
+                <DialogTitle className="font-serif text-lg font-bold text-foreground">Lịch sử khám {patientName ? `· ${patientName}` : ""}</DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground">Đồ thị tri thức bệnh nhân (Personal Knowledge Graph) liên kết qua các lần khám</DialogDescription>
               </div>
             </div>

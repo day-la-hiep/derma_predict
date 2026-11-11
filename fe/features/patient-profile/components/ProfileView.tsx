@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Hint, HintIcon } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { EMPTY_PROFILE, FACT_TYPE_LABELS, GENDER_LABELS, HINTS, RELATIONSHIP_LABELS } from "../constants";
 import { useFinalizeReports, useProfileActions, useProfiles } from "../hooks";
 import type {
@@ -186,7 +186,7 @@ function FinalizeReports({ profileId }: { profileId: string }) {
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-sm font-medium text-foreground">{r.diagnosis}</span>
             <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-              {new Date(r.created_at).toLocaleDateString("vi-VN")}
+              {formatDate(r.created_at)}
             </span>
           </div>
           {r.notes && <p className="mt-1.5 whitespace-pre-line text-xs leading-relaxed text-muted-foreground">{r.notes}</p>}

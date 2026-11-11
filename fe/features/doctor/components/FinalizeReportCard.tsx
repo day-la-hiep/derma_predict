@@ -1,20 +1,11 @@
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import type { FinalizeReport } from "../types";
 
-export function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("vi-VN");
-}
+export { formatDate } from "@/lib/utils";
 
 export function ReferenceBadge({ className }: { className?: string }) {
   return (
-    <span
-      className={cn(
-        "shrink-0 rounded-full border border-brand/30 bg-brand/10 px-1.5 py-0.5 text-[9px] font-medium text-brand",
-        className
-      )}
-    >
-      Tham khảo
-    </span>
+    <span className={cn("shrink-0 text-xs font-medium text-brand", className)}>Tham khảo</span>
   );
 }
 

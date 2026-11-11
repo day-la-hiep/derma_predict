@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Hint, HintIcon } from "@/components/ui/hint";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 import { KeyValueGrid, StateBadge } from "./bits";
 import { STEP_INFO } from "../constants";
 import type { Stage } from "../types";
@@ -78,7 +78,7 @@ function readableSummary(summary: Record<string, unknown>): Record<string, unkno
 
 function fmt(iso?: string | null) {
   if (!iso) return null;
-  return new Date(iso).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+  return formatDateTime(iso);
 }
 
 /** Điều khiển một bước: trạng thái, tiến độ, kết quả tóm tắt, chạy / hủy / duyệt / log. Nội dung duyệt đặt ở dưới (children). */

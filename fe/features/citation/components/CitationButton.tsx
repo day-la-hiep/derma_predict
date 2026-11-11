@@ -46,7 +46,7 @@ function Viewer({ label, ref_, onClose }: { label: string; ref_: CitationRef; on
                   <p className="text-xs font-medium text-foreground">
                     {p.section || "Đoạn sách"}
                     {p.pages && <span className="font-normal text-muted-foreground"> · {p.pages}</span>}
-                    {p.isCited && <span className="ml-2 rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand">được dẫn</span>}
+                    {p.isCited && <span className="ml-2 font-medium text-brand">· được dẫn</span>}
                   </p>
                   <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{p.text}</p>
                 </article>

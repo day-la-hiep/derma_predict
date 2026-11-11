@@ -5,7 +5,7 @@ import { GitCommitHorizontal, Info, Network, RotateCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime, textOnly } from "@/lib/utils";
 import { errorMessage } from "../api";
 import { JOURNEY_NODE_CONFIG } from "../constants";
 import { usePatientJourneyGraph } from "../hooks";
@@ -35,7 +35,7 @@ export function PatientJourneyView({ patientId }: { patientId: string }) {
 
   const FILTER_TABS = [
     { id: "all", label: "Tất cả", count: graph?.nodes.length ?? 0 },
-    { id: "ConsultationSession", label: "Phiên tư vấn", count: stats.sessions },
+    { id: "ConsultationSession", label: "Lần khám", count: stats.sessions },
     { id: "PatientImage", label: "Ảnh bệnh", count: stats.images },
     { id: "Symptom", label: "Triệu chứng", count: stats.symptoms },
     { id: "Condition", label: "Chẩn đoán", count: stats.conditions },
@@ -45,21 +45,19 @@ export function PatientJourneyView({ patientId }: { patientId: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card/60 px-4 py-3">
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           {FILTER_TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveFilter(tab.id)}
+              aria-pressed={activeFilter === tab.id}
               className={cn(
-                "flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-                activeFilter === tab.id ? "bg-brand text-brand-foreground" : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+                "border-b-2 px-1 pb-1 text-xs transition-colors",
+                activeFilter === tab.id ? "border-brand font-semibold text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
               )}
             >
-              {tab.label}
-              <span className={cn("rounded-full px-1 text-[10px]", activeFilter === tab.id ? "bg-brand-foreground/20 text-brand-foreground" : "bg-border text-foreground")}>
-                {tab.count}
-              </span>
+              {tab.label} <span className="text-muted-foreground">({tab.count})</span>
             </button>
           ))}
         </div>
@@ -115,7 +113,7 @@ export function PatientJourneyView({ patientId }: { patientId: string }) {
           ) : isError ? (
             <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
               <Info className="size-8 text-destructive mb-2" />
-              <p className="text-sm font-semibold text-foreground">Không thể tải đồ thị hành trình</p>
+              <p className="text-sm font-semibold text-foreground">Không thể tải lịch sử khám</p>
               <p className="text-xs text-muted-foreground mt-1 max-w-sm">
                 {error ? errorMessage(error) : "Đã xảy ra lỗi khi kết nối đồ thị bệnh nhân trên Neo4j."}
               </p>
@@ -126,7 +124,7 @@ export function PatientJourneyView({ patientId }: { patientId: string }) {
           ) : !graph || graph.nodes.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center p-8 text-center text-muted-foreground">
               <Network className="size-12 opacity-30 mb-3" />
-              <p className="text-sm font-medium text-foreground">Chưa có hành trình tư vấn</p>
+              <p className="text-sm font-medium text-foreground">Chưa có lịch sử khám</p>
               <p className="text-xs text-muted-foreground mt-1 max-w-sm">
                 Bệnh nhân chưa có dữ kiện lâm sàng hoặc phiên tư vấn nào được đồng bộ lên đồ thị tri thức.
               </p>
@@ -158,12 +156,7 @@ export function PatientJourneyView({ patientId }: { patientId: string }) {
                   <div className="space-y-4">
                     <div className="flex items-start justify-between gap-2 border-b border-border pb-3">
                       <div className="space-y-1">
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold",
-                            JOURNEY_NODE_CONFIG[selectedNode.label]?.badgeClass ?? "bg-muted text-muted-foreground"
-                          )}
-                        >
+                        <span className={cn("text-xs font-semibold", textOnly(JOURNEY_NODE_CONFIG[selectedNode.label]?.badgeClass ?? "text-muted-foreground"))}>
                           {JOURNEY_NODE_CONFIG[selectedNode.label]?.label ?? selectedNode.label}
                         </span>
                         <h4 className="font-serif text-base font-bold text-foreground leading-tight">
@@ -223,7 +216,7 @@ export function PatientJourneyView({ patientId }: { patientId: string }) {
                         <div>
                           <p className="font-medium text-muted-foreground">Thời gian:</p>
                           <p className="text-foreground mt-0.5">
-                            {new Date(selectedNode.properties.date).toLocaleString("vi-VN")}
+                            {formatDateTime(selectedNode.properties.date)}
                           </p>
                         </div>
                       )}

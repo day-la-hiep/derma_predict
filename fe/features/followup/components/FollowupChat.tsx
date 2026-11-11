@@ -10,16 +10,12 @@ import type { DoctorViewMessage } from "@/features/doctor";
 import { CallButtons } from "@/features/video-call";
 import { endpoints } from "@/services/endpoints";
 import { subscribeSse } from "@/services/sse";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import type { UploadedImage } from "../api";
 import { qk, useFollowupMessages, useSendFollowupMessage } from "../hooks";
 import type { FollowupChannel } from "../types";
 import { ChatBubble } from "./ChatBubble";
 import { Composer } from "./Composer";
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("vi-VN");
-}
 
 export function FollowupChat({ channel, role }: { channel: FollowupChannel; role: "patient" | "doctor" }) {
   const id = channel.conversationId;
