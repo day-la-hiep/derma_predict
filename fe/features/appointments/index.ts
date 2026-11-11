@@ -1,2 +1,3 @@
 export { AppointmentsView } from "./components/AppointmentsView";
-export { DoctorSchedulePage } from "./components/DoctorSchedulePage";
+export { AppointmentDetailPage } from "./components/AppointmentDetailPage";
+export { DoctorCasesPage } from "./components/DoctorCasesPage";

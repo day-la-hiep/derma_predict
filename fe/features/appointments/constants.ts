@@ -9,6 +9,4 @@ export const APPOINTMENT_STATUS: Record<AppointmentStatus, { label: string; hint
   no_show: { label: "Vắng", hint: "Bệnh nhân không đến.", className: "bg-red-100 text-red-800 border-red-200" },
 };
 
-export function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" });
-}
+export { formatDateTime } from "@/lib/utils";

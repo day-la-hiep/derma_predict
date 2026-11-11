@@ -31,12 +31,15 @@ public final class FinalizeDtos {
     }
 
     /** Một form cho cả chốt ca tư vấn và chốt lần khám; `diagnosisCode` chỉ bắt buộc với lần khám. */
-    public record FinalizeInput(@NotBlank String diagnosis, String notes, Boolean isReferenceCase, String reasoning, @NotBlank String urgency,
-            List<String> instructions, @Valid List<FactInput> facts, @Valid List<PatientImageInput> images, String diagnosisCode) {
+    public record FinalizeInput(@NotBlank(message = "Nhận định là bắt buộc.") String diagnosis, String notes, Boolean isReferenceCase,
+            @NotBlank(message = "Cơ sở nhận định là bắt buộc.") String reasoning, @NotBlank String urgency,
+            List<String> instructions, @Valid List<FactInput> facts, @Valid List<PatientImageInput> images, String diagnosisCode,
+            @NotBlank(message = "Mô tả của bác sĩ là bắt buộc.") String description) {
         public FinalizeInput {
             notes = notes == null ? "" : notes;
             isReferenceCase = isReferenceCase != null && isReferenceCase;
             reasoning = reasoning == null ? "" : reasoning;
+            description = description == null ? "" : description;
             instructions = instructions == null ? List.of() : instructions;
             facts = facts == null ? List.of() : facts;
             images = images == null ? List.of() : images;
@@ -57,7 +60,8 @@ public final class FinalizeDtos {
     public record SnapshotProfile(String fullName, String dob, String gender, String relationship, String phone, String allergies, String medicalHistory) {
     }
 
-    public record Assessment(String reasoning, String urgency, List<String> instructions) {
+    /** `description` là mô tả của bác sĩ lúc chốt; snapshot cũ không có nên null. */
+    public record Assessment(String reasoning, String urgency, List<String> instructions, String description) {
     }
 
     public record Snapshot(SnapshotProfile patientProfile, Assessment assessment, List<SnapshotFact> clinicalFacts, List<SnapshotFact> removedFacts) {

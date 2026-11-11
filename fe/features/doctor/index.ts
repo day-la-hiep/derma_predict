@@ -1,10 +1,13 @@
-export { MedicalHistoryPage } from "./components/MedicalHistoryPage";
+export { FinalizeReportDetail } from "./components/FinalizeReportDetail";
+export { UrgencyBadge } from "./components/FinalizeReportBadges";
+export { useMyFinalizeReports } from "./hooks";
 export { PatientJourneyDialog } from "./components/PatientJourneyDialog";
+export { PatientJourneyView } from "./components/PatientJourneyView";
 export { PatientJourneyCanvas } from "./components/PatientJourneyCanvas";
 export { PatientJourneyTimeline } from "./components/PatientJourneyTimeline";
 export { adaptDraft, adaptFinalizeReport, adaptPatient, doctorApi, errorMessage, toFinalizeBody } from "./api";
 export { SuggestionPanel } from "./components/SuggestionPanel";
-export { EMPTY_FINALIZE, FinalizeReportForm } from "./components/FinalizeReportForm";
+export { EMPTY_FINALIZE, FinalizeReportForm, isFinalizeComplete } from "./components/FinalizeReportForm";
 export { patientSubtitle } from "./components/PatientProfileDetails";
 export * from "./constants";
 export type * from "./types";

@@ -45,7 +45,7 @@ export interface SnapshotFact {
 /** Bản chụp bất biến của phiếu bác sĩ đã chốt (cột `finalize_reports.snapshot`) */
 export interface FinalizeReportSnapshot {
   patientProfile: Omit<PatientProfile, "id">;
-  assessment: { reasoning: string; urgency: Urgency; instructions: string[] };
+  assessment: { reasoning: string; urgency: Urgency; instructions: string[]; /** mô tả của bác sĩ lúc khám; báo cáo cũ không có */ description?: string };
   clinicalFacts: SnapshotFact[];
 }
 
@@ -67,6 +67,8 @@ export interface FinalizeReport {
   createdAt: string;
   consultationSessionId: string | null;
   conversationId: string | null;
+  /** lần khám tạo ra báo cáo; null với báo cáo cũ chốt theo phiên tư vấn */
+  encounterId: string | null;
   /** null với báo cáo kết luận ghi trước khi có snapshot */
   snapshot: FinalizeReportSnapshot | null;
   images: FinalizeReportImage[];
@@ -79,6 +81,8 @@ export interface FinalizeReportItem extends FinalizeReport {
 
 /** Một dòng dữ kiện trong form chốt */
 export interface FactDraft {
+  /** bác sĩ đã bỏ dữ kiện AI này; không gửi lên khi chốt (có thể khôi phục trước khi lưu) */
+  removed?: boolean;
   key: string;
   /** fact trích từ hội thoại mà dòng này dựa vào; null = bác sĩ tự ghi */
   sourceFactId: string | null;
@@ -110,6 +114,8 @@ export interface FinalizeInput {
   notes: string;
   isReferenceCase: boolean;
   reasoning: string;
+  /** mô tả của bác sĩ về lần khám; hệ thống đọc và chuyển thành dữ kiện đã xác nhận khi chốt */
+  description: string;
   urgency: Urgency;
   instructions: string[];
   facts: FactDraft[];

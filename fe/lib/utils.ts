@@ -18,11 +18,30 @@ export function formatRelativeTime(iso: string): string {
   if (hours < 24) return `${hours} giờ`;
   if (days < 7) return `${days} ngày`;
 
-  return date.toLocaleDateString("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
+  return formatDate(date);
+}
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** Ngày luôn dạng dd/MM/yyyy (toLocaleDateString("vi-VN") bỏ số 0 đầu: 1/2/2026); rỗng nếu không hợp lệ */
+export function formatDate(input: string | Date | null | undefined): string {
+  if (!input) return "";
+  const d = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+/** Giờ + ngày: HH:mm dd/MM/yyyy */
+export function formatDateTime(input: string | Date | null | undefined): string {
+  if (!input) return "";
+  const d = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${pad(d.getHours())}:${pad(d.getMinutes())} ${formatDate(d)}`;
+}
+
+/** Giữ lại class màu chữ (kể cả dark:) của một bộ class badge; bỏ nền và viền để hiện dạng chữ thường */
+export function textOnly(classes: string): string {
+  return classes.split(/\s+/).filter((c) => /^(dark:)?text-/.test(c)).join(" ");
 }
 
 export function formatBytes(bytes: number): string {

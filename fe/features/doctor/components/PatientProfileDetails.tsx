@@ -1,3 +1,4 @@
+import { formatDate } from "@/lib/utils";
 import { Phone, TriangleAlert } from "lucide-react";
 import { RELATIONSHIP_LABELS } from "@/features/patient-profile/constants";
 import type { PatientProfile } from "../types";
@@ -14,7 +15,7 @@ export function patientSubtitle(patient: PatientProfile): string {
   const age = patient.dob ? calculateAge(patient.dob) : null;
   if (age !== null) parts.push(`${age} tuổi`);
   if (patient.relationship) parts.push(RELATIONSHIP_LABELS[patient.relationship]);
-  parts.push(patient.dob ? `Sinh ${new Date(patient.dob).toLocaleDateString("vi-VN")}` : "Chưa có ngày sinh");
+  parts.push(patient.dob ? `Sinh ${formatDate(patient.dob)}` : "Chưa có ngày sinh");
   return parts.join(" · ");
 }
 

@@ -28,7 +28,6 @@ public class FollowupService {
 
     public static final String AI_CHAT = "ai_chat";
     public static final String FOLLOWUP = "doctor_followup";
-    private static final int DEFAULT_EXTEND_DAYS = 30;
 
     private final ConversationRepository conversations;
     private final MessageRepository messages;
@@ -83,21 +82,6 @@ public class FollowupService {
 
     public List<FollowupChannelOutput> listForDoctor(String doctorId) {
         return outputs(conversations.findByDoctorIdAndKindOrderByUpdatedAtDesc(doctorId, FOLLOWUP));
-    }
-
-    @Transactional
-    public FollowupChannelOutput extend(String conversationId, String doctorId, Integer days) {
-        Conversation channel = conversations.findById(conversationId).filter(c -> FOLLOWUP.equals(c.kind) && doctorId.equals(c.doctorId))
-                .orElseThrow(() -> AppException.notFound("kênh theo dõi"));
-        if (channel.followupUntil == null) {
-            throw AppException.conflict("Lần khám chưa chốt kết luận nên kênh chưa có hạn để gia hạn.");
-        }
-        if (!isOpen(channel)) {
-            throw AppException.conflict("Kênh đã hết hạn, chỉ còn đọc; tái khám sẽ mở kênh mới.");
-        }
-        channel.followupUntil = channel.followupUntil.plus(Duration.ofDays(days == null ? DEFAULT_EXTEND_DAYS : days));
-        conversations.save(channel);
-        return outputs(List.of(channel)).get(0);
     }
 
     private List<FollowupChannelOutput> outputs(List<Conversation> found) {

@@ -1,9 +1,10 @@
 import axios from "axios";
 
-/** JWT phiên đăng nhập, lưu sau khi login/register thành công; interceptor gắn vào mọi request. */
-export const ACCESS_TOKEN_STORAGE_KEY = "derma-auth-access-token";
-export const REFRESH_TOKEN_STORAGE_KEY = "derma-auth-refresh-token";
-export const AUTH_USER_STORAGE_KEY = "derma-auth-user";
+/**
+ * Mỗi khu vực (bệnh nhân /chats /profile, bác sĩ /doctor, quản trị /admin) có phiên đăng nhập riêng trong localStorage,
+ * nên đăng nhập hay đăng xuất ở khu này không ảnh hưởng khu kia. Khu hiện tại suy ra từ đường dẫn của trang.
+ */
+export type AuthArea = "patient" | "doctor" | "admin";
 export const AUTH_STATE_EVENT = "derma-auth-state-change";
 
 export type AuthenticatedUser = {
@@ -15,84 +16,124 @@ export type AuthenticatedUser = {
   role: string;
 };
 
-export function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
+export function areaOfPath(pathname: string): AuthArea {
+  if (pathname.startsWith("/admin")) return "admin";
+  if (pathname.startsWith("/doctor")) return "doctor";
+  return "patient";
+}
+
+export function areaOfRole(role: string): AuthArea {
+  return role === "doctor" || role === "admin" ? role : "patient";
+}
+
+export function getCurrentArea(): AuthArea {
+  return typeof window === "undefined" ? "patient" : areaOfPath(window.location.pathname);
+}
+
+const HOME_PATH: Record<AuthArea, string> = { patient: "/chats", doctor: "/doctor", admin: "/admin" };
+const LOGIN_PATH: Record<AuthArea, string> = { patient: "/login", doctor: "/doctor/login", admin: "/admin/login" };
+
+export const homePathOf = (area: AuthArea): string => HOME_PATH[area];
+export const loginPathOf = (area: AuthArea): string => LOGIN_PATH[area];
+export const isLoginPath = (pathname: string): boolean => Object.values(LOGIN_PATH).includes(pathname);
+
+const keyOf = (area: AuthArea, kind: "access-token" | "refresh-token" | "user") => `derma-auth-${area}-${kind}`;
+const LEGACY_KEYS = ["derma-auth-access-token", "derma-auth-refresh-token", "derma-auth-user"] as const;
+
+// Phiên cũ dùng chung một bộ khoá: chuyển sang khu đúng vai trò (nếu khu đó chưa có phiên) để không bắt đăng nhập lại
+function migrateLegacySession(): void {
   try {
-    return localStorage.getItem(ACCESS_TOKEN_STORAGE_KEY);
+    const [access, refresh, user] = LEGACY_KEYS.map((k) => localStorage.getItem(k));
+    if (!access && !refresh && !user) return;
+    const role = user ? (JSON.parse(user) as AuthenticatedUser).role : "patient";
+    const area = areaOfRole(role);
+    if (!localStorage.getItem(keyOf(area, "access-token"))) {
+      if (access) localStorage.setItem(keyOf(area, "access-token"), access);
+      if (refresh) localStorage.setItem(keyOf(area, "refresh-token"), refresh);
+      if (user) localStorage.setItem(keyOf(area, "user"), user);
+    }
+    LEGACY_KEYS.forEach((k) => localStorage.removeItem(k));
+  } catch {
+    // localStorage bị chặn hoặc dữ liệu hỏng: bỏ qua, người dùng đăng nhập lại
+  }
+}
+
+function read(area: AuthArea, kind: "access-token" | "refresh-token" | "user"): string | null {
+  if (typeof window === "undefined") return null;
+  migrateLegacySession();
+  try {
+    return localStorage.getItem(keyOf(area, kind));
   } catch {
     return null;
   }
 }
 
-export function setAccessToken(token: string): void {
-  try {
-    localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
-  } catch {
-    // localStorage có thể bị chặn (private mode...) — bỏ qua, request sẽ tự 401 lại.
-  }
+function notify(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(AUTH_STATE_EVENT));
 }
 
-export function clearAccessToken(): void {
+export function getAccessToken(area: AuthArea = getCurrentArea()): string | null {
+  return read(area, "access-token");
+}
+
+export function getRefreshToken(area: AuthArea = getCurrentArea()): string | null {
+  return read(area, "refresh-token");
+}
+
+export function clearAccessToken(area: AuthArea = getCurrentArea()): void {
   try {
-    localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+    localStorage.removeItem(keyOf(area, "access-token"));
   } catch {
     // no-op
   }
 }
 
-export function getAuthenticatedUser(): AuthenticatedUser | null {
-  if (typeof window === "undefined") return null;
+export function getAuthenticatedUser(area: AuthArea = getCurrentArea()): AuthenticatedUser | null {
   try {
-    const user = localStorage.getItem(AUTH_USER_STORAGE_KEY);
+    const user = read(area, "user");
     return user ? (JSON.parse(user) as AuthenticatedUser) : null;
   } catch {
     return null;
   }
 }
 
-/** Id tài khoản đang đăng nhập (rỗng khi chưa có phiên) — thay cho id cứng trước đây. */
+/** Id tài khoản đang đăng nhập ở khu hiện tại (rỗng khi chưa có phiên). */
 export function getCurrentUserId(): string {
   return getAuthenticatedUser()?.id ?? "";
 }
 
-export function setAuthSession(
-  accessToken: string,
-  refreshToken: string,
-  user: AuthenticatedUser
-): void {
+/** Lưu phiên vào khu của vai trò tài khoản (không phải khu của trang hiện tại); trả về khu đã lưu. */
+export function setAuthSession(accessToken: string, refreshToken: string, user: AuthenticatedUser): AuthArea {
+  const area = areaOfRole(user.role);
   try {
-    localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, accessToken);
-    localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
-    localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
+    localStorage.setItem(keyOf(area, "access-token"), accessToken);
+    localStorage.setItem(keyOf(area, "refresh-token"), refreshToken);
+    localStorage.setItem(keyOf(area, "user"), JSON.stringify(user));
   } catch {
     // Phiên hiện tại vẫn có thể dùng access token nếu localStorage bị chặn.
   }
-  window.dispatchEvent(new Event(AUTH_STATE_EVENT));
+  notify();
+  return area;
 }
 
 /** Cập nhật user đã lưu sau khi sửa thông tin tài khoản (không đổi token). */
 export function updateStoredUser(user: AuthenticatedUser): void {
   try {
-    localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user));
+    localStorage.setItem(keyOf(areaOfRole(user.role), "user"), JSON.stringify(user));
   } catch {
     // Phiên hiện tại vẫn dùng được, chỉ không cache tên mới nếu localStorage bị chặn.
   }
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(AUTH_STATE_EVENT));
-  }
+  notify();
 }
 
-export function clearAuthSession(): void {
+/** Xoá phiên của một khu (mặc định khu hiện tại); các khu khác giữ nguyên. */
+export function clearAuthSession(area: AuthArea = getCurrentArea()): void {
   try {
-    localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
-    localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
-    localStorage.removeItem(AUTH_USER_STORAGE_KEY);
+    (["access-token", "refresh-token", "user"] as const).forEach((k) => localStorage.removeItem(keyOf(area, k)));
   } catch {
     // no-op
   }
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(AUTH_STATE_EVENT));
-  }
+  notify();
 }
 
 export const api = axios.create({

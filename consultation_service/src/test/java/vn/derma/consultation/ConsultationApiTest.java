@@ -362,24 +362,14 @@ class ConsultationApiTest {
     }
 
     @Test
-    void channelBecomesReadOnlyAfterFollowupUntilAndDoctorCanOnlyExtendWhileOpen() throws Exception {
+    void channelBecomesReadOnlyAfterFollowupUntil() throws Exception {
         String channel = openChannel("enc-3", "u-fu3", "d-1");
         String patient = token("u-fu3"), doctor = token("d-1", "doctor");
-        call(post("/api/v1/doctor/followup-channels/" + channel + "/extend"), doctor, null).andExpect(status().isConflict());
-
-        Instant until = Instant.now().plusSeconds(3600);
-        setUntil("enc-3", until);
-        call(post("/api/v1/doctor/followup-channels/" + channel + "/extend"), patient, null).andExpect(status().isForbidden());
-        call(post("/api/v1/doctor/followup-channels/" + channel + "/extend"), doctor, Map.of("days", 100)).andExpect(status().isUnprocessableEntity());
-        String extended = data(call(post("/api/v1/doctor/followup-channels/" + channel + "/extend"), doctor, Map.of("days", 10)).andExpect(status().isOk())).get("followup_until").asText();
-        assertEquals(until.plusSeconds(10 * 86400).toEpochMilli(), Instant.parse(extended).toEpochMilli());
-
         setUntil("enc-3", Instant.now().minusSeconds(60));
         call(get("/api/v1/followup-channels/by-encounter/enc-3"), patient, null).andExpect(jsonPath("$.data.status").value("read_only"));
         call(post("/api/v1/conversations/" + channel + "/messages"), patient, Map.of("client_message_id", "c", "content", "x")).andExpect(status().isConflict());
         call(post("/api/v1/conversations/" + channel + "/messages"), doctor, Map.of("client_message_id", "c", "content", "x")).andExpect(status().isConflict());
         call(get("/api/v1/conversations/" + channel + "/messages"), patient, null).andExpect(status().isOk());
-        call(post("/api/v1/doctor/followup-channels/" + channel + "/extend"), doctor, null).andExpect(status().isConflict());
         call(post("/api/v1/conversations/" + channel + "/video-calls"), doctor, null).andExpect(status().isConflict());
     }
 

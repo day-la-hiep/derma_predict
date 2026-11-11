@@ -1,10 +1,11 @@
+import { formatDate } from "@/lib/utils";
 import { TriangleAlert } from "lucide-react";
 import { Hint, HintIcon } from "@/components/ui/hint";
 import { RELATIONSHIP_LABELS } from "@/features/patient-profile/constants";
 import type { PatientProfile } from "../types";
 
 export function PatientInfoCard({ patient, reason }: { patient: PatientProfile; reason: string }) {
-  const dob = patient?.dob ? new Date(patient.dob).toLocaleDateString("vi-VN") : "Chưa cập nhật";
+  const dob = formatDate(patient?.dob) || "Chưa cập nhật";
   const gender = patient?.gender === "female" ? "Nữ" : "Nam";
   const relationship = patient?.relationship ? RELATIONSHIP_LABELS[patient.relationship] : null;
 

@@ -39,6 +39,12 @@ function SummaryTab({ report }: { report: FinalizeReportItem }) {
           {snap?.assessment.reasoning && (
             <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{snap.assessment.reasoning}</p>
           )}
+          {snap?.assessment.description && (
+            <p className="whitespace-pre-line text-sm leading-relaxed text-foreground">
+              <span className="text-muted-foreground">Mô tả: </span>
+              {snap.assessment.description}
+            </p>
+          )}
         </div>
       </section>
 
@@ -177,7 +183,7 @@ export function FinalizeReportDetail({ report }: { report: FinalizeReportItem | 
                 patientName={patient.fullName}
                 trigger={
                   <Button variant="outline" size="sm" className="gap-1.5 border-brand/30 text-brand hover:bg-brand/10">
-                    <Network className="size-3.5" /> Hành trình bệnh
+                    <Network className="size-3.5" /> Lịch sử khám
                   </Button>
                 }
               />
@@ -186,7 +192,7 @@ export function FinalizeReportDetail({ report }: { report: FinalizeReportItem | 
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {patient.allergies && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/50 dark:text-amber-400">
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400">
               <TriangleAlert className="size-3" /> Dị ứng: {patient.allergies}
             </span>
           )}

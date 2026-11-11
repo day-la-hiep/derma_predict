@@ -164,8 +164,8 @@ export const JOURNEY_NODE_CONFIG: Record<string, JourneyNodeConfig> = {
     dotColor: "#0284c7",
   },
   ConsultationSession: {
-    label: "Phiên tư vấn",
-    hint: "Phiên tư vấn giữa bệnh nhân, AI và bác sĩ",
+    label: "Lần khám",
+    hint: "Lần khám giữa bệnh nhân, AI và bác sĩ",
     icon: Calendar,
     badgeClass: "border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-900/60 dark:bg-indigo-950/50 dark:text-indigo-400",
     colorClass: "border-indigo-400/40 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
@@ -246,7 +246,7 @@ export const JOURNEY_NODE_CONFIG: Record<string, JourneyNodeConfig> = {
 };
 
 export const JOURNEY_EDGE_CONFIG: Record<string, { label: string; strokeColor: string; dashed?: boolean }> = {
-  HAD_SESSION: { label: "Phiên tư vấn", strokeColor: "#0284c7" },
+  HAD_SESSION: { label: "Lần khám", strokeColor: "#0284c7" },
   NEXT: { label: "Tiếp theo", strokeColor: "#6366f1", dashed: true },
   HAS_SYMPTOM: { label: "Triệu chứng", strokeColor: "#d97706" },
   REPORTED_FACT: { label: "Dữ kiện", strokeColor: "#d97706" },

@@ -48,6 +48,11 @@ def book_result(payload: dict[str, Any]) -> dict[str, Any]:
         "title": payload.get("document_title") or payload.get("document_id") or "?",
         "section": _section(payload),
         "pages": _pages(payload),
+        # truy vết về tài liệu gốc: id đoạn + khoảng trang PDF (khác với trang in ở `pages`)
+        "document_id": payload.get("document_id"),
+        "chunk_id": payload.get("chunk_id"),
+        "page_start": payload.get("page_start"),
+        "page_end": payload.get("page_end"),
         "text": payload.get("text", ""),
     }
 

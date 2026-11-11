@@ -1,2 +1,4 @@
 export { FollowupButton } from "./components/FollowupSheet";
-export { FollowupPage } from "./components/FollowupPage";
+export { FollowupChat } from "./components/FollowupChat";
+export { useDoctorFollowups, useFollowupChannel } from "./hooks";
+export type { FollowupChannel } from "./types";

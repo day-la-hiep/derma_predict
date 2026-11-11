@@ -25,8 +25,4 @@ public final class FollowupDtos {
 
     public record SetUntilInput(@NotNull Instant followupUntil) {
     }
-
-    /** `days` bỏ trống = 30. */
-    public record ExtendInput(@Min(1) @Max(90) Integer days) {
-    }
 }

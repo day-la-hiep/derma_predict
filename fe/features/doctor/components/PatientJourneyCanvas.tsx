@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { ZoomIn, ZoomOut, RotateCcw, Maximize2, CircleDot } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import {
@@ -11,7 +11,6 @@ import {
   DEFAULT_JOURNEY_NODE_CONFIG,
 } from "../constants";
 import type {
-  PatientJourneyEdge,
   PatientJourneyGraph,
   PatientJourneyNode,
 } from "../types";
@@ -41,6 +40,8 @@ export function PatientJourneyCanvas({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const movedRef = useRef(false);
+  const pressRef = useRef({ x: 0, y: 0 });
 
   // Tính toán toạ độ vị trí cho từng node theo timeline xương sống (Session 1 -> Session 2 ...)
   const { positionedNodes, nodeMap } = useMemo(() => {
@@ -86,11 +87,11 @@ export function PatientJourneyCanvas({
         try {
           const d = new Date(dateVal);
           if (!isNaN(d.getTime())) {
-            dateShort = ` · ${d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}`;
+            dateShort = ` · ${formatDate(d)}`;
           }
         } catch {}
       }
-      const displayName = `Phiên ${idx + 1}${dateShort}`;
+      const displayName = `Lần khám ${idx + 1}${dateShort}`;
 
       const sPos: PositionedNode = {
         ...sNode,
@@ -233,28 +234,37 @@ export function PatientJourneyCanvas({
       .filter((e): e is NonNullable<typeof e> => Boolean(e));
   }, [graph.edges, nodeMap]);
 
-  // Tính các cạnh liên kết với node đang hover hoặc select
-  const highlightNodeId = hoveredNodeId || selectedNodeId;
-  const connectedEdgeSet = useMemo(() => {
-    if (!highlightNodeId) return new Set<string>();
-    const set = new Set<string>();
+  // Hover: làm nổi node + láng giềng + cạnh nối trực tiếp (hiện nhãn quan hệ). Click (selected): tập trung, ẩn gần hết phần còn lại.
+  const focusId = selectedNodeId;
+  const activeId = focusId ?? hoveredNodeId;
+  const { activeEdges, activeNodes } = useMemo(() => {
+    const edges = new Set<number>();
+    const nodes = new Set<string>();
+    if (!activeId) return { activeEdges: edges, activeNodes: nodes };
+    nodes.add(activeId);
     edgesWithCoords.forEach((e, idx) => {
-      if (e.source === highlightNodeId || e.target === highlightNodeId) {
-        set.add(`edge-${idx}`);
+      if (e.source === activeId || e.target === activeId) {
+        edges.add(idx);
+        nodes.add(e.source);
+        nodes.add(e.target);
       }
     });
-    return set;
-  }, [highlightNodeId, edgesWithCoords]);
+    return { activeEdges: edges, activeNodes: nodes };
+  }, [activeId, edgesWithCoords]);
+  const fadedOpacity = focusId ? "opacity-[0.08]" : "opacity-25";
 
   // Xử lý kéo thả canvas
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest(".node-element")) return;
+    movedRef.current = false;
+    pressRef.current = { x: e.clientX, y: e.clientY };
     setIsDragging(true);
     setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!isDragging) return;
+    if (Math.abs(e.clientX - pressRef.current.x) + Math.abs(e.clientY - pressRef.current.y) > 3) movedRef.current = true;
     setPan({
       x: e.clientX - dragStart.x,
       y: e.clientY - dragStart.y,
@@ -348,6 +358,10 @@ export function PatientJourneyCanvas({
     <div
       ref={containerRef}
       onMouseDown={handleMouseDown}
+      // bấm vào nền (không phải kéo) thì bỏ tập trung
+      onClick={(e) => {
+        if (!(e.target as HTMLElement).closest(".node-element") && !movedRef.current && selectedNodeId) onSelectNode(null);
+      }}
       onWheel={handleWheel}
       className={cn(
         "relative h-full w-full overflow-hidden select-none bg-radial from-muted/20 to-background",
@@ -437,8 +451,8 @@ export function PatientJourneyCanvas({
         {/* 1. Render Edges */}
         <g className="edges-layer">
           {edgesWithCoords.map((edge, idx) => {
-            const isHighlighted = connectedEdgeSet.has(`edge-${idx}`);
-            const isDimmed = highlightNodeId && !isHighlighted;
+            const isHighlighted = activeEdges.has(idx);
+            const isDimmed = Boolean(activeId) && !isHighlighted;
             const edgeCfg = JOURNEY_EDGE_CONFIG[edge.type] ?? {
               label: edge.type,
               strokeColor: "#94a3b8",
@@ -470,11 +484,7 @@ export function PatientJourneyCanvas({
             return (
               <g
                 key={`edge-${idx}`}
-                className={cn(
-                  "transition-all duration-200",
-                  isDimmed && "opacity-20",
-                  isHighlighted && "opacity-100"
-                )}
+                className={cn("pointer-events-none transition-opacity duration-200", isDimmed && fadedOpacity)}
               >
                 {/* Đường dẫn chính */}
                 <path
@@ -484,16 +494,15 @@ export function PatientJourneyCanvas({
                   strokeWidth={isHighlighted ? 2.5 : isNext ? 2 : 1.5}
                   strokeDasharray={isNext ? "6 4" : isHadSessionLong ? "3 3" : undefined}
                   markerEnd={`url(#arrow-${edge.type})`}
-                  className={cn(isNext && "animate-pulse")}
                 />
-                {/* Label của quan hệ ở trung điểm */}
+                {/* Nhãn quan hệ chỉ hiện cho cạnh của node đang hover / tập trung, để đồ thị không rối */}
+                {isHighlighted && (
                 <text
                   x={cx}
                   y={isNext ? cy - 8 : isHadSessionLong ? cy + 14 : (sy + ty) / 2 - 6}
                   textAnchor="middle"
                   className={cn(
-                    "text-[10px] font-medium tracking-wide fill-muted-foreground pointer-events-none select-none",
-                    isHighlighted && "fill-foreground font-semibold"
+                    "text-[10px] font-semibold tracking-wide fill-foreground pointer-events-none select-none"
                   )}
                   style={{
                     backgroundColor: "var(--background)",
@@ -505,6 +514,7 @@ export function PatientJourneyCanvas({
                 >
                   {edgeCfg.label}
                 </text>
+                )}
               </g>
             );
           })}
@@ -515,6 +525,7 @@ export function PatientJourneyCanvas({
           {positionedNodes.map((node) => {
             const isSelected = selectedNodeId === node.id;
             const isHovered = hoveredNodeId === node.id;
+            const isFaded = Boolean(activeId) && !activeNodes.has(node.id);
             const isFilteredOut =
               activeFilter &&
               activeFilter !== "all" &&
@@ -539,11 +550,13 @@ export function PatientJourneyCanvas({
                 onMouseEnter={() => setHoveredNodeId(node.id)}
                 onMouseLeave={() => setHoveredNodeId(null)}
                 className={cn(
-                  "node-element cursor-pointer transition-all duration-150",
+                  "node-element cursor-pointer transition-opacity duration-200",
                   isFilteredOut && "opacity-25 grayscale",
-                  (isSelected || isHovered) && "scale-105"
+                  isFaded && fadedOpacity
                 )}
               >
+                {/* Quầng sáng khi hover (không dùng scale: CSS scale trên <g> SVG lấy gốc ở góc khung nên node bị lệch) */}
+                {isHovered && !isSelected && <circle r={node.radius + 5} fill={cfg.dotColor} fillOpacity="0.12" stroke={cfg.dotColor} strokeOpacity="0.5" strokeWidth="1.5" />}
                 {/* Vòng hào quang khi selected */}
                 {isSelected && (
                   <circle
@@ -564,7 +577,6 @@ export function PatientJourneyCanvas({
                   stroke={cfg.dotColor}
                   strokeWidth={isSelected || isHovered ? 2.5 : 1.5}
                   filter="url(#node-shadow)"
-                  className="transition-colors hover:brightness-105"
                 />
 
                 {/* Chấm chỉ báo màu */}
@@ -592,9 +604,10 @@ export function PatientJourneyCanvas({
                   x="0"
                   y={node.radius + 15}
                   textAnchor="middle"
-                  className="text-[11px] font-semibold fill-foreground pointer-events-none select-none max-w-[120px]"
+                  className="text-[11px] font-semibold fill-foreground pointer-events-none select-none"
+                  style={{ paintOrder: "stroke", stroke: "var(--background)", strokeWidth: 3, strokeLinejoin: "round" }}
                 >
-                  {node.name.length > 18 ? `${node.name.slice(0, 16)}…` : node.name}
+                  {isHovered || isSelected || node.name.length <= 18 ? node.name : `${node.name.slice(0, 16)}…`}
                 </text>
 
                 {/* Sub-label loại node */}

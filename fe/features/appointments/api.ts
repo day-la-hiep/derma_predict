@@ -88,7 +88,13 @@ function adaptEpisode(e: any): DoctorEpisode {
       diagnosisLabel: h.diagnosis_label,
       disease: h.disease,
       confidence: h.confidence,
-      evidence: h.evidence ?? [],
+      evidence: (h.evidence ?? []).map((e: any) => ({
+        source: e.source ?? "",
+        text: e.text ?? "",
+        ref: e.ref?.document_id
+          ? { documentId: e.ref.document_id, chunkId: e.ref.chunk_id ?? null, pageStart: e.ref.page_start ?? null, pageEnd: e.ref.page_end ?? null }
+          : null,
+      })),
       missing: h.missing ?? [],
     })),
     hypothesesLocked: e.hypotheses_locked,

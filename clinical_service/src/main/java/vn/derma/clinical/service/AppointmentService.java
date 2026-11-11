@@ -411,7 +411,9 @@ public class AppointmentService {
     private HypothesisOutput hypothesisOutput(AiHypothesis h) {
         List<HypothesisEvidenceOutput> evidence = new ArrayList<>();
         for (Map<String, Object> e : readMaps(h.evidence)) {
-            evidence.add(new HypothesisEvidenceOutput(String.valueOf(e.getOrDefault("source", "")), String.valueOf(e.getOrDefault("text", ""))));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> ref = e.get("ref") instanceof Map<?, ?> m ? (Map<String, Object>) m : null;
+            evidence.add(new HypothesisEvidenceOutput(String.valueOf(e.getOrDefault("source", "")), String.valueOf(e.getOrDefault("text", "")), ref));
         }
         return mapper.toHypothesis(h, evidence, readStrings(h.missing));
     }

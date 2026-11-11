@@ -4,7 +4,7 @@ Nhập sách (`/admin/documents`) và cấu hình đồ thị tri thức (`/admi
 
 ## Quy tắc
 
-- FE: `app/access-gate.tsx` đưa mỗi vai trò về đúng khu (`admin → /admin`, `doctor → /doctor`); admin vào `/doctor` hoặc bác sĩ vào `/admin` đều bị chuyển đi.
+- FE: phiên đăng nhập lưu **riêng theo khu** (`derma-auth-{patient|doctor|admin}-*` trong `localStorage`, khu suy từ đường dẫn): đăng nhập hoặc đăng xuất ở `/doctor`, `/admin`, `/chats` độc lập nhau. Mỗi khu có trang đăng nhập riêng: `/login`, `/doctor/login`, `/admin/login`. `app/access-gate.tsx` chuyển người chưa đăng nhập sang trang đăng nhập của khu (kèm `?next=` cùng khu), người đã đăng nhập mà vào trang đăng nhập thì chuyển về `next` hoặc trang chủ khu. Đăng nhập bằng tài khoản thuộc khu khác thì phiên được lưu ở khu đó và chuyển sang khu đó. Chỉ `/login` có đăng ký. Đăng xuất đưa thẳng về trang đăng nhập của khu. Trang đăng nhập nằm ngoài layout của khu nhờ route group `(portal)`.
 - BE: `document_router` và `graph_schema_router` gắn `dependencies=[Depends(require_admin)]` (`app/api/deps.py`), thiếu token → 401, sai vai trò → 403.
 
 ## Điểm cần lưu ý

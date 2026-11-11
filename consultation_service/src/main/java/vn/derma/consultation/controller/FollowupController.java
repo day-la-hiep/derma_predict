@@ -15,7 +15,6 @@ import vn.derma.consultation.common.ApiResponse;
 import vn.derma.consultation.common.AppException;
 import vn.derma.consultation.common.AuthenticatedUser;
 import vn.derma.consultation.common.CurrentUser;
-import vn.derma.consultation.dto.FollowupDtos.ExtendInput;
 import vn.derma.consultation.dto.FollowupDtos.FollowupChannelOutput;
 import vn.derma.consultation.service.FollowupService;
 
@@ -35,13 +34,6 @@ public class FollowupController {
     ApiResponse<List<FollowupChannelOutput>> listMine(@CurrentUser AuthenticatedUser user) {
         requireDoctor(user);
         return new ApiResponse<>(followups.listForDoctor(user.id()));
-    }
-
-    @PostMapping("/doctor/followup-channels/{conversationId}/extend")
-    ApiResponse<FollowupChannelOutput> extend(@CurrentUser AuthenticatedUser user, @PathVariable String conversationId,
-            @Valid @RequestBody(required = false) ExtendInput body) {
-        requireDoctor(user);
-        return new ApiResponse<>(followups.extend(conversationId, user.id(), body == null ? null : body.days()));
     }
 
     private static void requireDoctor(AuthenticatedUser user) {

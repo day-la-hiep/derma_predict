@@ -24,6 +24,7 @@ import tools.jackson.databind.ObjectMapper;
 import vn.derma.clinical.client.ConsultationClient;
 import vn.derma.clinical.client.IdentityClient;
 import vn.derma.clinical.client.KnowledgeClient;
+import vn.derma.clinical.client.AiClient;
 import vn.derma.clinical.common.AppException;
 import vn.derma.clinical.config.DermaProperties;
 import vn.derma.clinical.common.ClinicalCodes;
@@ -84,6 +85,7 @@ public class FinalizeReportService {
     private final ConsultationClient consultation;
     private final DermaProperties properties;
     private final KnowledgeClient knowledge;
+    private final AiClient ai;
     private final TransactionTemplate tx;
     private final ObjectMapper json;
     private final FinalizeMapper mapper;
@@ -148,14 +150,55 @@ public class FinalizeReportService {
         // nội dung tin nguồn lấy từ consultation trước transaction để không giữ kết nối DB trong lúc gọi mạng
         List<ClinicalFact> before = facts.findForExam(profile.id(), appointment.episodeId);
         Map<String, List<SnapshotProvenance>> sources = provenancesOf(before);
-        FinalizeReport report = tx.execute(status -> closeEncounter(encounter.id, appointment.id, profile, doctorId, doctorName, body, sources));
+        // mô tả của bác sĩ → dữ kiện: gọi ai trước transaction (không giữ kết nối DB lúc gọi mạng); ai lỗi thì ném 502 và không chốt gì
+        String bodySite = episodes.findById(appointment.episodeId).map(e -> ClinicalCodes.BODY_SITE_LABELS.getOrDefault(e.bodySite, e.bodySite)).orElse("");
+        List<AiClient.DescribedFact> known = body.facts().stream().map(f -> new AiClient.DescribedFact(f.factType(), f.label().trim(), f.detail().trim())).toList();
+        List<AiClient.DescribedFact> described = ai.extractFactsFromDescription(body.description().trim(), bodySite, known);
+        Set<String> fromDescription = new HashSet<>();
+        FinalizeInput effective = withDescribedFacts(body, described, fromDescription);
+        FinalizeReport report = tx.execute(status -> closeEncounter(encounter.id, appointment.id, profile, doctorId, doctorName, effective, sources, fromDescription));
         publish(report);
         consultation.openFollowupUntil(encounterId, profile.id(), doctorId, Instant.now().plus(Duration.ofDays(properties.followupDays())));
         return output(report, imagesOf(List.of(report)).getOrDefault(report.id, List.of()));
     }
 
+    private static String factKey(String factType, String label) {
+        return factType + "|" + normalize(label).toLowerCase();
+    }
+
+    /**
+     * Gộp dữ kiện từ mô tả vào danh sách bác sĩ giữ lại: trùng khoá (loại + nhãn) với một dữ kiện đã giữ thì thay `detail` bằng lời bác sĩ
+     * (origin thành doctor_corrected), chưa có thì thêm mới (doctor_observed). Khoá của dữ kiện đến từ mô tả được ghi vào `fromDescription`.
+     */
+    private FinalizeInput withDescribedFacts(FinalizeInput body, List<AiClient.DescribedFact> described, Set<String> fromDescription) {
+        List<FactInput> merged = new ArrayList<>(body.facts());
+        for (AiClient.DescribedFact d : described) {
+            if (d.label() == null || d.label().isBlank() || !ClinicalCodes.FACT_TYPES.contains(d.factType())) {
+                log.warn("[finalize] bỏ dữ kiện từ mô tả không hợp lệ: loại={} nhãn={}", d.factType(), d.label());
+                continue;
+            }
+            String key = factKey(d.factType(), d.label());
+            String detail = d.detail() == null ? "" : d.detail().trim();
+            int at = -1;
+            for (int i = 0; i < merged.size(); i++) {
+                if (factKey(merged.get(i).factType(), merged.get(i).label()).equals(key)) {
+                    at = i;
+                }
+            }
+            if (at >= 0) {
+                FactInput old = merged.get(at);
+                merged.set(at, new FactInput(old.sourceFactId(), old.factType(), old.label(), detail));
+            } else {
+                merged.add(new FactInput(null, d.factType(), normalize(d.label()), detail));
+            }
+            fromDescription.add(key);
+        }
+        return new FinalizeInput(body.diagnosis(), body.notes(), body.isReferenceCase(), body.reasoning(), body.urgency(), body.instructions(), merged, body.images(),
+                body.diagnosisCode(), body.description());
+    }
+
     private FinalizeReport closeEncounter(String encounterId, String appointmentId, IdentityClient.ProfileDetail profile, String doctorId, String doctorName,
-            FinalizeInput body, Map<String, List<SnapshotProvenance>> sources) {
+            FinalizeInput body, Map<String, List<SnapshotProvenance>> sources, Set<String> fromDescription) {
         Encounter encounter = encounters.findById(encounterId).orElseThrow(() -> AppException.notFound("lần khám"));
         Appointment appointment = appointments.findById(appointmentId).orElseThrow(() -> AppException.notFound("lịch hẹn của lần khám"));
         ClinicalEpisode episode = episodes.findById(appointment.episodeId).orElseThrow(() -> AppException.notFound("đợt bệnh của lần khám"));
@@ -190,6 +233,7 @@ public class FinalizeReportService {
 
         Instant now = Instant.now();
         facts.deleteAll(removed);
+        facts.flush(); // Hibernate chèn trước khi xoá: xoá xong mới thêm dữ kiện cùng khoá (mô tả nhắc lại dữ kiện bác sĩ vừa bỏ) để không vi phạm chỉ mục duy nhất
         List<ClinicalProvenance> logs = new ArrayList<>();
         for (FactInput f : body.facts()) {
             String label = normalize(f.label()), detail = f.detail().trim();
@@ -216,7 +260,8 @@ public class FinalizeReportService {
             log.kind = "doctor";
             log.doctorId = doctorId;
             log.encounterId = encounterId;
-            log.quote = label;
+            // dữ kiện từ mô tả thì dẫn nguồn là chính mô tả (rút gọn theo giới hạn của cột), còn lại giữ nhãn như trước
+            log.quote = fromDescription.contains(factKey(f.factType(), label)) ? excerpt(body.description()) : label;
             log.detail = detail;
             log.createdAt = now;
             logs.add(log);
@@ -308,7 +353,8 @@ public class FinalizeReportService {
             out.add(new SnapshotFact(f.factType(), label, detail, origin, provenanceList));
         }
         SnapshotProfile snapshotProfile = mapper.toSnapshotProfile(profile, joinLines(out, "allergy"), joinLines(out, "history"));
-        Assessment assessment = new Assessment(body.reasoning().trim(), body.urgency(), body.instructions().stream().map(String::trim).filter(i -> !i.isEmpty()).toList());
+        Assessment assessment = new Assessment(body.reasoning().trim(), body.urgency(), body.instructions().stream().map(String::trim).filter(i -> !i.isEmpty()).toList(),
+                body.description().trim());
         return new Snapshot(snapshotProfile, assessment, out, removed);
     }
 
@@ -323,6 +369,11 @@ public class FinalizeReportService {
 
     private static String defaultOrigin(String factType) {
         return "image_finding".equals(factType) ? "ai_inferred" : "patient_reported";
+    }
+
+    private static String excerpt(String text) {
+        String t = normalize(text);
+        return t.length() <= 500 ? t : t.substring(0, 500);
     }
 
     private static String normalize(String text) {

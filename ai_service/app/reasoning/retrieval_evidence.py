@@ -33,7 +33,10 @@ def _source(item: dict[str, Any], fallback: str) -> str:
     return ", ".join(parts) or fallback
 
 
-def label_tool_evidence(tool: str, content: str) -> list[dict[str, str]]:
+_REF_KEYS = ("document_id", "chunk_id", "page_start", "page_end")
+
+
+def label_tool_evidence(tool: str, content: str) -> list[dict[str, Any]]:
     """Tách kết quả một tool thành các mục `{kind, source, text}`; `kind` do tên tool và nội dung quyết định, không do model."""
     if tool in JSON_RESULT_TOOLS:
         try:
@@ -41,13 +44,17 @@ def label_tool_evidence(tool: str, content: str) -> list[dict[str, str]]:
         except (ValueError, AttributeError) as exc:
             logger.warning("kết quả tool %s không phải JSON hợp lệ: %s", tool, exc)
             return []
-        items: list[dict[str, str]] = []
+        items: list[dict[str, Any]] = []
         for r in results:
             if not isinstance(r, dict):
                 continue
-            body = {k: v for k, v in r.items() if k not in ("rank", "score", "source")}
+            body = {k: v for k, v in r.items() if k not in ("rank", "score", "source", *_REF_KEYS)}
             kind = "evidence" if r.get("source") == "book" else "hint"
-            items.append({"kind": kind, "source": _source(r, str(r.get("source", tool))), "text": _clip(body)})
+            item: dict[str, Any] = {"kind": kind, "source": _source(r, str(r.get("source", tool))), "text": _clip(body)}
+            # chỉ có với đoạn sách; kết quả cũ/KG không có thì không có `ref` (FE không hiện nút mở tài liệu)
+            if kind == "evidence" and r.get("document_id"):
+                item["ref"] = {k: r.get(k) for k in _REF_KEYS}
+            items.append(item)
         return items
     if tool == "search_finalize_report":
         try:
@@ -83,7 +90,7 @@ def label_tool_evidence(tool: str, content: str) -> list[dict[str, str]]:
     return []
 
 
-def add_retrieval_evidence(evidence: list[dict[str, Any]], items: list[dict[str, str]]) -> int:
+def add_retrieval_evidence(evidence: list[dict[str, Any]], items: list[dict[str, Any]]) -> int:
     """Thêm các mục chưa có (cùng loại, nguồn, đầu nội dung thì giữ mã cũ) vào `evidence` kèm mã E#/H#; trả số mục mới."""
     seen = {(e["kind"], e["source"], e["text"][:300]) for e in evidence}
     new = 0

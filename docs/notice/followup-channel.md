@@ -7,7 +7,7 @@ Bệnh nhân chỉ chat với chatbot trước khi khám. Chat với bác sĩ (v
 - **Mỗi lần khám (`Encounter`) có tối đa 1 kênh.** Kênh là một `conversations` với `kind = doctor_followup`, `encounter_id`, `doctor_id`, `user_id` = tài khoản chủ hồ sơ. Ràng buộc DB: `encounter_id` khác NULL ⇔ kind theo dõi; `UNIQUE(encounter_id)`.
 - **Mở kênh** khi bác sĩ "Bắt đầu khám" (`AppointmentService.startEncounter`, gọi sau commit). Lỗi mạng chỉ `log.warn`, khám vẫn tiến hành; kênh được tạo bù lúc chốt.
 - **Hạn kênh** (`followup_until`) đặt khi chốt kết luận = chốt + `derma.followup-days` (clinical, mặc định 30). Trước khi chốt `followup_until` = NULL, kênh coi là đang mở. Lỗi gọi consultation lúc chốt chỉ `log.error`, báo cáo không rollback (kênh thiếu hạn vẫn mở; nên kiểm log).
-- **Hết hạn thì chỉ đọc**: đọc tin vẫn được, gửi tin và gọi video → 409. Bác sĩ gia hạn (`POST /doctor/followup-channels/{id}/extend`, 1–90 ngày, mặc định 30) chỉ khi còn mở và đã có hạn. Hết hạn rồi thì phải tái khám, tạo kênh mới.
+- **Hết hạn thì chỉ đọc**: đọc tin vẫn được, gửi tin và gọi video → 409. Không có gia hạn: hết hạn rồi thì phải tái khám, tạo kênh mới.
 - **Quyền**: chỉ bệnh nhân chủ kênh và bác sĩ `doctor_id` của kênh xem và gửi tin. Bác sĩ khác nhận 403 khi đọc, 404 khi gửi. Hội thoại AI (`ai_chat`) chỉ chủ sở hữu; bác sĩ **không** xem được.
 - **AI im lặng** trong kênh: gửi tin chỉ ghi DB và đẩy qua SSE `/conversations/{id}/stream`, không tạo lượt AI. Người gửi (`sender`) lấy theo vai trò: `patient` hoặc `doctor`.
 - **Danh sách hội thoại AI của bệnh nhân** (`GET /conversations`) lọc `kind = ai_chat` nên kênh theo dõi không lẫn vào; FE lấy kênh qua `GET /followup-channels/by-encounter/{encounterId}`.

@@ -19,7 +19,7 @@ structure) — trust this skill and the code over it.
 |---|---|---|
 | `app/` | Next.js App Router routes only (`page.tsx` = thin, imports a feature component) | hold business logic or API calls |
 | `app/providers.tsx` | app-wide providers: `QueryClientProvider` (TanStack Query cho mọi trang; khu bác sĩ/quản trị còn client riêng trong `components/layout/app-shell.tsx`), `ThemeProvider`, `TooltipProvider`, `AccessGate`, `Toaster` | |
-| `app/access-gate.tsx` | login gate: shows `features/auth` `AuthScreen` until a JWT is stored (see Gotchas) | |
+| `app/access-gate.tsx` | login gate: redirects to the area's login page (`features/auth` `LoginPage` → `AuthScreen`) until a JWT is stored (see Gotchas) | |
 | `components/ui/` | shadcn primitives (`components.json`: style `new-york`, baseColor `neutral`) — generated/edited via shadcn conventions | hold feature-specific logic |
 | `features/<name>/` | one folder per feature: `types.ts`, `api.ts` (axios calls + `unwrap`), `hooks.ts` (TanStack Query) or `store.ts` (Zustand), `constants.ts`, `components/` | import another feature's internals directly (go through its exported hooks/store) |
 | `services/` | cross-feature infra: `client.ts` (axios singleton + auth interceptor), `endpoints.ts` (chat REST paths), `chat.sse.ts` (SSE client, implements `ChatService`), `apiAdapters.ts` (wire ↔ domain mapping), `index.ts` (mock/real `ChatService` factory), `mock/` | be feature-specific business logic |
@@ -106,7 +106,7 @@ the hook from a component in `components/`.
 
 Giao diện chỉ giữ **tên gọi ngắn**; hướng dẫn đầy đủ đặt vào hover (`components/ui/hint.tsx` → `<Hint content=...>`).
 
-- **Nút / tab / chip lọc**: 1–2 từ, động từ hoặc danh từ chính ("Xác nhận", "Gia hạn", "Gửi", "Chờ"). Không lặp danh từ
+- **Nút / tab / chip lọc**: 1–2 từ, động từ hoặc danh từ chính ("Xác nhận", "Huỷ lịch", "Gửi", "Chờ"). Không lặp danh từ
   đã rõ theo ngữ cảnh ("Huỷ lịch khám" → "Huỷ lịch" khi đang ở màn lịch khám).
 - **Tiêu đề mục**: ≤ 3 từ ("Lịch khám", "Báo cáo", "Dữ kiện"). Không kèm dòng phụ giải thích cố định bên dưới.
 - **Trạng thái**: chấm màu + 1 từ ("Chờ", "Đang", "Xong"); nghĩa đầy đủ nằm trong hint.
@@ -139,13 +139,13 @@ Giao diện chỉ giữ **tên gọi ngắn**; hướng dẫn đầy đủ đặ
   vào, tự chuyển tới đoạn chat đã nhớ của hồ sơ đang chọn (`lastConversationByProfile` trong `features/patient-profile/store.ts`).
   `ChatPage` vẽ ở `app/(patient)/layout.tsx` (các page trả `null`) vì page dưới catch-all bị Next dựng lại mỗi lần đổi đường dẫn.
   URL là nguồn quyết định hội thoại đang mở; `store.init()` không tự chọn nữa.
-- Khu bác sĩ: `/doctor` chuyển tới `/doctor/appointments` (Lịch khám); `/doctor/followups` (kênh theo dõi sau khám, `features/followup`);
-  `/doctor/records/<reportId>` (lịch sử khám, màn vẽ ở layout `records`, page trả `null`). Kênh chat bác sĩ–bệnh nhân chỉ có sau khám
-  và gắn với `encounter`; không còn luồng "yêu cầu tư vấn" từ chat AI.
+- Khu bác sĩ: một trang `/doctor` (bảng "Ca khám", `features/appointments/components/DoctorCasesPage.tsx`) trong khung sidebar trái; mỗi dòng ghép
+  lịch hẹn + báo cáo kết luận + kênh theo dõi theo `encounter_id`. Click một lần mở modal tóm tắt (`CaseSummaryDialog`, có nút "Xem chi tiết"), nhấp đúp mở màn chi tiết `/doctor/cases/<appointmentId>` (`AppointmentDetailPage`); trên dòng chỉ có thao tác nhanh theo trạng thái, hồ sơ và kênh chat (khung trượt). Kênh chat
+  bác sĩ–bệnh nhân chỉ có sau khám và gắn với `encounter`; không còn luồng "yêu cầu tư vấn" từ chat AI.
 - `NEXT_PUBLIC_USE_MOCK=true` makes the whole chat UI work from `localStorage` with zero backend
   calls — great for isolated UI work, but don't trust it to validate an integration change (see
   `/run-fe`).
-- Auth is JWT login/register (`features/auth`, backend `/auth/*`): `app/access-gate.tsx` shows `AuthScreen` until `services/client.ts` has a token, which it attaches as `Authorization: Bearer` (interceptor clears it on 401). The server only issues tokens; chat/document routes do not require one yet. Conversations use the logged-in account's id (`getCurrentUserId()` in `services/client.ts`) as `user_id`; logout reloads the page so the chat store never leaks one account's data to the next.
+- Auth is JWT login/register (`features/auth`, backend `/auth/*`): `app/access-gate.tsx` redirects to the area's own login page (`/login`, `/doctor/login`, `/admin/login`, with `?next=` for same-area paths; a logged-in user on a login page is sent to `next` or the area home) until `services/client.ts` has a token for the current **area**, which it attaches as `Authorization: Bearer` (interceptor clears it on 401). Sessions are stored per area (`derma-auth-{patient|doctor|admin}-{access-token|refresh-token|user}`; area = path: `/admin`, `/doctor`, else patient), so login/logout in one area never touches the others; a login whose role belongs to another area is saved there and the gate redirects to that area's home. Register is only offered on `/login`. Login pages live outside the shells via route groups (`app/doctor/(portal)`, `app/admin/(portal)`; `app/login`), so the doctor/admin layouts do not wrap them. Logout goes straight to the area's login page. Old shared `derma-auth-*` keys are migrated into the right area on first read. The server only issues tokens; chat/document routes do not require one yet. Conversations use the logged-in account's id (`getCurrentUserId()` in `services/client.ts`) as `user_id`; logout reloads the page so the chat store never leaks one account's data to the next.
 - `services/chat.sse.ts` uses raw `fetch` + manual SSE frame parsing (`\n\n`-delimited `data:`
   lines), not `EventSource` — because it needs to send a custom `Authorization` header, which
   `EventSource` can't do.

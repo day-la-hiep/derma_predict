@@ -15,7 +15,7 @@ import {
   Stethoscope,
   UserRound,
 } from "lucide-react";
-import { api, setAuthSession } from "@/services/client";
+import { api, setAuthSession, type AuthArea } from "@/services/client";
 
 type AuthMode = "login" | "register";
 
@@ -35,8 +35,15 @@ type AuthResponse = {
 };
 
 type AuthScreenProps = {
-  onAuthenticated: () => void;
+  // khu vực của tài khoản vừa đăng nhập (suy từ vai trò), có thể khác khu của trang đang mở
+  onAuthenticated: (area: AuthArea) => void;
+  // khu bác sĩ / quản trị không cho tự đăng ký
+  allowRegister?: boolean;
+  // khu của trang đăng nhập, chỉ để đổi chữ tiêu đề
+  area?: AuthArea;
 };
+
+const AREA_LABEL: Record<AuthArea, string> = { patient: "Khu vực tài khoản", doctor: "Bác sĩ", admin: "Quản trị" };
 
 const inputClassName =
   "mt-1.5 h-12 w-full rounded-xl border border-input bg-background px-4 text-sm text-foreground shadow-sm shadow-slate-900/[0.02] outline-none transition placeholder:text-muted-foreground/60 focus:border-brand focus:ring-4 focus:ring-brand/10";
@@ -56,7 +63,7 @@ function getErrorMessage(error: unknown): string {
   return "Đã xảy ra lỗi. Vui lòng thử lại.";
 }
 
-export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
+export function AuthScreen({ onAuthenticated, allowRegister = true, area = "patient" }: AuthScreenProps) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -113,12 +120,12 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               gender,
             });
 
-      setAuthSession(
+      const area = setAuthSession(
         response.data.data.access_token,
         response.data.data.refresh_token,
         response.data.data.user
       );
-      onAuthenticated();
+      onAuthenticated(area);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -237,7 +244,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               </div>
               <div>
                 <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-                  Khu vực tài khoản
+                  {AREA_LABEL[area]}
                 </p>
               </div>
             </div>
@@ -252,14 +259,15 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
                   </>
                 ) : (
                   <>
-                    Chào mừng
+                    {area === "patient" ? "Chào mừng" : "Đăng nhập"}
                     <br />
-                    <span className="gradient-text">bạn trở lại.</span>
+                    <span className="gradient-text">{area === "patient" ? "bạn trở lại." : area === "doctor" ? "khu bác sĩ." : "khu quản trị."}</span>
                   </>
                 )}
               </h2>
             </div>
 
+            {allowRegister && (
             <div
               className="mb-6 grid grid-cols-2 gap-1 rounded-xl border border-border bg-muted/70 p-1"
               aria-label="Chọn hình thức tài khoản"
@@ -291,6 +299,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
                 Đăng ký
               </button>
             </div>
+            )}
 
             <form
               key={mode}
@@ -479,6 +488,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               </button>
             </form>
 
+            {allowRegister && (
             <p className="mt-6 text-center text-sm text-muted-foreground">
               {isRegister ? "Đã có tài khoản?" : "Chưa có tài khoản?"}{" "}
               <button
@@ -490,6 +500,7 @@ export function AuthScreen({ onAuthenticated }: AuthScreenProps) {
                 {isRegister ? "Đăng nhập" : "Đăng ký ngay"}
               </button>
             </p>
+            )}
           </div>
         </div>
       </section>

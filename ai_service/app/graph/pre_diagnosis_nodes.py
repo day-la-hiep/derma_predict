@@ -200,7 +200,11 @@ async def reflect(state: PreDiagnosisState, runtime: Runtime[AgentContext]) -> d
     ctx.turn_hypotheses = [
         {
             **{k: h[k] for k in ("disease", "code", "body_site", "confidence", "missing")},
-            "evidence": [{"source": texts[c]["source"], "text": texts[c]["text"][:500]} for c in h["cites"] if c in texts],
+            "evidence": [
+                {"source": texts[c]["source"], "text": texts[c]["text"][:500], **({"ref": texts[c]["ref"]} if texts[c].get("ref") else {})}
+                for c in h["cites"]
+                if c in texts
+            ],
         }
         for h in plan_
     ]

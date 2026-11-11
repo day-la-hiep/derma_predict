@@ -16,13 +16,13 @@ function Body({ encounterId, role }: { encounterId: string; role: "patient" | "d
 }
 
 // Nút + khung trượt mở kênh theo dõi của một lần khám; chỉ mount nội dung khi mở để khỏi nối SSE sớm
-export function FollowupButton({ encounterId, role, className }: { encounterId: string; role: "patient" | "doctor"; className?: string }) {
+export function FollowupButton({ encounterId, role, className, label }: { encounterId: string; role: "patient" | "doctor"; className?: string; label?: string }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <Hint content={role === "patient" ? "Nhắn tin hoặc nhận cuộc gọi từ bác sĩ đã khám cho bạn." : "Mở kênh trao đổi với bệnh nhân sau khám."}>
         <Button size="sm" variant="outline" onClick={() => setOpen(true)} className={className}>
-          <MessageSquareText className="size-4" /> {role === "patient" ? "Trao đổi với bác sĩ" : "Theo dõi"}
+          <MessageSquareText className="size-4" /> {label ?? (role === "patient" ? "Trao đổi với bác sĩ" : "Theo dõi")}
         </Button>
       </Hint>
       <Sheet open={open} onOpenChange={setOpen}>

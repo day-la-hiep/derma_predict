@@ -92,6 +92,7 @@ function adaptSnapshot(raw: any): FinalizeReportSnapshot | null {
       reasoning: raw.assessment?.reasoning ?? "",
       urgency: (raw.assessment?.urgency ?? "monitor") as Urgency,
       instructions: raw.assessment?.instructions ?? [],
+      description: raw.assessment?.description ?? "",
     },
     clinicalFacts: (raw.clinical_facts ?? []).map((f: any) => ({
       factType: (f.fact_type ?? "other") as ClinicalFactType,
@@ -113,6 +114,7 @@ export function adaptFinalizeReport(raw: any): FinalizeReport {
     createdAt: raw.createdAt ?? raw.created_at ?? new Date().toISOString(),
     consultationSessionId: raw.consultation_session_id ?? null,
     conversationId: raw.conversation_id ?? null,
+    encounterId: raw.encounter_id ?? null,
     snapshot: adaptSnapshot(raw.snapshot),
   images: (raw.images ?? []).map((img: any) => ({
     id: img.id ?? "",
@@ -165,10 +167,11 @@ export function toFinalizeBody(body: FinalizeInput) {
     notes: body.notes.trim(),
     is_reference_case: body.isReferenceCase,
     reasoning: body.reasoning.trim(),
+    description: body.description.trim(),
     urgency: body.urgency,
     instructions: body.instructions.map((i) => i.trim()).filter(Boolean),
     facts: body.facts
-      .filter((f) => f.label.trim())
+      .filter((f) => !f.removed && f.label.trim())
       .map((f) => ({
         source_fact_id: f.sourceFactId,
         fact_type: f.factType,

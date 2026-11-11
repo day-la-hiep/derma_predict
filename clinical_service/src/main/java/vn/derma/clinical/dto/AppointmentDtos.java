@@ -2,6 +2,7 @@ package vn.derma.clinical.dto;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -41,7 +42,8 @@ public final class AppointmentDtos {
                                      AppointmentOutput appointment) {
   }
 
-  public record HypothesisEvidenceOutput(String source, String text) {
+  /** `ref` (document_id, chunk_id, page_start, page_end) chỉ có ở bằng chứng sách từ khi có truy vết; ca cũ là null */
+  public record HypothesisEvidenceOutput(String source, String text, Map<String, Object> ref) {
   }
 
   public record HypothesisOutput(int rank, String diagnosisCode, String diagnosisLabel,
