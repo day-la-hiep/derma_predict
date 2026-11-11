@@ -35,7 +35,7 @@ archive/core/       monolith cũ (đóng băng, chỉ để tham khảo/đối c
 deploy/             docker-compose.yml (hạ tầng dev), docker-compose.services.yml (6 service), docker-compose.prod.yml (core cũ), DEPLOY.md
 ml/                 model/ (checkpoint CNN), notebook/ (huấn luyện), data/ (dataset, không theo dõi git)
 report/             báo cáo đồ án: bao_cao_latex/ (LaTeX), vp_derma/ (Visual Paradigm), thi_t_k_database.md
-scripts/            tiện ích: init-service-databases.sh, transfer-data.sh, reset-and-gen-data.sh
+scripts/            tiện ích: init-service-databases.sh, reseed-user-data.sh, transfer-data.sh
 docs/      tài liệu kiến trúc + hướng dẫn chung; docs/notice/ = các lưu ý dễ bỏ sót,
            docs/pending/ = ý tưởng / hướng mở rộng chưa làm (xem mục 8)
 tmp/       nháp / kế hoạch tạm (không theo dõi git)
@@ -156,7 +156,7 @@ Quy tắc dùng chung:
 
 - Thêm một **nghiệp vụ mới** thường là: entity/DTO (`dto/base` — hỏi trước) → model + migration →
   repository → service → endpoint → màn hình FE. Làm trọn một flow rồi mới mở rộng.
-- Khi demo, dữ liệu mẫu nằm ở `archive/core/data_ingest/` và script `scripts/reset-and-gen-data.sh`.
+- Khi demo, dữ liệu mẫu nằm ở `archive/core/data_ingest/`; đặt lại dữ liệu người dùng bằng `make reseed-users`.
 - Ghi chú các điểm **chưa làm / đơn giản hoá có chủ ý** (ví dụ: DB và MinIO không cùng transaction
   thật, không có tài liệu người dùng đăng nhập theo quyền, chưa có job dọn file mồ côi) vào mục
   "Hạn chế" khi viết báo cáo, không cần sửa ngay.

@@ -15,7 +15,7 @@ public interface MessageRepository extends JpaRepository<Message, String> {
     /** Lượt AI đang chạy hoặc đang chờ người dùng trả lời `ask_user`: thay cho khoá Redis `active_turn` của core. */
     boolean existsByConversationIdAndSenderAndStatusIn(String conversationId, String sender, Collection<String> statuses);
 
-    Optional<Message> findFirstByConsultationSessionIdAndMessageTypeOrderByCreatedAtAsc(String sessionId, String messageType);
+    Optional<Message> findFirstByConversationIdOrderByCreatedAtDesc(String conversationId);
 
     List<Message> findBySenderAndStatusInAndCreatedAtBefore(String sender, Collection<String> statuses, java.time.Instant before);
 

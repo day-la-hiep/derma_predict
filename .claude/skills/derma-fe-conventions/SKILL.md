@@ -106,9 +106,9 @@ the hook from a component in `components/`.
 
 Giao diện chỉ giữ **tên gọi ngắn**; hướng dẫn đầy đủ đặt vào hover (`components/ui/hint.tsx` → `<Hint content=...>`).
 
-- **Nút / tab / chip lọc**: 1–2 từ, động từ hoặc danh từ chính ("Nhận ca", "Đóng ca", "Gửi", "Chờ"). Không lặp danh từ
-  đã rõ theo ngữ cảnh ("Nhận ca tư vấn" → "Nhận ca" khi đang ở màn ca tư vấn).
-- **Tiêu đề mục**: ≤ 3 từ ("Ca tư vấn", "Báo cáo", "Dữ kiện"). Không kèm dòng phụ giải thích cố định bên dưới.
+- **Nút / tab / chip lọc**: 1–2 từ, động từ hoặc danh từ chính ("Xác nhận", "Gia hạn", "Gửi", "Chờ"). Không lặp danh từ
+  đã rõ theo ngữ cảnh ("Huỷ lịch khám" → "Huỷ lịch" khi đang ở màn lịch khám).
+- **Tiêu đề mục**: ≤ 3 từ ("Lịch khám", "Báo cáo", "Dữ kiện"). Không kèm dòng phụ giải thích cố định bên dưới.
 - **Trạng thái**: chấm màu + 1 từ ("Chờ", "Đang", "Xong"); nghĩa đầy đủ nằm trong hint.
 - **Placeholder**: ≤ 4 từ. Phím tắt, ràng buộc, hậu quả của hành động → hint của nút, không viết thành đoạn chữ nhỏ phía dưới.
 - **Hint** là câu đầy đủ, nói *việc này làm gì / hậu quả*, tối đa 2 câu. Nút chỉ có icon bắt buộc có `aria-label`
@@ -139,8 +139,9 @@ Giao diện chỉ giữ **tên gọi ngắn**; hướng dẫn đầy đủ đặ
   vào, tự chuyển tới đoạn chat đã nhớ của hồ sơ đang chọn (`lastConversationByProfile` trong `features/patient-profile/store.ts`).
   `ChatPage` vẽ ở `app/(patient)/layout.tsx` (các page trả `null`) vì page dưới catch-all bị Next dựng lại mỗi lần đổi đường dẫn.
   URL là nguồn quyết định hội thoại đang mở; `store.init()` không tự chọn nữa.
-- Khu bác sĩ cùng ý tưởng (`features/doctor/routes.ts`): `/doctor/<sessionId>` (một ca), `/doctor` (cổng vào, ca đã nhớ),
-  `/doctor/records/<reportId>`; màn hình vẽ ở layout của route group `(consult)` và `records`, page trả `null`.
+- Khu bác sĩ: `/doctor` chuyển tới `/doctor/appointments` (Lịch khám); `/doctor/followups` (kênh theo dõi sau khám, `features/followup`);
+  `/doctor/records/<reportId>` (lịch sử khám, màn vẽ ở layout `records`, page trả `null`). Kênh chat bác sĩ–bệnh nhân chỉ có sau khám
+  và gắn với `encounter`; không còn luồng "yêu cầu tư vấn" từ chat AI.
 - `NEXT_PUBLIC_USE_MOCK=true` makes the whole chat UI work from `localStorage` with zero backend
   calls — great for isolated UI work, but don't trust it to validate an integration change (see
   `/run-fe`).

@@ -30,7 +30,7 @@ public class ConversationService {
     }
 
     public List<ConversationOutput> list(String userId) {
-        return conversations.findByUserIdOrderByCreatedAtDesc(userId).stream().map(mapper::toConversationOutput).toList();
+        return conversations.findByUserIdAndKindOrderByCreatedAtDesc(userId, "ai_chat").stream().map(mapper::toConversationOutput).toList();
     }
 
     public ConversationOutput create(String userId, CreateConversationInput input) {

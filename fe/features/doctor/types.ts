@@ -1,9 +1,4 @@
-/**
- * Types cho màn hình bác sĩ — báo cáo tư vấn (consultation report).
- *
- * Map từ database schema: `consultation_sessions`, `pre_consultation_reports`,
- * `clinical_facts`, `clinical_provenances`, `patient_profiles`, `messages`.
- */
+/** Types cho khu bác sĩ: báo cáo kết luận, dữ kiện lâm sàng, hồ sơ bệnh nhân, đồ thị hành trình. */
 
 /* ────────── Patient Profile ────────── */
 
@@ -143,33 +138,6 @@ export interface ClinicalFact {
   updatedAt: string | null;
   sourceMessageIds?: string[];
   sourceMessages?: SnapshotMessage[];
-}
-
-/* ────────── Pre-Consultation Report ────────── */
-
-export interface PreConsultationReport {
-  id: string;
-  summary: string;
-  createdAt: string;
-}
-
-/* ────────── Consultation Session ────────── */
-
-export type ConsultationStatus = "pending" | "active" | "resolved";
-
-export interface ConsultationSession {
-  id: string;
-  conversationId: string;
-  conversationTitle: string;
-  patient: PatientProfile;
-  doctorId: string | null;
-  status: ConsultationStatus;
-  reason: string;
-  requestedAt: string;
-  startedAt: string | null;
-  resolvedAt: string | null;
-  report: PreConsultationReport | null;
-  clinicalFacts: ClinicalFact[];
 }
 
 /* ────────── Chat Message (read-only cho bác sĩ) ────────── */

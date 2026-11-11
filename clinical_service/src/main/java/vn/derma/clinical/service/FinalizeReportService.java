@@ -2,6 +2,7 @@ package vn.derma.clinical.service;
 
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -21,10 +22,10 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import vn.derma.clinical.client.ConsultationClient;
-import vn.derma.clinical.client.ConsultationClient.SessionInfo;
 import vn.derma.clinical.client.IdentityClient;
 import vn.derma.clinical.client.KnowledgeClient;
 import vn.derma.clinical.common.AppException;
+import vn.derma.clinical.config.DermaProperties;
 import vn.derma.clinical.common.ClinicalCodes;
 import vn.derma.clinical.dto.AppointmentDtos.FileDto;
 import vn.derma.clinical.dto.AppointmentDtos.ImagePredictionOutput;
@@ -36,7 +37,6 @@ import vn.derma.clinical.dto.FinalizeDtos.DiagnosisOptionOutput;
 import vn.derma.clinical.dto.FinalizeDtos.DraftFactOutput;
 import vn.derma.clinical.dto.FinalizeDtos.EncounterDraftOutput;
 import vn.derma.clinical.dto.FinalizeDtos.FactInput;
-import vn.derma.clinical.dto.FinalizeDtos.FinalizeDraftOutput;
 import vn.derma.clinical.dto.FinalizeDtos.FinalizeInput;
 import vn.derma.clinical.dto.FinalizeDtos.FinalizeReportItemOutput;
 import vn.derma.clinical.dto.FinalizeDtos.FinalizeReportOutput;
@@ -82,6 +82,7 @@ public class FinalizeReportService {
     private final AppointmentService appointmentService;
     private final IdentityClient identity;
     private final ConsultationClient consultation;
+    private final DermaProperties properties;
     private final KnowledgeClient knowledge;
     private final TransactionTemplate tx;
     private final ObjectMapper json;
@@ -118,18 +119,8 @@ public class FinalizeReportService {
                 .map(mapper::toPatientOutput).toList();
     }
 
-    public List<FinalizeReportOutput> listForSession(String sessionId, String doctorId) {
-        return history(ownedSession(sessionId, doctorId).patientProfileId());
-    }
-
     public JsonNode getJourneyGraph(String profileId) {
         return knowledge.getJourneyGraph(profileId);
-    }
-
-    public FinalizeDraftOutput draftForSession(String sessionId, String doctorId) {
-        SessionInfo session = ownedSession(sessionId, doctorId);
-        List<ClinicalFact> current = currentFacts(session.patientProfileId());
-        return new FinalizeDraftOutput(patientOf(session.patientProfileId(), current), draftFacts(current), suggestions(session.patientProfileId(), current));
     }
 
     public EncounterDraftOutput draftForEncounter(String encounterId, String doctorId) {
@@ -145,28 +136,6 @@ public class FinalizeReportService {
 
     // ---------------------------------------------------------------- chốt
 
-    /** Chốt ca tư vấn: lưu báo cáo, nạp knowledge, rồi báo consultation đóng phiên. Gọi lại khi lần trước đóng phiên lỗi thì chỉ đóng phiên tiếp. */
-    public FinalizeReportOutput finalizeSession(String sessionId, String doctorId, String doctorName, FinalizeInput body) {
-        SessionInfo session = ownedSession(sessionId, doctorId);
-        FinalizeReport existing = reports.findByConsultationSessionId(sessionId).orElse(null);
-        if (existing == null) {
-            if (!"active".equals(session.status()) || !doctorId.equals(session.doctorId())) {
-                throw AppException.conflict("Chỉ chốt được ca bạn đang tư vấn (đã nhận, chưa đóng).");
-            }
-            validateInput(body);
-            IdentityClient.ProfileDetail profile = profileOf(session.patientProfileId());
-            List<ClinicalFact> current = currentFacts(session.patientProfileId());
-            Map<String, ClinicalFact> byId = current.stream().collect(Collectors.toMap(f -> f.id, Function.identity()));
-            Map<String, List<SnapshotProvenance>> sources = provenancesOf(current);
-            Snapshot snapshot = buildSnapshot(profile, body, byId, sources, List.of());
-            Set<String> allowedImages = allowedImageKeys(session.patientProfileId(), sources);
-            existing = tx.execute(status -> store(profile.id(), doctorId, doctorName, body, snapshot, sessionId, session.conversationId(), null, null, allowedImages));
-            publish(existing);
-        }
-        consultation.markSessionFinalized(sessionId, doctorId);
-        return output(existing, imagesOf(List.of(existing)).getOrDefault(existing.id, List.of()));
-    }
-
     /** Một transaction: ghi fact + nhật ký bác sĩ + kết luận, đóng lần khám/lịch hẹn/đợt; sau khi lưu mới nạp knowledge. */
     public FinalizeReportOutput finalizeEncounter(String encounterId, String doctorId, String doctorName, FinalizeInput body) {
         if (body.diagnosisCode() == null || !ClinicalCodes.DIAGNOSIS_CODE_LABELS.containsKey(body.diagnosisCode())) {
@@ -181,6 +150,7 @@ public class FinalizeReportService {
         Map<String, List<SnapshotProvenance>> sources = provenancesOf(before);
         FinalizeReport report = tx.execute(status -> closeEncounter(encounter.id, appointment.id, profile, doctorId, doctorName, body, sources));
         publish(report);
+        consultation.openFollowupUntil(encounterId, profile.id(), doctorId, Instant.now().plus(Duration.ofDays(properties.followupDays())));
         return output(report, imagesOf(List.of(report)).getOrDefault(report.id, List.of()));
     }
 
@@ -253,7 +223,7 @@ public class FinalizeReportService {
         }
         provenances.saveAll(logs);
 
-        FinalizeReport report = store(profile.id(), doctorId, doctorName, body, snapshot, null, null, encounterId, body.diagnosisCode(), allowedImages);
+        FinalizeReport report = store(profile.id(), doctorId, doctorName, body, snapshot, encounterId, body.diagnosisCode(), allowedImages);
         encounter.status = "closed";
         encounter.closedAt = now;
         appointment.status = "done";
@@ -265,8 +235,8 @@ public class FinalizeReportService {
         return report;
     }
 
-    private FinalizeReport store(String profileId, String doctorId, String doctorName, FinalizeInput body, Snapshot snapshot, String sessionId,
-            String conversationId, String encounterId, String diagnosisCode, Set<String> allowedImages) {
+    private FinalizeReport store(String profileId, String doctorId, String doctorName, FinalizeInput body, Snapshot snapshot,
+            String encounterId, String diagnosisCode, Set<String> allowedImages) {
         FinalizeReport report = new FinalizeReport();
         report.patientProfileId = profileId;
         report.doctorId = doctorId;
@@ -274,8 +244,6 @@ public class FinalizeReportService {
         report.diagnosis = body.diagnosis().trim();
         report.notes = body.notes().trim();
         report.referenceCase = body.isReferenceCase();
-        report.consultationSessionId = sessionId;
-        report.conversationId = conversationId;
         report.encounterId = encounterId;
         report.diagnosisCode = diagnosisCode;
         report.snapshot = json.writeValueAsString(snapshot);
@@ -401,14 +369,6 @@ public class FinalizeReportService {
         }
     }
 
-    private SessionInfo ownedSession(String sessionId, String doctorId) {
-        SessionInfo session = consultation.getSession(sessionId);
-        if (session.doctorId() != null && !session.doctorId().equals(doctorId)) {
-            throw AppException.forbidden("Ca tư vấn này đang do bác sĩ khác phụ trách.");
-        }
-        return session;
-    }
-
     private Encounter ownedEncounter(String encounterId, String doctorId) {
         Encounter encounter = encounters.findById(encounterId).orElseThrow(() -> AppException.notFound("lần khám"));
         if (!doctorId.equals(encounter.doctorId)) {
@@ -423,16 +383,6 @@ public class FinalizeReportService {
             throw AppException.notFound("hồ sơ bệnh nhân " + profileId);
         }
         return profile;
-    }
-
-    private PatientProfileDto patientOf(String profileId, List<ClinicalFact> current) {
-        List<ClinicalFact> longTerm = current.stream().filter(f -> f.episodeId == null).toList();
-        return appointmentService.patientDto(profileId, identity.getProfiles(List.of(profileId)).get(profileId), longTerm);
-    }
-
-    /** Fact dài hạn + fact của các đợt đang hoạt động của hồ sơ. */
-    private List<ClinicalFact> currentFacts(String profileId) {
-        return facts.findCurrentWithSite(profileId).stream().map(row -> (ClinicalFact) row[0]).toList();
     }
 
     private List<DraftFactOutput> draftFacts(List<ClinicalFact> list) {

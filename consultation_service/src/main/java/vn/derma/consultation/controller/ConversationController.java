@@ -25,8 +25,8 @@ import vn.derma.consultation.dto.MessageDtos.AnswerInput;
 import vn.derma.consultation.dto.MessageDtos.MessageOutput;
 import vn.derma.consultation.dto.MessageDtos.SendMessageInput;
 import vn.derma.consultation.dto.MessageDtos.SendMessageResult;
-import vn.derma.consultation.service.ConsultationService;
 import vn.derma.consultation.service.ConversationService;
+import vn.derma.consultation.service.FollowupService;
 import vn.derma.consultation.service.MessageService;
 
 @RestController
@@ -36,7 +36,7 @@ public class ConversationController {
 
     private final ConversationService conversations;
     private final MessageService messages;
-    private final ConsultationService consultations;
+    private final FollowupService followups;
 
     @GetMapping("/models")
     ApiResponse<List<ModelOption>> listModels() {
@@ -62,15 +62,15 @@ public class ConversationController {
 
     @GetMapping("/conversations/{conversationId}/messages")
     ApiResponse<List<MessageOutput>> listMessages(@CurrentUser AuthenticatedUser user, @PathVariable String conversationId) {
-        ConsultationService.RoomAccess access = consultations.roomAccess(conversationId, user);
-        return new ApiResponse<>(messages.listForRoom(conversationId, access.until()));
+        followups.requireAccess(conversationId, user);
+        return new ApiResponse<>(messages.listForRoom(conversationId));
     }
 
     @PostMapping("/conversations/{conversationId}/messages")
     @ResponseStatus(HttpStatus.ACCEPTED)
     ApiResponse<SendMessageResult> sendMessage(@CurrentUser AuthenticatedUser user, @PathVariable String conversationId,
             @Valid @RequestBody SendMessageInput body) {
-        return new ApiResponse<>(messages.send(conversationId, user.id(), body));
+        return new ApiResponse<>(messages.send(conversationId, user, body));
     }
 
     @PostMapping("/conversations/{conversationId}/questions/{questionId}/answer")

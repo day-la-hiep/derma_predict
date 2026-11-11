@@ -104,7 +104,7 @@ class CaseSearchTest(unittest.TestCase):
 
 
 class TurnRunnerAndApiTest(unittest.TestCase):
-    def test_dispatches_by_type_and_cancel_stops_running_turn(self) -> None:
+    def test_cancel_stops_running_turn(self) -> None:
         async def scenario() -> tuple[list[str], bool, bool]:
             calls: list[str] = []
             started = asyncio.Event()
@@ -114,9 +114,7 @@ class TurnRunnerAndApiTest(unittest.TestCase):
                 started.set()
                 await asyncio.sleep(30)
 
-            with patch.object(turn_runner, "handle_turn", slow_turn), \
-                    patch.object(turn_runner, "handle_consultation_report", AsyncMock(side_effect=lambda r: calls.append("report"))):
-                await turn_runner.run_turn(make_request(type="consultation_report", message_id="m3"))
+            with patch.object(turn_runner, "handle_turn", slow_turn):
                 task = asyncio.create_task(turn_runner.run_turn(make_request(message_id="m1")))
                 await started.wait()
                 cancelled = turn_runner.cancel_turn("m1")
@@ -126,7 +124,7 @@ class TurnRunnerAndApiTest(unittest.TestCase):
                 return calls, cancelled, turn_runner.cancel_turn("m1")
 
         calls, cancelled, again = asyncio.run(scenario())
-        self.assertEqual(calls, ["report", "turn"])
+        self.assertEqual(calls, ["turn"])
         self.assertEqual((cancelled, again), (True, False))
 
     def test_api_requires_internal_key_and_accepts_turn(self) -> None:

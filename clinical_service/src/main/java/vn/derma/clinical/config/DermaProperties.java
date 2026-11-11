@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "derma")
 public record DermaProperties(Jwt jwt, String internalApiKey, String consultationUrl, String knowledgeUrl, String identityUrl,
-        int episodeExpireDays, Minio minio) {
+        int episodeExpireDays, int followupDays, Minio minio) {
 
     public record Jwt(String secret) {
     }

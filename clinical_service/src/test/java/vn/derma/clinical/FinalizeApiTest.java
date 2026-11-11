@@ -2,11 +2,12 @@ package vn.derma.clinical;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.doThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -197,6 +198,8 @@ class FinalizeApiTest {
         call(get("/api/v1/appointments"), patient, null).andExpect(jsonPath("$.data[0].status").value("done"));
         call(post("/api/v1/doctor/encounters/" + encounter + "/finalize"), doctor, form(draft.get("facts"), "Eczema")).andExpect(status().isConflict());
         verify(knowledge, times(1)).postCase(any(), anyString());
+        // chốt xong thì đặt hạn kênh theo dõi = chốt + 30 ngày (followup-days)
+        verify(consultation).openFollowupUntil(eq(encounter), eq("pp-" + user), eq("doc-f"), argThat(t -> t.isAfter(java.time.Instant.now().plus(java.time.Duration.ofDays(29)))));
 
         // lịch sử: bác sĩ, bệnh nhân (không lộ cờ nội bộ) và danh sách cho knowledge
         call(get("/api/v1/doctor/finalize-reports").param("q", "chàm"), doctor, null).andExpect(jsonPath("$.data[0].patient.full_name").value("Nguyễn Văn A"));
@@ -206,25 +209,5 @@ class FinalizeApiTest {
         call(get("/api/v1/doctor/patient-profiles/pp-" + user + "/finalize-reports"), doctor, null).andExpect(jsonPath("$.data[0].encounter_id").value(encounter));
         mvc.perform(get("/internal/finalize-reports").param("page", "1").param("page_size", "50").header("X-Internal-Key", KEY)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[?(@.report_id=='" + report.get("id").asText() + "')].snapshot.clinical_facts.length()").value(3));
-    }
-
-    @Test
-    void sessionFinalizeNeedsActiveSessionAndRetryOnlyClosesTheSession() throws Exception {
-        String user = "fin-ses", doctor = token("doc-s", "doctor");
-        seedEpisode(user, true);
-        when(consultation.getSession("s1")).thenReturn(new ConsultationClient.SessionInfo("s1", "conv-" + user, "pp-" + user, "doc-s", "BS s", "pending"));
-        JsonNode facts = data(call(get("/api/v1/doctor/consultations/s1/finalize-draft"), doctor, null).andExpect(status().isOk())).get("facts");
-        call(post("/api/v1/doctor/consultations/s1/finalize"), doctor, form(facts, null)).andExpect(status().isConflict());
-
-        when(consultation.getSession("s1")).thenReturn(new ConsultationClient.SessionInfo("s1", "conv-" + user, "pp-" + user, "doc-s", "BS s", "active"));
-        doThrow(vn.derma.clinical.common.AppException.badGateway("mất kết nối")).doNothing().when(consultation).markSessionFinalized("s1", "doc-s");
-        call(post("/api/v1/doctor/consultations/s1/finalize"), doctor, form(facts, null)).andExpect(status().isBadGateway());
-        // báo cáo đã lưu; gọi lại chỉ đóng phiên, không tạo báo cáo thứ hai
-        call(post("/api/v1/doctor/consultations/s1/finalize"), doctor, form(facts, null)).andExpect(status().isCreated()).andExpect(jsonPath("$.data.consultation_session_id").value("s1"));
-        call(get("/api/v1/doctor/consultations/s1/finalize-reports"), doctor, null).andExpect(jsonPath("$.data.length()").value(1));
-        verify(knowledge, times(1)).postCase(any(), anyString());
-
-        when(consultation.getSession("s2")).thenReturn(new ConsultationClient.SessionInfo("s2", "c", "pp-" + user, "doc-khac", "BS", "active"));
-        call(get("/api/v1/doctor/consultations/s2/finalize-draft"), doctor, null).andExpect(status().isForbidden());
     }
 }

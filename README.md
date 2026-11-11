@@ -65,7 +65,7 @@ contracts/             hợp đồng liên service (README.md) + đặc tả rou
 deploy/                docker-compose.yml (hạ tầng), docker-compose.services.yml (6 service), docker-compose.prod.yml (core cũ), DEPLOY.md
 ml/                    model/ (checkpoint CNN), notebook/ (huấn luyện), data/ (dataset, gitignore)
 report/                bao_cao_latex/ (báo cáo), vp_derma/ (Visual Paradigm), thi_t_k_database.md
-scripts/               init-service-databases.sh, transfer-data.sh, reset-and-gen-data.sh
+scripts/               init-service-databases.sh, reseed-user-data.sh, transfer-data.sh
 docs/                  overview/ (tổng quan, bảng DB, yêu cầu), module/, notice/, pending/, benchmark/
 archive/core/          monolith cũ (FastAPI + agent + pipeline), đóng băng
 tmp/                   nháp, kế hoạch tạm (gitignore)

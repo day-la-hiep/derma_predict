@@ -9,7 +9,11 @@ import vn.derma.consultation.entity.Conversation;
 
 public interface ConversationRepository extends JpaRepository<Conversation, String> {
 
-    List<Conversation> findByUserIdOrderByCreatedAtDesc(String userId);
+    List<Conversation> findByUserIdAndKindOrderByCreatedAtDesc(String userId, String kind);
+
+    Optional<Conversation> findByEncounterId(String encounterId);
+
+    List<Conversation> findByDoctorIdAndKindOrderByUpdatedAtDesc(String doctorId, String kind);
 
     Optional<Conversation> findByIdAndUserId(String id, String userId);
 

@@ -73,12 +73,10 @@ class GatewayRoutingTest {
         expect("/api/v1/uploads", "consultation");
         expect("/api/v1/models", "consultation");
         expect("/api/v1/video-calls/ice-config", "consultation");
-        expect("/api/v1/doctor/consultations", "consultation");
-        expect("/api/v1/doctor/consultations/stream", "consultation");
-        expect("/api/v1/doctor/consultations/s1/accept", "consultation");
-        expect("/api/v1/doctor/consultations/s1/finalize", "clinical");
-        expect("/api/v1/doctor/consultations/s1/finalize-draft", "clinical");
-        expect("/api/v1/doctor/consultations/s1/finalize-reports", "clinical");
+        expect("/api/v1/followup-channels/by-encounter/e1", "consultation");
+        expect("/api/v1/doctor/followup-channels", "consultation");
+        expect("/api/v1/doctor/followup-channels/c1/extend", "consultation");
+        expect("/api/v1/conversations/c1/video-calls", "consultation");
         expect("/api/v1/appointments/a1/cancel", "clinical");
         expect("/api/v1/doctor/appointments/a1/start", "clinical");
         expect("/api/v1/doctor/encounters/e1/finalize-draft", "clinical");

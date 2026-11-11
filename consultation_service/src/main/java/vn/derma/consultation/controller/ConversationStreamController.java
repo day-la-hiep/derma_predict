@@ -24,7 +24,7 @@ import vn.derma.consultation.common.AuthenticatedUser;
 import vn.derma.consultation.common.CurrentUser;
 import vn.derma.consultation.config.DermaProperties;
 import tools.jackson.databind.ObjectMapper;
-import vn.derma.consultation.service.ConsultationService;
+import vn.derma.consultation.service.FollowupService;
 import vn.derma.consultation.service.ConversationEvents;
 
 /** SSE dài hạn của hội thoại: đọc Redis Stream (có replay) thay cho Pub/Sub + mẹo hoãn publish của core. */
@@ -38,17 +38,14 @@ public class ConversationStreamController {
     private static final int HEARTBEAT_EVERY_IDLE_READS = 3;
 
     private final StringRedisTemplate redis;
-    private final ConsultationService consultations;
+    private final FollowupService followups;
     private final DermaProperties properties;
     private final ObjectMapper json;
 
     @GetMapping("/conversations/{conversationId}/stream")
     SseEmitter stream(@CurrentUser AuthenticatedUser user, @PathVariable String conversationId,
             @RequestHeader(name = "Last-Event-ID", required = false) String lastEventId) {
-        ConsultationService.RoomAccess access = consultations.roomAccess(conversationId, user);
-        if (access.closed()) {
-            throw AppException.forbidden("Phiên tư vấn của bạn với hội thoại này đã kết thúc.");
-        }
+        followups.requireAccess(conversationId, user);
         // không có Last-Event-ID thì phát lại event trong vài chục giây gần nhất: bù đoạn từ lúc POST tin tới lúc SSE mở
         String startId = lastEventId != null && !lastEventId.isBlank()
                 ? lastEventId
@@ -58,11 +55,11 @@ public class ConversationStreamController {
         emitter.onCompletion(() -> open.set(false));
         emitter.onTimeout(() -> open.set(false));
         emitter.onError(e -> open.set(false));
-        Thread.startVirtualThread(() -> pump(emitter, open, ConversationEvents.streamKey(conversationId), startId, access.doctor()));
+        Thread.startVirtualThread(() -> pump(emitter, open, ConversationEvents.streamKey(conversationId), startId));
         return emitter;
     }
 
-    private void pump(SseEmitter emitter, AtomicBoolean open, String key, String startId, boolean stopAfterResolved) {
+    private void pump(SseEmitter emitter, AtomicBoolean open, String key, String startId) {
         String lastId = startId;
         int idleReads = 0;
         try {
@@ -80,11 +77,6 @@ public class ConversationStreamController {
                     lastId = record.getId().getValue();
                     String event = String.valueOf(record.getValue().get("event"));
                     emitter.send(SseEmitter.event().id(lastId).data(event));
-                    // phiên kết thúc thì bác sĩ không được nhận thêm gì: đóng stream ngay sau event kết thúc đó
-                    if (stopAfterResolved && isSessionResolved(event)) {
-                        emitter.complete();
-                        return;
-                    }
                 }
             }
         } catch (IOException | IllegalStateException e) {
@@ -95,14 +87,5 @@ public class ConversationStreamController {
             return;
         }
         emitter.complete();
-    }
-
-    private boolean isSessionResolved(String event) {
-        try {
-            var node = json.readTree(event);
-            return "consultation.updated".equals(node.path("type").asString("")) && "resolved".equals(node.path("status").asString(""));
-        } catch (RuntimeException e) {
-            return false;
-        }
     }
 }

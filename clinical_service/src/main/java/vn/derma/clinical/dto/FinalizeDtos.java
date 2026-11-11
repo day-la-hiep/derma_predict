@@ -89,9 +89,6 @@ public final class FinalizeDtos {
             List<String> notes) {
     }
 
-    public record FinalizeDraftOutput(PatientProfileDto patient, List<DraftFactOutput> facts, GraphSuggestionOutput suggestions) {
-    }
-
     public record DiagnosisOptionOutput(String code, String label) {
     }
 

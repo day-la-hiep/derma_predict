@@ -42,12 +42,12 @@ class KnowledgeClientTest(unittest.TestCase):
 
 
 class ClinicalAndConsultationClientTest(unittest.TestCase):
-    def test_patient_context_passes_exclude_session(self) -> None:
+    def test_patient_context_hits_internal_endpoint(self) -> None:
         seen: list[httpx.Request] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
             seen.append(request)
-            return httpx.Response(200, json={"data": {"facts": [], "latest_report_summary": None}})
+            return httpx.Response(200, json={"data": {"facts": []}})
 
         asyncio.run(ClinicalClient(make_http(handler)).get_patient_context("pp-1"))
         self.assertEqual(seen[0].url.path, "/internal/patients/pp-1/context")
@@ -55,19 +55,6 @@ class ClinicalAndConsultationClientTest(unittest.TestCase):
     def test_get_conversation_returns_none_when_missing(self) -> None:
         client = ConsultationClient(make_http(lambda r: httpx.Response(404, json={"detail": "x"})))
         self.assertIsNone(asyncio.run(client.get_conversation("c1")))
-
-    def test_session_report_calls_go_to_consultation(self) -> None:
-        seen: list[httpx.Request] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            seen.append(request)
-            return httpx.Response(200, json={"data": {"summary": "báo cáo cũ"}})
-
-        client = ConsultationClient(make_http(handler))
-        self.assertEqual(asyncio.run(client.get_latest_report_summary("pp-1", "s9")), "báo cáo cũ")
-        self.assertEqual((seen[0].url.path, seen[0].url.params["exclude_session_id"]), ("/internal/patients/pp-1/latest-report", "s9"))
-        asyncio.run(client.save_session_report("s9", "tóm tắt", "ready"))
-        self.assertEqual((seen[1].url.path, json.loads(seen[1].content)), ("/internal/sessions/s9/report", {"report_summary": "tóm tắt", "status": "ready"}))
 
     def test_post_turn_result_targets_message(self) -> None:
         seen: list[httpx.Request] = []

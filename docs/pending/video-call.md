@@ -1,6 +1,7 @@
 # [Pending] Gọi thoại / video giữa bác sĩ và bệnh nhân
 
 > **Trạng thái:** giai đoạn 1–4 đã cài (xem [notice](../notice/video-call.md)); chọn phương án không đổi schema (giữ 3 trạng thái, bác sĩ khởi tạo).
+> Cuộc gọi nay gắn với **kênh theo dõi sau khám** (`conversation_id`), không còn phiên tư vấn; chỉ bác sĩ của kênh gọi được, khi kênh còn mở.
 > Còn lại: kiểm thử trình duyệt thật, TURN khác mạng, hết giờ phía server, thông báo cuộc gọi đến ngoài hội thoại đang mở.
 
 ## Hiện trạng

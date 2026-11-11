@@ -1,20 +1,9 @@
-/**
- * API client cho module Bác sĩ tư vấn & Báo cáo AI.
- *
- * Tuân thủ quy ước derma-fe-conventions:
- * - Dùng axios instance từ `@/services/client` (đã có gắn sẵn Authorization token).
- * - unwrap response bọc qua `{ data: T }` của FastAPI.
- * - Chỉ dùng Mock Data khi NEXT_PUBLIC_USE_MOCK=true; lỗi thật (401/403/mạng) được ném ra để UI báo.
- */
 // adapter nhận payload thô (snake_case từ backend hoặc camelCase từ mock) nên cố ý để `any`
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from "axios";
 import { api } from "@/services/client";
 import type {
-  ClinicalFact,
   ClinicalFactType,
-  ConsultationSession,
-  ConsultationStatus,
   FinalizeReportItem,
   DoctorViewMessage,
   FactOrigin,
@@ -23,13 +12,12 @@ import type {
   FinalizeReport,
   FinalizeReportSnapshot,
   PatientProfile,
-  PreConsultationReport,
   ProfileRelationship,
   SnapshotMessage,
   Urgency,
   PatientJourneyGraph,
 } from "./types";
-import { MOCK_SESSIONS, MOCK_MESSAGES, getMockPatientJourneyGraph } from "./mockData";
+import { getMockPatientJourneyGraph } from "./mockData";
 
 /** Trích xuất thông báo lỗi chuẩn từ FastAPI detail */
 export function errorMessage(e: unknown): string {
@@ -66,53 +54,6 @@ export function adaptPatient(raw: any): PatientProfile {
     phone: raw?.phone ?? null,
     allergies: raw?.allergies ?? "",
     medicalHistory: raw?.medicalHistory ?? raw?.medical_history ?? "",
-  };
-}
-
-/** Chuyển đổi dữ liệu từ backend (snake_case) hoặc mock (camelCase) sang kiểu frontend chuẩn */
-export function adaptSession(raw: any): ConsultationSession {
-  const patient = adaptPatient(raw.patient);
-
-  const rawFacts: any[] = raw.clinicalFacts ?? raw.clinical_facts ?? [];
-  const clinicalFacts: ClinicalFact[] = rawFacts.map((f: any) => ({
-    id: f.id ?? "",
-    templateLabel: f.templateLabel ?? f.template_label ?? "Dữ kiện lâm sàng",
-    factType: (f.factType ?? f.fact_type ?? "other") as ClinicalFactType,
-    detail: f.detail ?? "",
-    verifiedAt: f.verifiedAt ?? f.verified_at ?? null,
-    createdAt: f.createdAt ?? f.created_at ?? new Date().toISOString(),
-    updatedAt: f.updatedAt ?? f.updated_at ?? null,
-    sourceMessageIds: f.sourceMessageIds ?? f.source_message_ids ?? [],
-    sourceMessages: (f.sourceMessages ?? f.source_messages ?? []).map((m: any) => ({
-      id: m.id ?? "",
-      sender: m.sender ?? "patient",
-      content: m.content ?? "",
-      files: m.files ?? [],
-      createdAt: m.createdAt ?? m.created_at ?? null,
-    })),
-  }));
-
-  const report: PreConsultationReport | null = raw.report
-    ? {
-        id: raw.report.id ?? "",
-        summary: raw.report.summary ?? "",
-        createdAt: raw.report.createdAt ?? raw.report.created_at ?? new Date().toISOString(),
-      }
-    : null;
-
-  return {
-    id: raw.id,
-    conversationId: raw.conversationId ?? raw.conversation_id ?? "",
-    conversationTitle: raw.conversationTitle ?? raw.conversation_title ?? "Tư vấn da liễu",
-    patient,
-    doctorId: raw.doctorId ?? raw.doctor_id ?? null,
-    status: (raw.status ?? "pending") as ConsultationStatus,
-    reason: raw.reason ?? "",
-    requestedAt: raw.requestedAt ?? raw.requested_at ?? new Date().toISOString(),
-    startedAt: raw.startedAt ?? raw.started_at ?? null,
-    resolvedAt: raw.resolvedAt ?? raw.resolved_at ?? null,
-    report,
-    clinicalFacts,
   };
 }
 
@@ -244,29 +185,8 @@ export function toFinalizeBody(body: FinalizeInput) {
 }
 
 export const doctorApi = {
-  /** Lấy danh sách phiên tư vấn */
-  async listSessions(): Promise<ConsultationSession[]> {
-    if (USE_MOCK) return MOCK_SESSIONS;
-    const raw = await unwrap<any[]>(api.get("/doctor/consultations"));
-    return Array.isArray(raw) ? raw.map(adaptSession) : [];
-  },
-
-  /** Lấy chi tiết một phiên tư vấn (kèm dữ kiện lâm sàng và báo cáo AI) */
-  async getSession(sessionId: string): Promise<ConsultationSession | null> {
-    if (USE_MOCK) {
-      return MOCK_SESSIONS.find((s) => s.id === sessionId) ?? null;
-    }
-    const raw = await unwrap<any>(
-      api.get(`/doctor/consultations/${encodeURIComponent(sessionId)}`)
-    );
-    return raw ? adaptSession(raw) : null;
-  },
-
   /** Lấy lịch sử tin nhắn của cuộc hội thoại */
   async getMessages(conversationId: string): Promise<DoctorViewMessage[]> {
-    if (USE_MOCK) {
-      return MOCK_MESSAGES[conversationId] ?? [];
-    }
     const raw = await unwrap<unknown[]>(
       api.get(`/conversations/${encodeURIComponent(conversationId)}/messages`)
     );
@@ -307,84 +227,6 @@ export const doctorApi = {
     };
   },
 
-  /** Bác sĩ nhận tiếp quản ca tư vấn */
-  async acceptSession(sessionId: string): Promise<ConsultationSession | null> {
-    if (USE_MOCK) return null;
-    const raw = await unwrap<Record<string, unknown>>(
-      api.post(`/doctor/consultations/${encodeURIComponent(sessionId)}/accept`)
-    );
-    return raw ? adaptSession(raw) : null;
-  },
-
-  /** Bác sĩ hoàn thành & đóng phiên tư vấn */
-  async resolveSession(sessionId: string): Promise<ConsultationSession | null> {
-    if (USE_MOCK) return null;
-    const raw = await unwrap<Record<string, unknown>>(
-      api.post(`/doctor/consultations/${encodeURIComponent(sessionId)}/resolve`)
-    );
-    return raw ? adaptSession(raw) : null;
-  },
-
-  /** Bác sĩ gửi tin nhắn phản hồi tới bệnh nhân */
-  async sendDoctorMessage(
-    sessionId: string,
-    conversationId: string,
-    content: string
-  ): Promise<DoctorViewMessage> {
-    const fallbackMessage: DoctorViewMessage = {
-      id: `msg-doc-${Date.now()}`,
-      conversationId,
-      sender: "doctor",
-      messageType: "text",
-      content,
-      createdAt: new Date().toISOString(),
-    };
-
-    if (USE_MOCK) return fallbackMessage;
-
-    const res = await unwrap<{
-      id: string;
-      conversation_id?: string;
-      content: string;
-      created_at?: string;
-    }>(
-      api.post(`/doctor/consultations/${encodeURIComponent(sessionId)}/reply`, {
-        content,
-      })
-    );
-    return {
-      id: res.id,
-      conversationId: res.conversation_id ?? conversationId,
-      sender: "doctor",
-      messageType: "text",
-      content: res.content,
-      createdAt: res.created_at ?? new Date().toISOString(),
-    };
-  },
-
-  /** Lịch sử báo cáo kết luận của bệnh nhân thuộc phiên này (mọi lần khám) */
-  async listFinalizeReports(sessionId: string): Promise<FinalizeReport[]> {
-    if (USE_MOCK) return [];
-    const raw = await unwrap<any[]>(
-      api.get(`/doctor/consultations/${encodeURIComponent(sessionId)}/finalize-reports`)
-    );
-    return Array.isArray(raw) ? raw.map(adaptFinalizeReport) : [];
-  },
-
-  /** Dữ liệu điền sẵn form chốt: hồ sơ + dữ kiện đang hiệu lực kèm tin nguồn */
-  async getFinalizeDraft(sessionId: string): Promise<FinalizeDraft> {
-    const raw = await unwrap<any>(api.get(`/doctor/consultations/${encodeURIComponent(sessionId)}/finalize-draft`));
-    return adaptDraft(raw);
-  },
-
-  /** Chốt báo cáo kết luận cho ca đang tư vấn và đóng ca (một giao dịch) */
-  async finalizeSession(sessionId: string, body: FinalizeInput): Promise<FinalizeReport> {
-    const raw = await unwrap<any>(
-      api.post(`/doctor/consultations/${encodeURIComponent(sessionId)}/finalize`, toFinalizeBody(body))
-    );
-    return adaptFinalizeReport(raw);
-  },
-
   /** Lịch sử khám: báo cáo kết luận do chính bác sĩ đang đăng nhập chốt */
   async listMyFinalizeReports(q: string): Promise<FinalizeReportItem[]> {
     if (USE_MOCK) return [];
@@ -399,19 +241,6 @@ export const doctorApi = {
       api.get(`/doctor/patient-profiles/${encodeURIComponent(profileId)}/finalize-reports`)
     );
     return Array.isArray(raw) ? raw.map(adaptFinalizeReport) : [];
-  },
-
-  /** Bệnh nhân gửi yêu cầu bác sĩ tư vấn & AI tự động bóc tách dữ kiện sinh báo cáo */
-  async requestConsultation(
-    conversationId: string,
-    reason: string
-  ): Promise<ConsultationSession> {
-    const raw = await unwrap<any>(
-      api.post(`/conversations/${encodeURIComponent(conversationId)}/request-consultation`, {
-        reason,
-      })
-    );
-    return adaptSession(raw);
   },
 
   /** Lấy đồ thị hành trình bệnh nhân (Personal Knowledge Graph qua các phiên) */

@@ -196,8 +196,6 @@ const STREAM_EVENT_KEYS: Record<string, string> = {
   step_id: "stepId",
   step_type: "stepType",
   document_id: "documentId",
-  session_id: "sessionId",
-  doctor_id: "doctorId",
 };
 
 /** Event SSE từ Core (snake_case, `agent/turn.py`, `agent/middleware/*.py`) -> `ChatStreamEvent` của UI. */

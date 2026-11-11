@@ -15,6 +15,8 @@ import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
@@ -214,6 +216,13 @@ public class AppointmentService {
         encounter.doctorId = doctorId;
         encounter.openedAt = Instant.now();
         encounters.save(encounter);
+        // gọi mạng sau khi commit để không giữ kết nối DB; lỗi thì kênh được tạo bù lúc chốt kết luận
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                consultation.openFollowupChannel(encounter.id, appointment.patientProfileId, doctorId);
+            }
+        });
         return detailOf(appointment);
     }
 

@@ -18,15 +18,13 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * SSE dài hạn trên Redis Pub/Sub cho thứ chỉ cần tức thời, mất cũng không sao vì người dùng tải lại qua REST:
- * hộp thư ca của bác sĩ (`doctor:inbox`) và sự kiện cuộc gọi của từng tài khoản (`user:calls:{id}`).
+ * sự kiện cuộc gọi của từng tài khoản (`user:calls:{id}`).
  * Container Pub/Sub chỉ tạo khi có người đầu tiên mở SSE.
  */
 @Component
 @Slf4j
 @AllArgsConstructor
 public class PubSubStreams {
-
-    public static final String DOCTOR_INBOX = "doctor:inbox";
 
     public static String userCallsChannel(String userId) {
         return "user:calls:" + userId;

@@ -212,8 +212,8 @@ cd consultation_service && ./mvnw -q -B clean test
 cd clinical_service && ./mvnw -q -B clean test
 cd gateway_service && ./mvnw -q -B clean test
 cd shared && uv run python -m unittest tests.test_shared
-cd ai_service && uv run python -m unittest discover -s tests -t . && uv run python -m unittest discover -s agent/graph/tests -t .
-cd knowledge_service && uv run python -m unittest discover -s tests -t . && uv run python -m unittest discover -s pipeline/document_ingest/tests -t .
+cd ai_service && uv run python -m unittest discover -s tests -t .
+cd knowledge_service && uv run python -m unittest discover -s tests -t .
 cd fe && pnpm lint
 ```
 

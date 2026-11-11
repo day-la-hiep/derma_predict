@@ -1,8 +1,8 @@
 """Test bước Trích quan hệ (graph) và Lưu vào đồ thị (graph_index): LLM giả, từ điển nhỏ, Neo4j giả trong bộ nhớ.
 
-python -m unittest pipeline.document_ingest.tests.test_graph -v"""
+python -m unittest tests.pipeline.document_ingest.test_graph -v"""
 
-from app.pipeline.document_ingest.tests.memory_infra import MemoryBlobCache
+from tests.pipeline.document_ingest.memory_infra import MemoryBlobCache
 import json
 import unittest
 from pathlib import Path
@@ -18,7 +18,7 @@ from app.pipeline.document_ingest.graph_link import EntityLexicon, LexEntry
 from app.dto.base.document import DocumentChunk
 from app.pipeline.document_ingest.stages import StageError
 from app.pipeline.document_ingest.stages.step5_graph import EXTRACT_PROMPT, PICK_PROMPT, pick_units, split_units
-from app.pipeline.document_ingest.tests.test_document_pipeline import Base, FakeEmbedding
+from tests.pipeline.document_ingest.test_document_pipeline import Base, FakeEmbedding
 
 IMPETIGO = ("Chốc là bệnh nhiễm khuẩn nông của da. Tổn thương ban đầu là bọng nước nông, dễ vỡ, để lại vảy tiết màu vàng mật ong. "
             "Điều trị bằng mupirocin bôi tại chỗ. Bệnh có thể gây viêm cầu thận cấp. Hay gặp ở trẻ nhỏ.")

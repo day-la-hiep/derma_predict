@@ -1,7 +1,7 @@
 """Test lớp API/service của luồng mục lục (không cần DB/RabbitMQ: chỉ mount router này).
 
 Bước được chạy trong backend ở thread nền (không còn CLI/subprocess); logic từng bước đã có test_document_pipeline.
-    python -m unittest pipeline.document_ingest.tests.test_api -v"""
+    python -m unittest tests.pipeline.document_ingest.test_api -v"""
 
 import io
 import json
@@ -17,7 +17,7 @@ from pypdf import PdfWriter
 from app.api.document_api import router
 from app.api.deps import get_document_service, get_document_ingest_pipeline_service, require_admin
 
-from app.pipeline.document_ingest.tests.test_document_pipeline import Base
+from tests.pipeline.document_ingest.test_document_pipeline import Base
 
 
 def _pdf(pages: int = 3) -> bytes:

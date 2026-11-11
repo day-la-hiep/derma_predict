@@ -17,13 +17,12 @@ Hợp đồng liên service: `contracts/README.md`. Quy ước làm việc: skil
 - **Id mềm, không FK chéo service.** `patient_profile_id`, `doctor_id`, `message_id`... chỉ là chuỗi. Xoá/đổi ở service này
   không tự lan sang service kia; identity hỏi `has-data` của consultation và clinical trước khi cho xoá hồ sơ.
 - **Không có transaction phân tán, không outbox.** Chốt báo cáo kết luận lưu ở clinical trước, rồi mới gọi knowledge (`POST /internal/cases`)
-  và consultation (`/internal/sessions/{id}/finalized`). Gọi knowledge lỗi chỉ ghi log, ca thiếu trong Qdrant được bù bằng
-  `POST /internal/cases/reindex`. Đóng phiên lỗi trả 502; bác sĩ gửi lại thì clinical không tạo báo cáo thứ hai, chỉ đóng phiên tiếp.
-- **Route `/doctor/consultations/{id}/finalize*` thuộc clinical**, còn `/doctor/consultations/**` còn lại thuộc consultation. Gateway xếp route
-  clinical trước. Tương tự `/patient-profiles/{id}/episodes|finalize-reports` thuộc clinical, phần còn lại của `/patient-profiles` thuộc identity.
+  và consultation (đặt hạn kênh theo dõi). Gọi knowledge hoặc consultation lỗi chỉ ghi log, không rollback báo cáo; ca thiếu trong Qdrant được bù bằng
+  `POST /internal/cases/reindex`.
+- **Route `/patient-profiles/{id}/episodes|finalize-reports` thuộc clinical**, phần còn lại của `/patient-profiles` thuộc identity; `/doctor/encounters/**` thuộc clinical còn `/doctor/followup-channels/**` thuộc consultation. Gateway xếp route clinical trước.
 - **Ảnh đính kèm báo cáo:** field `file_id` của form chốt nay là `storage_key` của ảnh. Clinical chỉ nhận ảnh nằm trong tin nguồn của fact hoặc
   ảnh đã phân loại của đợt bệnh; khoá lạ bị bỏ (có `warning`).
-- **SSE chat** đi bằng Redis Stream `conversation:events:{id}` (replay 30 giây); FE gửi `Last-Event-ID` khi nối lại. Pub/Sub chỉ còn cho `doctor:inbox` và `user:calls:{id}`.
+- **SSE chat** đi bằng Redis Stream `conversation:events:{id}` (replay 30 giây); FE gửi `Last-Event-ID` khi nối lại. Pub/Sub chỉ còn cho `user:calls:{id}`.
 - **Java gọi Python phải ép HTTP/1.1** (`Http11`), nếu không JDK nâng lên h2c và uvicorn mất body POST.
 - **Gateway dùng Spring Boot 4.0.6** (Spring Cloud 2025.1 chưa hỗ trợ 4.1); các service Spring còn lại dùng 4.1.2.
 - **DB:** một Postgres, năm database (`make services-db`); dữ liệu cũ trong `derma_hospital_db` không bị đụng, và chưa có script chuyển dữ liệu

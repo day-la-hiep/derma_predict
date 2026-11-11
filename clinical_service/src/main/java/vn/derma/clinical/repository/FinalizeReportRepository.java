@@ -14,7 +14,6 @@ public interface FinalizeReportRepository extends JpaRepository<FinalizeReport, 
 
     boolean existsByEncounterId(String encounterId);
 
-    Optional<FinalizeReport> findByConsultationSessionId(String consultationSessionId);
 
     List<FinalizeReport> findByDoctorIdOrderByCreatedAtDesc(String doctorId);
 

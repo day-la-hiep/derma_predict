@@ -11,25 +11,22 @@ import org.springframework.transaction.annotation.Transactional;
 import vn.derma.consultation.common.AppException;
 import vn.derma.consultation.dto.VideoCallDtos.VideoCallOutput;
 import vn.derma.consultation.mapper.ConsultationMapper;
-import vn.derma.consultation.entity.ConsultationSession;
 import vn.derma.consultation.entity.Conversation;
 import vn.derma.consultation.entity.Message;
 import vn.derma.consultation.entity.VideoCall;
-import vn.derma.consultation.repository.ConsultationSessionRepository;
 import vn.derma.consultation.repository.ConversationRepository;
 import vn.derma.consultation.repository.MessageRepository;
 import vn.derma.consultation.repository.VideoCallRepository;
 
-/** Vòng đời cuộc gọi giữa bác sĩ (bên gọi) và chủ hội thoại (bên nhận); signaling WebRTC chuyển qua Pub/Sub riêng của từng tài khoản. */
+/** Vòng đời cuộc gọi giữa bác sĩ của kênh theo dõi (bên gọi) và bệnh nhân chủ kênh (bên nhận); signaling WebRTC chuyển qua Pub/Sub riêng của từng tài khoản. */
 @Service
 @AllArgsConstructor
 public class VideoCallService {
 
-    private record Participants(ConsultationSession session, VideoCall call, String doctorId, String patientId) {
+    private record Participants(Conversation channel, VideoCall call, String doctorId, String patientId) {
     }
 
     private final VideoCallRepository calls;
-    private final ConsultationSessionRepository sessions;
     private final ConversationRepository conversations;
     private final MessageRepository messages;
     private final MessageService messageService;
@@ -39,20 +36,22 @@ public class VideoCallService {
 
     @Transactional
     public VideoCallOutput start(String conversationId, String userId, String mode) {
-        ConsultationSession session = sessions.findFirstByConversationIdAndStatusNot(conversationId, "resolved")
-                .filter(s -> "active".equals(s.status)).orElseThrow(() -> AppException.conflict("Chỉ gọi được khi bác sĩ đang tư vấn trong hội thoại này."));
-        String patientId = patientOf(session);
-        if (!userId.equals(session.doctorId)) {
-            throw AppException.forbidden("Chỉ bác sĩ phụ trách mới được khởi tạo cuộc gọi.");
+        Conversation channel = conversations.findById(conversationId).filter(c -> FollowupService.FOLLOWUP.equals(c.kind))
+                .orElseThrow(() -> AppException.notFound("kênh theo dõi"));
+        if (!userId.equals(channel.doctorId)) {
+            throw AppException.forbidden("Chỉ bác sĩ của lần khám mới được khởi tạo cuộc gọi.");
         }
-        if (calls.findFirstByConsultationSessionIdAndStatusNot(session.id, "ended").isPresent()) {
-            throw AppException.conflict("Phiên này đang có một cuộc gọi chưa kết thúc.");
+        if (!FollowupService.isOpen(channel)) {
+            throw AppException.conflict("Kênh theo dõi đã hết hạn nên không gọi được.");
+        }
+        if (calls.findFirstByConversationIdAndStatusNot(conversationId, "ended").isPresent()) {
+            throw AppException.conflict("Kênh này đang có một cuộc gọi chưa kết thúc.");
         }
         VideoCall call = new VideoCall();
-        call.consultationSessionId = session.id;
+        call.conversationId = conversationId;
         calls.save(call);
-        VideoCallOutput output = mapper.toVideoCallOutput(call, session);
-        notify(session.doctorId, patientId, Map.of("type", "call.ringing", "mode", mode == null ? "audio" : mode, "call", output), null);
+        VideoCallOutput output = mapper.toVideoCallOutput(call, channel);
+        notify(channel.doctorId, channel.userId, Map.of("type", "call.ringing", "mode", mode == null ? "audio" : mode, "call", output), null);
         return output;
     }
 
@@ -68,8 +67,8 @@ public class VideoCallService {
         p.call().status = "ongoing";
         p.call().startedAt = Instant.now();
         calls.save(p.call());
-        VideoCallOutput output = mapper.toVideoCallOutput(p.call(), p.session());
-        postLine(p.call(), p.session(), "Cuộc gọi bắt đầu");
+        VideoCallOutput output = mapper.toVideoCallOutput(p.call(), p.channel());
+        postLine(p.call(), p.channel(), "Cuộc gọi bắt đầu");
         notify(p.doctorId(), p.patientId(), Map.of("type", "call.accepted", "call", output), null);
         return output;
     }
@@ -79,15 +78,15 @@ public class VideoCallService {
         Participants p = load(callId, userId);
         VideoCall call = p.call();
         if ("ended".equals(call.status)) {
-            return mapper.toVideoCallOutput(call, p.session()); // hai bên cùng bấm kết thúc: lần sau không lỗi
+            return mapper.toVideoCallOutput(call, p.channel()); // hai bên cùng bấm kết thúc: lần sau không lỗi
         }
         String reason = "ongoing".equals(call.status) ? "ended" : userId.equals(p.patientId()) ? "rejected" : missed ? "missed" : "cancelled";
         Instant startedAt = call.startedAt;
         call.status = "ended";
         call.endedAt = Instant.now();
         calls.save(call);
-        VideoCallOutput output = mapper.toVideoCallOutput(call, p.session());
-        postLine(call, p.session(), endText(call, reason, startedAt));
+        VideoCallOutput output = mapper.toVideoCallOutput(call, p.channel());
+        postLine(call, p.channel(), endText(call, reason, startedAt));
         notify(p.doctorId(), p.patientId(), Map.of("type", "call.ended", "reason", reason, "ended_by", userId, "call", output), null);
         return output;
     }
@@ -103,21 +102,16 @@ public class VideoCallService {
 
     private Participants load(String callId, String userId) {
         VideoCall call = calls.findById(callId).orElseThrow(() -> AppException.notFound("cuộc gọi"));
-        ConsultationSession session = sessions.findById(call.consultationSessionId).orElseThrow(() -> AppException.notFound("cuộc gọi"));
-        String patientId = patientOf(session);
-        if (!userId.equals(session.doctorId) && !userId.equals(patientId)) {
+        // cuộc gọi của phiên cũ không gắn kênh theo dõi (conversation_id null hoặc trỏ hội thoại AI) nên coi như không tồn tại
+        Conversation channel = call.conversationId == null ? null
+                : conversations.findById(call.conversationId).filter(c -> FollowupService.FOLLOWUP.equals(c.kind)).orElse(null);
+        if (channel == null) {
+            throw AppException.notFound("cuộc gọi");
+        }
+        if (!userId.equals(channel.doctorId) && !userId.equals(channel.userId)) {
             throw AppException.forbidden("Bạn không thuộc cuộc gọi này.");
         }
-        return new Participants(session, call, session.doctorId, patientId);
-    }
-
-    /** Bên nhận là chủ hội thoại; phiên chưa có bác sĩ thì chưa gọi được. */
-    private String patientOf(ConsultationSession session) {
-        Conversation conversation = conversations.findById(session.conversationId).orElse(null);
-        if (session.doctorId == null || conversation == null) {
-            throw AppException.conflict("Phiên tư vấn chưa có bác sĩ nhận nên chưa gọi được.");
-        }
-        return conversation.userId;
+        return new Participants(channel, call, channel.doctorId, channel.userId);
     }
 
     /** Event cuộc gọi đi theo kênh riêng của từng người (không qua stream hội thoại) để nhận được ở mọi trang. */
@@ -142,16 +136,16 @@ public class VideoCallService {
     }
 
     /** Tin hệ thống trong luồng chat; mỗi mốc (bắt đầu, kết thúc) là một tin riêng, không sửa lại sau. */
-    private void postLine(VideoCall call, ConsultationSession session, String content) {
+    private void postLine(VideoCall call, Conversation channel, String content) {
         Message line = new Message();
-        line.conversationId = session.conversationId;
+        line.conversationId = channel.id;
         line.sender = "doctor";
         line.messageType = "video_call";
         line.videoCallId = call.id;
         line.content = content;
         line.status = "done";
         messages.save(line);
-        events.publish(session.conversationId, Map.of("type", "message.created", "message", messageService.toOutput(line, java.util.List.of(), call)));
+        events.publish(channel.id, Map.of("type", "message.created", "message", messageService.toOutput(line, java.util.List.of(), call)));
     }
 
 }

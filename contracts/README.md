@@ -34,17 +34,15 @@ Không qua gateway; mọi lời gọi kèm header `X-Internal-Key` (cấu hình 
 | ai | `POST /internal/turns` (202) | nhận `TurnRequest` (chỉ id + nội dung + file; **không** mang context), chạy nền |
 | ai | `POST /internal/turns/{message_id}/cancel` | dừng lượt: `{cancelled: bool}` |
 | identity | `GET /internal/patient-profiles/resolve?user_id=&profile_id=` | consultation xác định hồ sơ của tài khoản (bỏ `profile_id` = hồ sơ đầu tiên): `data: {id, user_id, full_name}`; 404 nếu không có/không phải của tài khoản |
-| identity | `GET /internal/users/{id}` | tên và vai trò tài khoản: `data: {id, full_name, role}`; 404 nếu không có (consultation lưu sẵn tên bác sĩ khi nhận ca) |
+| identity | `GET /internal/users/{id}` | tên và vai trò tài khoản: `data: {id, full_name, role}`; 404 nếu không có (consultation lấy tên bác sĩ cho kênh theo dõi) |
 | identity | `GET /internal/patient-profiles?ids=a,b` | thông tin nhiều hồ sơ cùng lúc: `data: [{id, user_id, full_name, dob, gender, relationship, phone}]` (id không tồn tại thì bỏ qua) |
 | consultation | `GET /internal/conversations/{id}` | agent lấy `{user_id, patient_profile_id, model}` của hội thoại (`model` là id ngắn như `gemma4-26b`); 404 khi không còn |
 | consultation | `POST /internal/turns/{message_id}/result` | agent trả kết quả cuối: `conversation_id`, `content`, `status` (`done`\|`question`), `choice`, `reasoning` |
 | consultation | `GET /internal/conversations/{id}/history` | agent kéo lịch sử tin: `data: [{sender, content, message_type}]`, cũ trước |
-| consultation | `GET /internal/sessions/{id}` | clinical kiểm quyền chốt báo cáo: `data: {id, conversation_id, patient_profile_id, doctor_id, doctor_name, status}`; 404 nếu không có |
-| consultation | `POST /internal/sessions/{id}/finalized` | clinical báo đã chốt báo cáo → đóng phiên (thay `announce_finalized`) |
 | clinical | `GET /internal/patients/{id}/context` | agent kéo `data: {facts: [{label, fact_type, detail, body_site}]}` (fact dài hạn + đợt đang hoạt động) |
-| consultation | `GET /internal/patients/{id}/latest-report?exclude_session_id=` | agent kéo `data: {summary: str\|null}`: báo cáo tiền tư vấn gần nhất của hồ sơ, trừ phiên đang sinh báo cáo |
 | clinical | `POST /internal/episodes/apply-turn` | agent ghi kết quả lâm sàng của lượt: `{conversation_id, message_id, patient_profile_id, facts, hypotheses, image_predictions}` (dạng phần tử như `AgentResponseMessage` cũ) |
-| consultation | `POST /internal/sessions/{id}/report` | agent ghi báo cáo tiền tư vấn (consultation sở hữu bảng `pre_consultation_reports` và báo cho bác sĩ/bệnh nhân): `{report_summary, status: ready\|failed}` (fact đã ghi sau mỗi lượt chat nên không còn `facts`/`provenance_pairs`) |
+| consultation | `POST /internal/encounters/{id}/followup-channel` | clinical mở kênh chat theo dõi khi bắt đầu khám: body `{patient_profile_id, doctor_id}` → `data: {conversation_id}`; idempotent theo lần khám |
+| consultation | `PUT /internal/encounters/{id}/followup-channel/until` | clinical đặt hạn kênh khi chốt kết luận: body `{followup_until}` (ISO, = chốt + `derma.followup-days`, mặc định 30 ngày) |
 | clinical | `GET /internal/patients/long-term-facts?profile_ids=a,b` | identity lấy fact dài hạn (dị ứng/tiền sử/thuốc) để ghép vào hồ sơ: `data: {profileId: [{id, fact_type, label, detail, verified_at}]}` |
 | clinical | `PUT /internal/patients/{id}/long-term-facts` | identity thay toàn bộ fact dài hạn: body `{facts: [{fact_type, label, detail}]}` → `data: [fact]` |
 | clinical, consultation | `GET /internal/patients/{id}/has-data` | identity hỏi hồ sơ đã có báo cáo/hội thoại chưa trước khi xoá: `data: {has_data: bool}` |
@@ -59,14 +57,13 @@ Không qua gateway; mọi lời gọi kèm header `X-Internal-Key` (cấu hình 
 - Hợp đồng cũ `agent_request_queue` / `agent_response_queue` / `finalize_report_finalized` **bỏ**. `AgentResponseMessage` cũ tách làm hai: phần cho consultation (nội dung, trạng thái, choice, reasoning) và phần cho clinical (facts, hypotheses, image_predictions, báo cáo). `messages.schema.json` sinh từ `archive/core/` vẫn là bản cũ, dùng để đối chiếu; schema mới định nghĩa trong từng service.
 - RabbitMQ chỉ còn `document_ingest_queue`, nội bộ `knowledge` (Python ⇄ Python).
 - "Hội thoại đang có lượt chạy" = tồn tại tin assistant `queued`/`question` trong DB (consultation trả 409 khi gửi thêm); không còn khoá Redis `active_turn`.
-- Tên hiển thị (`doctor_name`, `patient_name`) lưu sẵn lúc ghi `ConsultationSession`, `Appointment`, `FinalizeReport`; không gọi identity mỗi lần liệt kê.
+- Tên hiển thị (`doctor_name`, `patient_name`) lưu sẵn lúc ghi `Appointment`, `FinalizeReport`; không gọi identity mỗi lần liệt kê.
 
 ## 4. Redis (đã duyệt, đề xuất B)
 | Loại | Tên | Ý nghĩa |
 |---|---|---|
 | **Stream** | `conversation:events:{conversation_id}` | mọi event của hội thoại (mục 5); `XADD` field `event` = JSON, SSE `XREAD` từ `Last-Event-ID` hoặc đầu lượt; `MAXLEN ~` + TTL |
 | Pub/Sub | `user:calls:{user_id}` | sự kiện cuộc gọi của một tài khoản (tạm thời, mất cũng được) |
-| Pub/Sub | `doctor:inbox` | danh sách ca của bác sĩ (tạm thời) |
 | Pub/Sub + Key | `document:ingest:cancel`, `document:ingest:cancel:{document_id}:{stage_id}` | dừng bước pipeline (nội bộ knowledge) |
 | Key | `auth:refresh:{user_id}:{jti}` | refresh token còn hiệu lực (identity) |
 | Sentinel | `[DONE]` | hết 1 lượt; client bỏ qua, không đóng kết nối |
@@ -74,7 +71,7 @@ Không qua gateway; mọi lời gọi kèm header `X-Internal-Key` (cấu hình 
 Bỏ: `conversation:room:{id}` (thay bằng Stream), `agent:turn:cancel`, `agent:active_turn:*`, `agent:pending_turn:*` (không còn hoãn publish chờ SSE mở: Stream có replay).
 Tên hằng số: `shared/derma_shared/constants.py` (bản sao của `archive/core/`, còn các tên cũ; dọn khi viết knowledge/agent).
 
-## 5. Event trên room / inbox / call (JSON, `type` là khoá phân biệt)
+## 5. Event trên room / call (JSON, `type` là khoá phân biệt)
 Agent `XADD` vào Stream (kèm `conversation_id`, `message_id`):
 
 | `type` | Trường thêm |
@@ -87,14 +84,12 @@ Agent `XADD` vào Stream (kèm `conversation_id`, `message_id`):
 | `message.question` | `choice` (`MessageChoice`) |
 | `message.done` | `content` |
 
-Consultation (`XADD` Stream cho `message.*`, `consultation.updated` loại room; Pub/Sub cho loại inbox/call):
+Consultation (`XADD` Stream cho `message.*`; Pub/Sub cho loại call):
 
 | `type` | Kênh | Trường |
 |---|---|---|
 | `message.created` | stream | `message` (`MessageOutput`) |
 | `message.done` | stream | `message_id`, `content=""` (tin bị chặn/đóng) |
-| `consultation.updated` | stream | `session_id`, `status`, `doctor_id` |
-| `consultation.updated` | inbox | `session` (`ConsultationSessionOutput`) |
 | `call.ringing` | user calls | `mode`, `call` (`VideoCallOutput`) |
 | `call.accepted` | user calls | `call` |
 | `call.ended` | user calls | `reason`, `ended_by`, `call` |
@@ -106,3 +101,15 @@ FE phụ thuộc đúng các tên/khoá này: giữ nguyên.
 - Quyền đọc bucket ảnh của clinical từ knowledge (index ca tham khảo cần ảnh): cùng MinIO, khác bucket; cấp quyền hoặc clinical gửi kèm `storage_key` và knowledge đọc bằng khoá MinIO chung.
 - Schema chi tiết của `apply-turn`, `result`, `POST /internal/cases` chốt khi viết service tương ứng, rồi ghi lại vào đây.
 - Event trong Stream: giữ nguyên tên và khoá ở mục 5; chỉ đổi kênh vận chuyển.
+
+## 7. Kênh theo dõi sau khám (public, qua gateway → consultation)
+Kênh = hội thoại `kind=doctor_followup` gắn một lần khám; AI không trả lời. Tin nhắn dùng lại `/conversations/{id}/messages` (GET/POST) và `/conversations/{id}/stream`; gửi sau `followup_until` → 409.
+
+| Endpoint | Việc |
+|---|---|
+| `GET /api/v1/followup-channels/by-encounter/{encounter_id}` | bệnh nhân chủ kênh hoặc bác sĩ của kênh: `{conversation_id, encounter_id, status: open\|read_only, followup_until, doctor_id, doctor_name, ...}`; 404 nếu chưa có kênh |
+| `GET /api/v1/doctor/followup-channels` | kênh của bác sĩ, thêm `patient_profile_id`, `patient_name`, `last_message_at`, `preview` |
+| `POST /api/v1/doctor/followup-channels/{conversation_id}/extend` | body `{days}` (1..90, mặc định 30) gia hạn từ `followup_until`; chỉ khi còn mở và đã có hạn |
+| `POST /api/v1/conversations/{id}/video-calls` | gọi video: chỉ bác sĩ của kênh, chỉ khi kênh còn mở (các route `/video-calls/*` giữ nguyên) |
+
+Đã bỏ: `request-consultation`, `/doctor/consultations/*`, `/doctor/consultations/{id}/finalize*`, `consultation_report`. `openapi.core.json` và `messages.schema.json` sinh từ `archive/core/` (đóng băng) nên vẫn còn các đường dẫn cũ; không sửa tay.

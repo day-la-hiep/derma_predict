@@ -31,6 +31,8 @@ derma:
   identity-url: ${IDENTITY_URL:http://localhost:3051}
   # đợt bệnh `open` quá hạn không cập nhật thì chuyển `expired` (trừ đợt có lịch hẹn còn hiệu lực)
   episode-expire-days: 30
+  # kênh chat theo dõi sau khám mở thêm bao nhiêu ngày kể từ lúc chốt kết luận (hết hạn thì chỉ đọc)
+  followup-days: 30
   # chỉ đọc bucket ảnh đính kèm để tạo link tạm cho ảnh trong báo cáo; không tự tạo bucket
   minio:
     endpoint: ${MINIO_ENDPOINT:localhost:9000}

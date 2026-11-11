@@ -1,14 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { Menu, ShieldCheck, Sparkles, Stethoscope } from "lucide-react";
-import { toast } from "sonner";
+import { Menu, ShieldCheck, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Hint } from "@/components/ui/hint";
-import { doctorApi } from "@/features/doctor/api";
 import { useChatStore } from "../store";
-import { RequestConsultationDialog } from "./RequestConsultationDialog";
 
 export function ChatHeader({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const activeId = useChatStore((s) => s.activeId);
@@ -16,27 +12,7 @@ export function ChatHeader({ onOpenSidebar }: { onOpenSidebar: () => void }) {
   const streaming = useChatStore((s) =>
     activeId ? s.hasActiveStream(activeId) : false
   );
-  const consultation = useChatStore((s) =>
-    activeId ? s.consultationByConversation[activeId] : undefined
-  );
   const conversation = conversations.find((c) => c.id === activeId);
-  const [requestingDoctor, setRequestingDoctor] = useState(false);
-  const [briefOpen, setBriefOpen] = useState(false);
-
-  const handleRequestDoctor = async (brief: string) => {
-    if (!activeId) return;
-    try {
-      setRequestingDoctor(true);
-      await doctorApi.requestConsultation(activeId, brief);
-      setBriefOpen(false);
-      toast.success("Đã gửi yêu cầu kết nối Bác sĩ! AI đang tổng hợp báo cáo lâm sàng.");
-    } catch {
-      toast.error("Không thể gửi yêu cầu kết nối bác sĩ. Vui lòng thử lại.");
-    } finally {
-      setRequestingDoctor(false);
-    }
-  };
-
   return (
     <header className="border-b border-border/80 bg-background/80 backdrop-blur-md px-4 py-3 sticky top-0 z-20">
       <div className="mx-auto flex w-full max-w-4xl items-center gap-3">
@@ -54,17 +30,7 @@ export function ChatHeader({ onOpenSidebar }: { onOpenSidebar: () => void }) {
             {conversation?.title || "Cuộc trò chuyện mới"}
           </h1>
           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-            {consultation === "active" ? (
-              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
-                <Stethoscope className="size-3" />
-                <span>Bác sĩ đang tư vấn</span>
-              </span>
-            ) : consultation === "pending" ? (
-              <span className="flex items-center gap-1.5 text-sky-600 dark:text-sky-400 font-medium">
-                <Stethoscope className="size-3" />
-                <span>Đang chờ bác sĩ nhận ca</span>
-              </span>
-            ) : streaming ? (
+            {streaming ? (
               <span className="flex items-center gap-1.5 text-brand font-medium">
                 <Sparkles className="size-3 animate-spin text-brand" />
                 <span>Đang phân tích</span>
@@ -77,28 +43,6 @@ export function ChatHeader({ onOpenSidebar }: { onOpenSidebar: () => void }) {
             )}
           </div>
         </div>
-
-        {activeId && (
-          <Hint content="Gửi hồ sơ hội thoại và yêu cầu bác sĩ chuyên khoa tiếp quản.">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setBriefOpen(true)}
-            disabled={requestingDoctor || consultation === "pending" || consultation === "active"}
-            className="shrink-0 gap-1.5 rounded-full border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300 hover:bg-sky-500/20 text-xs font-medium"
-          >
-            <Stethoscope className="size-3.5 text-sky-600 dark:text-sky-400" />
-            <span>Gặp bác sĩ</span>
-          </Button>
-          </Hint>
-        )}
-
-        <RequestConsultationDialog
-          open={briefOpen}
-          submitting={requestingDoctor}
-          onOpenChange={setBriefOpen}
-          onSubmit={handleRequestDoctor}
-        />
 
         <Hint content="Trợ lý AI da liễu. Kết quả chỉ mang tính tham khảo, không phải chẩn đoán y khoa.">
           <Badge variant="outline" className="shrink-0 gap-1.5 rounded-full border border-brand/20 bg-brand/5 px-3 py-1 font-mono text-xs font-medium text-brand">

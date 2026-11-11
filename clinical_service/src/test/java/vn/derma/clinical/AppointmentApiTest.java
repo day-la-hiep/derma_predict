@@ -3,6 +3,7 @@ package vn.derma.clinical;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -182,6 +183,8 @@ class AppointmentApiTest {
         JsonNode started = data(call(post("/api/v1/doctor/appointments/" + id + "/start"), doctor, null).andExpect(status().isOk()));
         assertEquals("in_progress", started.get("status").asText());
         assertNotNull(started.get("encounter_id").asText());
+        // kênh theo dõi mở sau khi commit lúc bắt đầu khám
+        verify(consultation).openFollowupChannel(started.get("encounter_id").asText(), started.get("patient").get("id").asText(), "doc-1");
         assertEquals(true, started.get("episode").get("hypotheses_locked").asBoolean());
         call(post("/api/v1/doctor/appointments/" + id + "/cancel"), doctor, Map.of("reason", "x")).andExpect(status().isConflict());
 

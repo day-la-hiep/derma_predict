@@ -1,25 +1,20 @@
 "use client";
 
-import { doctorPaths } from "../routes";
 import { useState } from "react";
-import Link from "next/link";
-import { ClipboardList, ExternalLink, History, Printer, TriangleAlert, Network } from "lucide-react";
+import { ClipboardList, History, Printer, TriangleAlert, Network } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ImageThumbnail } from "@/features/chat/components/ImageThumbnail";
 import { cn } from "@/lib/utils";
 import { FACT_TYPE_CONFIG } from "../constants";
-import { useConversationMessages, useProfileFinalizeReports } from "../hooks";
+import { useProfileFinalizeReports } from "../hooks";
 import type { FinalizeReportItem, PatientProfile } from "../types";
-import { ChatBubble } from "./ChatViewer";
 import { FactSources } from "./FactSources";
 import { FinalizeReportCard, ReferenceBadge, formatDate } from "./FinalizeReportCard";
 import { PatientProfileDetails, patientSubtitle } from "./PatientProfileDetails";
 import { OriginBadge, UrgencyBadge } from "./FinalizeReportBadges";
 import { PatientJourneyDialog } from "./PatientJourneyDialog";
 
-type Tab = "summary" | "facts" | "conversation";
+type Tab = "summary" | "facts";
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -140,42 +135,6 @@ function FactsTab({ report }: { report: FinalizeReportItem }) {
   );
 }
 
-function ConversationTab({ conversationId }: { conversationId: string }) {
-  const { data: messages, isLoading } = useConversationMessages(conversationId);
-  if (isLoading) {
-    return (
-      <div className="space-y-3">
-        {[0, 1, 2].map((i) => (
-          <Skeleton key={i} className="h-14 w-3/4 rounded-xl" />
-        ))}
-      </div>
-    );
-  }
-  const images = (messages ?? []).flatMap((m) =>
-    (m.attachments ?? []).filter((a) => a.url && a.contentType?.startsWith("image/"))
-  );
-  return (
-    <div className="space-y-5">
-      {images.length > 0 && (
-        <section>
-          <SectionTitle>Ảnh trong hội thoại · {images.length}</SectionTitle>
-          <div className="flex flex-wrap gap-2">
-            {images.map((a) => (
-              <ImageThumbnail key={a.id} url={a.url!} name={a.name} size={72} />
-            ))}
-          </div>
-        </section>
-      )}
-      <section className="space-y-3">
-        <SectionTitle>Hội thoại</SectionTitle>
-        {(messages ?? []).map((m) => (
-          <ChatBubble key={m.id} message={m} />
-        ))}
-      </section>
-    </div>
-  );
-}
-
 export function FinalizeReportDetail({ report }: { report: FinalizeReportItem | null }) {
   const [tab, setTab] = useState<Tab>("summary");
 
@@ -192,12 +151,9 @@ export function FinalizeReportDetail({ report }: { report: FinalizeReportItem | 
 
   // hiển thị theo bản chụp lúc chốt; phiếu cũ không có snapshot thì dùng hồ sơ hiện tại
   const patient: Omit<PatientProfile, "id"> = report.snapshot?.patientProfile ?? report.patient;
-  const hasSource = !!report.consultationSessionId;
-  const activeTab: Tab = tab === "conversation" && !report.conversationId ? "summary" : tab;
-  const tabs: { id: Tab; label: string; show: boolean }[] = [
-    { id: "summary", label: "Tóm tắt", show: true },
-    { id: "facts", label: "Dữ kiện", show: true },
-    { id: "conversation", label: "Hội thoại và ảnh", show: !!report.conversationId },
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "summary", label: "Tóm tắt" },
+    { id: "facts", label: "Dữ kiện" },
   ];
   const finalizedAt = new Date(report.createdAt);
 
@@ -226,15 +182,6 @@ export function FinalizeReportDetail({ report }: { report: FinalizeReportItem | 
                 }
               />
             )}
-            {hasSource && (
-              <Hint side="bottom" content="Mở ca tư vấn gốc ở màn Ca tư vấn.">
-                <Button variant="outline" size="sm" asChild className="gap-1.5">
-                  <Link href={doctorPaths.session(report.consultationSessionId!)}>
-                    <ExternalLink className="size-3.5" /> Mở ca gốc
-                  </Link>
-                </Button>
-              </Hint>
-            )}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -248,21 +195,19 @@ export function FinalizeReportDetail({ report }: { report: FinalizeReportItem | 
         <p className="text-xs text-muted-foreground">
           Chốt {formatDate(report.createdAt)}{" "}
           {finalizedAt.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} · {report.doctorName ?? "Bác sĩ"}
-          {!hasSource && " · Khám trực tiếp"}
+          {!report.consultationSessionId && " · Khám trực tiếp"}
         </p>
         <nav className="-mb-px flex gap-1 print:hidden" role="tablist" aria-label="Nội dung phiếu">
-          {tabs
-            .filter((t) => t.show)
-            .map((t) => (
+          {tabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 role="tab"
-                aria-selected={activeTab === t.id}
+                aria-selected={tab === t.id}
                 onClick={() => setTab(t.id)}
                 className={cn(
                   "border-b-2 px-3 py-2 text-xs font-medium transition-colors",
-                  activeTab === t.id
+                  tab === t.id
                     ? "border-brand text-brand"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
@@ -275,17 +220,12 @@ export function FinalizeReportDetail({ report }: { report: FinalizeReportItem | 
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 print:overflow-visible">
         {/* khi in: luôn có Tóm tắt + Dữ kiện, không phụ thuộc tab đang mở */}
-        <div className={cn(activeTab !== "summary" && "hidden print:block")}>
+        <div className={cn(tab !== "summary" && "hidden print:block")}>
           <SummaryTab report={report} />
         </div>
-        <div className={cn(activeTab !== "facts" && "hidden print:mt-6 print:block")}>
+        <div className={cn(tab !== "facts" && "hidden print:mt-6 print:block")}>
           <FactsTab report={report} />
         </div>
-        {activeTab === "conversation" && report.conversationId && (
-          <div className="print:hidden">
-            <ConversationTab conversationId={report.conversationId} />
-          </div>
-        )}
       </div>
     </div>
   );

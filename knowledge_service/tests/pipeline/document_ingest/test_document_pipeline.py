@@ -1,7 +1,7 @@
 """Test luồng mục lục: LLM đọc mục lục -> độ lệch + neo (luật) -> chunk theo khung mục lục.
 
 LLM giả + sách tổng hợp (không cần PDF/mạng). Chạy từ `core/`:
-    python -m unittest pipeline.document_ingest.tests.test_document_pipeline -v"""
+    python -m unittest tests.pipeline.document_ingest.test_document_pipeline -v"""
 
 import hashlib
 import json
@@ -31,7 +31,7 @@ from app.pipeline.document_ingest.stages import StageError
 from app.pipeline.document_ingest.stages import step2_toc as T
 from app.pipeline.document_ingest.types import TocDoc, TocEntry
 from app.pipeline.document_ingest.stages.step3_chunks import build_chunks, est_tokens, build_toc_nodes
-from app.pipeline.document_ingest.tests.memory_infra import MemoryBlobCache, MemoryMinio
+from tests.pipeline.document_ingest.memory_infra import MemoryBlobCache, MemoryMinio
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 

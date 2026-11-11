@@ -20,11 +20,11 @@ spring:
             - id: clinical
               uri: ${CLINICAL_URL:http://localhost:3053}
               predicates:
-                - Path=/api/v1/appointments,/api/v1/appointments/**,/api/v1/doctor/appointments,/api/v1/doctor/appointments/**,/api/v1/doctor/encounters/**,/api/v1/doctor/finalize-reports,/api/v1/doctor/patient-profiles/**,/api/v1/doctor/patients/**,/api/v1/doctor/consultations/*/finalize,/api/v1/doctor/consultations/*/finalize-draft,/api/v1/doctor/consultations/*/finalize-reports,/api/v1/patient-profiles/*/episodes,/api/v1/patient-profiles/*/finalize-reports
+                - Path=/api/v1/appointments,/api/v1/appointments/**,/api/v1/doctor/appointments,/api/v1/doctor/appointments/**,/api/v1/doctor/encounters/**,/api/v1/doctor/finalize-reports,/api/v1/doctor/patient-profiles/**,/api/v1/doctor/patients/**,/api/v1/patient-profiles/*/episodes,/api/v1/patient-profiles/*/finalize-reports
             - id: consultation
               uri: ${CONSULTATION_URL:http://localhost:3052}
               predicates:
-                - Path=/api/v1/conversations,/api/v1/conversations/**,/api/v1/doctor/consultations,/api/v1/doctor/consultations/**,/api/v1/video-calls/**,/api/v1/uploads,/api/v1/files/**,/api/v1/models
+                - Path=/api/v1/conversations,/api/v1/conversations/**,/api/v1/followup-channels/**,/api/v1/doctor/followup-channels,/api/v1/doctor/followup-channels/**,/api/v1/video-calls/**,/api/v1/uploads,/api/v1/files/**,/api/v1/models
             - id: identity
               uri: ${IDENTITY_URL:http://localhost:3051}
               predicates:

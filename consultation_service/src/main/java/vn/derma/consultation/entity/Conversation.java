@@ -25,6 +25,16 @@ public class Conversation {
     public String title = "";
     @Column(nullable = false)
     public String model;
+    /** ai_chat | doctor_followup */
+    @Column(nullable = false)
+    public String kind = "ai_chat";
+    @Column(name = "encounter_id")
+    public String encounterId;
+    @Column(name = "doctor_id")
+    public String doctorId;
+    /** null = lần khám chưa chốt (kênh đang mở); quá mốc này thì chỉ đọc. */
+    @Column(name = "followup_until")
+    public Instant followupUntil;
     @Column(name = "created_at", nullable = false)
     public Instant createdAt;
     @Column(name = "updated_at", nullable = false)

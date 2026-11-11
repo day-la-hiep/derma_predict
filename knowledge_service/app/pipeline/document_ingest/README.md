@@ -78,4 +78,4 @@ Tiền xử lý cho tìm từ khoá (`app/infra/bm25/`): làm sạch chữ OCR (
 Test dùng `MemoryMinio` + SQLite + Qdrant in-memory + embedding giả (không cần dịch vụ nào chạy).
 
 Giao diện: `/doctor/documents` (API `/api/v1/admin/documents/*`).
-Test: `python -m unittest pipeline.document_ingest.tests.test_document_pipeline pipeline.document_ingest.tests.test_api pipeline.document_ingest.tests.test_storage_index pipeline.document_ingest.tests.test_graph pipeline.document_ingest.tests.test_graph_schema pipeline.document_ingest.tests.test_text_preprocess pipeline.document_ingest.tests.test_pure_stages` và `tests/test_reindex_qdrant.py`.
+Test: `python -m unittest tests.pipeline.document_ingest.test_document_pipeline tests.pipeline.document_ingest.test_api tests.pipeline.document_ingest.test_storage_index tests.pipeline.document_ingest.test_graph tests.pipeline.document_ingest.test_graph_schema tests.pipeline.document_ingest.test_text_preprocess tests.pipeline.document_ingest.test_pure_stages` và `tests/test_reindex_qdrant.py`.

@@ -15,8 +15,11 @@ public class VideoCall {
 
     @Id
     public String id;
-    @Column(name = "consultation_session_id", nullable = false)
+    /** Chỉ còn ở cuộc gọi của phiên tư vấn cũ; cuộc gọi mới null. */
+    @Column(name = "consultation_session_id")
     public String consultationSessionId;
+    @Column(name = "conversation_id")
+    public String conversationId;
     @Column(name = "room_id", nullable = false, unique = true)
     public String roomId;
     /** pending | ongoing | ended */

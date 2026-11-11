@@ -16,6 +16,7 @@ import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 import vn.derma.consultation.client.AiClient;
 import vn.derma.consultation.common.AppException;
+import vn.derma.consultation.common.AuthenticatedUser;
 import vn.derma.consultation.config.DermaProperties;
 import vn.derma.consultation.dto.MessageDtos.AnswerInput;
 import vn.derma.consultation.dto.MessageDtos.AttachedFile;
@@ -27,12 +28,10 @@ import vn.derma.consultation.dto.MessageDtos.SendMessageResult;
 import vn.derma.consultation.dto.MessageDtos.TurnResultInput;
 import vn.derma.consultation.mapper.ConsultationMapper;
 import vn.derma.consultation.entity.Conversation;
-import vn.derma.consultation.entity.ConsultationSession;
 import vn.derma.consultation.entity.Message;
 import vn.derma.consultation.entity.MessageFile;
 import vn.derma.consultation.entity.StoredFile;
 import vn.derma.consultation.entity.VideoCall;
-import vn.derma.consultation.repository.ConsultationSessionRepository;
 import vn.derma.consultation.repository.ConversationRepository;
 import vn.derma.consultation.repository.MessageFileRepository;
 import vn.derma.consultation.repository.MessageRepository;
@@ -55,8 +54,7 @@ public class MessageService {
 
     private final MessageRepository messages;
     private final ConversationRepository conversations;
-    private final ConsultationSessionRepository sessions;
-    private final AiClient ai;
+        private final AiClient ai;
     private final ConversationEvents events;
     private final ObjectMapper json;
     private final TransactionTemplate tx;
@@ -67,26 +65,24 @@ public class MessageService {
     private final VideoCallRepository videoCalls;
     private final ConsultationMapper mapper;
 
-    /** Quyền xem đã kiểm ở `ConsultationService.roomAccess`; `until` giới hạn tin bác sĩ được thấy (null = hết). */
-    public List<MessageOutput> listForRoom(String conversationId, java.time.Instant until) {
-        List<Message> all = messages.findByConversationIdOrderByCreatedAtAsc(conversationId).stream()
-                .filter(m -> until == null || !m.createdAt.isAfter(until)).toList();
+    /** Quyền xem đã kiểm ở `FollowupService.requireAccess`. */
+    public List<MessageOutput> listForRoom(String conversationId) {
+        List<Message> all = messages.findByConversationIdOrderByCreatedAtAsc(conversationId);
         Map<String, List<StoredFile>> attached = attachedFilesOf(all);
         Map<String, VideoCall> calls = new HashMap<>();
         videoCalls.findAllById(all.stream().map(m -> m.videoCallId).filter(java.util.Objects::nonNull).distinct().toList()).forEach(c -> calls.put(c.id, c));
         return all.stream().map(m -> toOutput(m, attached.get(m.id), m.videoCallId == null ? null : calls.get(m.videoCallId))).toList();
     }
 
-    public SendMessageResult send(String conversationId, String userId, SendMessageInput input) {
-        Conversation conversation = getOwned(conversationId, userId);
-        List<StoredFile> attachments = resolveAttachments(input.attachedFiles());
-        // bác sĩ đã nhận ca thì AI im lặng: tin chỉ ghi DB và báo cho bác sĩ qua stream
-        Optional<ConsultationSession> open = sessions.findFirstByConversationIdAndStatusNot(conversationId, "resolved");
-        if (open.isPresent() && "active".equals(open.get().status)) {
-            Turn doctorTurn = saveUserMessage(conversationId, input.content(), attachments);
-            announce(doctorTurn.user(), attachments);
-            return new SendMessageResult(toOutput(doctorTurn.user(), attachments), null);
+    public SendMessageResult send(String conversationId, AuthenticatedUser user, SendMessageInput input) {
+        Conversation conversation = conversations.findById(conversationId).orElseThrow(() -> AppException.notFound("hội thoại"));
+        if (FollowupService.FOLLOWUP.equals(conversation.kind)) {
+            return sendFollowup(conversation, user, input);
         }
+        if (!conversation.userId.equals(user.id())) {
+            throw AppException.notFound("hội thoại");
+        }
+        List<StoredFile> attachments = resolveAttachments(input.attachedFiles());
         if (messages.existsByConversationIdAndSenderAndStatusIn(conversationId, "ai", ACTIVE_TURN)) {
             throw AppException.conflict("Trợ lý đang trả lời hoặc đang chờ bạn trả lời câu hỏi, vui lòng đợi.");
         }
@@ -97,15 +93,30 @@ public class MessageService {
         Turn turn = openTurn(conversationId, input.content(), attachments);
         announce(turn.user(), attachments);
         dispatch(new AiClient.TurnRequest("turn", conversationId, turn.assistant().id, turn.user().id, input.clientMessageId(), input.content(),
-                null, imagesForAi(attachments), null, null, null));
+                null, imagesForAi(attachments)));
         return new SendMessageResult(toOutput(turn.user(), attachments), toOutput(messages.findById(turn.assistant().id).orElse(turn.assistant())));
+    }
+
+    /** Kênh theo dõi: chỉ ghi DB và báo qua stream, AI không trả lời; quá hạn thì chỉ đọc. */
+    private SendMessageResult sendFollowup(Conversation channel, AuthenticatedUser user, SendMessageInput input) {
+        String sender = user.id().equals(channel.userId) ? "patient" : user.id().equals(channel.doctorId) ? "doctor" : null;
+        if (sender == null) {
+            throw AppException.notFound("hội thoại");
+        }
+        if (!FollowupService.isOpen(channel)) {
+            throw AppException.conflict("Kênh theo dõi đã hết hạn, chỉ còn đọc. Vui lòng đặt lịch tái khám.");
+        }
+        List<StoredFile> attachments = resolveAttachments(input.attachedFiles());
+        Message saved = saveUserMessage(channel.id, sender, input.content(), attachments).user();
+        announce(saved, attachments);
+        return new SendMessageResult(toOutput(saved, attachments), null);
     }
 
     /** Lượt đầu của hội thoại vừa tạo (có nội dung). */
     public void startFirstTurn(Conversation conversation, String content) {
         Turn turn = openTurn(conversation.id, content, List.of());
         announce(turn.user(), List.of());
-        dispatch(new AiClient.TurnRequest("turn", conversation.id, turn.assistant().id, turn.user().id, null, content, null, null, null, null, null));
+        dispatch(new AiClient.TurnRequest("turn", conversation.id, turn.assistant().id, turn.user().id, null, content, null, null));
     }
 
     public MessageOutput answerQuestion(String conversationId, String userId, String questionId, AnswerInput input) {
@@ -113,7 +124,7 @@ public class MessageService {
         Message pending = messages.findFirstByConversationIdAndSenderAndStatusOrderByCreatedAtDesc(conversationId, "ai", "question")
                 .filter(m -> questionId.equals(readMetadata(m).getOrDefault("choice", Map.of()) instanceof Map<?, ?> c ? c.get("question_id") : null))
                 .orElseThrow(() -> AppException.notFound("câu hỏi đang chờ trả lời"));
-        dispatch(new AiClient.TurnRequest("resume", conversationId, pending.id, null, null, null, input.label(), null, null, null, null));
+        dispatch(new AiClient.TurnRequest("resume", conversationId, pending.id, null, null, null, input.label(), null));
         return toOutput(pending);
     }
 
@@ -200,10 +211,10 @@ public class MessageService {
         return conversations.findByIdAndUserId(conversationId, userId).orElseThrow(() -> AppException.notFound("hội thoại"));
     }
 
-    private Turn saveUserMessage(String conversationId, String content, List<StoredFile> attachments) {
+    private Turn saveUserMessage(String conversationId, String sender, String content, List<StoredFile> attachments) {
         Message m = new Message();
         m.conversationId = conversationId;
-        m.sender = "patient";
+        m.sender = sender;
         m.messageType = attachments.isEmpty() ? "text" : "attached";
         m.content = content;
         m.status = "done";
@@ -256,7 +267,7 @@ public class MessageService {
 
     private Turn openTurn(String conversationId, String content, List<StoredFile> attachments) {
         return tx.execute(status -> {
-            Message user = saveUserMessage(conversationId, content, attachments).user();
+            Message user = saveUserMessage(conversationId, "patient", content, attachments).user();
             Message assistant = new Message();
             assistant.conversationId = conversationId;
             assistant.sender = "ai";

@@ -1,5 +1,5 @@
 """Hàm biến đổi của pipeline gọi trực tiếp: không cần MinIO, SQLite hay Qdrant."""
-from app.pipeline.document_ingest.tests.memory_infra import MemoryBlobCache
+from tests.pipeline.document_ingest.memory_infra import MemoryBlobCache
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,7 +14,7 @@ from app.pipeline.document_ingest.stages.step1_ingest import extract_pages
 from app.pipeline.document_ingest.stages.step2_toc import count_pages, read_toc, summarize_toc
 from app.pipeline.document_ingest.stages.step3_chunks import cut_chunks
 from app.pipeline.document_ingest.stages.step4_index import BATCH, embed_chunks
-from app.pipeline.document_ingest.tests.test_document_pipeline import DIM, FakeEmbedding, _pages, toc_llm
+from tests.pipeline.document_ingest.test_document_pipeline import DIM, FakeEmbedding, _pages, toc_llm
 from app.pipeline.document_ingest.types import DoclingBlock, PageRow
 
 

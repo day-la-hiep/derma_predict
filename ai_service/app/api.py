@@ -8,7 +8,6 @@ from derma_shared.log import request_id_var
 from fastapi import APIRouter, Depends, Header, status
 
 from app.dto.turn_request import TurnRequest
-from app.handler.consultation_report import handle_consultation_report
 from app.turn import handle_turn
 from app.config.settings import settings
 
@@ -35,8 +34,7 @@ async def run_turn(req: TurnRequest) -> None:
     async with _conversation_locks[req.conversation_id]:
         # task riêng để Dừng chỉ huỷ task này
         task = asyncio.create_task(_dispatch(req))
-        if req.type != "consultation_report":
-            _running[req.message_id] = task
+        _running[req.message_id] = task
         try:
             await task
         except Exception:  # noqa: BLE001
@@ -47,10 +45,7 @@ async def run_turn(req: TurnRequest) -> None:
 
 async def _dispatch(req: TurnRequest) -> None:
     logger.info("turn bắt đầu: type=%s conversation=%s", req.type, req.conversation_id)
-    if req.type == "consultation_report":
-        await handle_consultation_report(req)
-    else:
-        await handle_turn(req)
+    await handle_turn(req)
     logger.info("turn kết thúc")
 
 

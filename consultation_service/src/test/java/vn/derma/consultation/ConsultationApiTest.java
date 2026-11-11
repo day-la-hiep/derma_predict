@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -85,7 +86,8 @@ class ConsultationApiTest {
         when(identity.getUser(anyString())).thenAnswer(i -> Optional.of(new IdentityClient.UserRef(i.getArgument(0), "BS. " + i.getArgument(0), "doctor")));
         when(identity.getProfiles(any())).thenAnswer(i -> {
             Map<String, IdentityClient.ProfileDetail> out = new java.util.HashMap<>();
-            ((java.util.Collection<String>) i.getArgument(0)).forEach(id -> out.put(id, new IdentityClient.ProfileDetail(id, "u", "Bệnh nhân " + id, "1990-01-01", "male", "self", null)));
+            // hồ sơ `pp-<user>` thuộc tài khoản `<user>` (khớp resolveProfile bên dưới)
+            ((java.util.Collection<String>) i.getArgument(0)).forEach(id -> out.put(id, new IdentityClient.ProfileDetail(id, id.startsWith("pp-") ? id.substring(3) : "u", "Bệnh nhân " + id, "1990-01-01", "male", "self", null)));
             return out;
         });
         when(store.presignedUrl(anyString())).thenAnswer(i -> "http://minio/" + i.getArgument(0));
@@ -312,134 +314,98 @@ class ConsultationApiTest {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("Tệp đính kèm chưa được tải lên: chua-upload.png"));
     }
 
-    /** Bệnh nhân tạo hội thoại rồi yêu cầu bác sĩ; trả (conversationId, sessionId, id tin mốc yêu cầu). */
-    String[] requestConsultation(String patient) throws Exception {
-        String[] ids = createConversation(patient, "Xin chào");
-        finishTurn(ids[1]);
-        reset(ai);
-        String sessionId = data(call(post("/api/v1/conversations/" + ids[0] + "/request-consultation"), token(patient), Map.of("reason", "ngứa lâu ngày"))
-                .andExpect(status().isAccepted()).andExpect(jsonPath("$.data.status").value("pending"))).get("id").asText();
-        ArgumentCaptor<AiClient.TurnRequest> sent = ArgumentCaptor.forClass(AiClient.TurnRequest.class);
-        verify(ai).startTurn(sent.capture());
-        return new String[] {ids[0], sessionId, sent.getValue().messageId()};
+    /** clinical mở kênh theo dõi của một lần khám; trả conversationId. Hồ sơ `pp-<user>` map về tài khoản `<user>` (xem setUpFakes). */
+    String openChannel(String encounterId, String patient, String doctor) throws Exception {
+        return data(internal(post("/internal/encounters/" + encounterId + "/followup-channel"), Map.of("patient_profile_id", "pp-" + patient, "doctor_id", doctor))
+                .andExpect(status().isOk())).get("conversation_id").asText();
+    }
+
+    void setUntil(String encounterId, Instant until) throws Exception {
+        internal(put("/internal/encounters/" + encounterId + "/followup-channel/until"), Map.of("followup_until", until.toString())).andExpect(status().isOk());
     }
 
     @Test
-    void requestConsultationCreatesPendingSessionMarkerAndReportTask() throws Exception {
-        String[] ids = requestConsultation("u-req");
-        ArgumentCaptor<AiClient.TurnRequest> sent = ArgumentCaptor.forClass(AiClient.TurnRequest.class);
-        verify(ai).startTurn(sent.capture());
-        AiClient.TurnRequest task = sent.getValue();
-        assertEquals(List.of("consultation_report", ids[0], ids[1], "pp-u-req", "ngứa lâu ngày"),
-                List.of(task.type(), task.conversationId(), task.sessionId(), task.patientProfileId(), task.reason()));
-        verify(inbox).publish(eq(PubSubStreams.DOCTOR_INBOX), any());
-        verify(events).publish(eq(ids[0]), eq(Map.of("type", "consultation.updated", "session_id", ids[1], "status", "pending", "doctor_id", "")));
+    void followupChannelIsCreatedIdempotentlyAndIsNotAnAiConversation() throws Exception {
+        String channel = openChannel("enc-1", "u-fu1", "d-1");
+        assertEquals(channel, openChannel("enc-1", "u-fu1", "d-1"));
+        internal(post("/internal/encounters/enc-x/followup-channel"), Map.of("patient_profile_id", "", "doctor_id", "d-1")).andExpect(status().isUnprocessableEntity());
 
-        JsonNode messages = data(call(get("/api/v1/conversations/" + ids[0] + "/messages"), token("u-req"), null));
-        JsonNode marker = messages.get(messages.size() - 1);
-        assertEquals(List.of("patient", "consultation_requested", ids[2]), List.of(marker.get("sender").asText(), marker.get("metadata").get("message_type").asText(), marker.get("id").asText()));
+        call(get("/api/v1/conversations"), token("u-fu1"), null).andExpect(jsonPath("$.data.length()").value(0));
+        call(get("/api/v1/followup-channels/by-encounter/enc-1"), token("u-fu1"), null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.conversation_id").value(channel)).andExpect(jsonPath("$.data.status").value("open"))
+                .andExpect(jsonPath("$.data.doctor_name").value("BS. d-1")).andExpect(jsonPath("$.data.followup_until").doesNotExist());
+        call(get("/api/v1/followup-channels/by-encounter/enc-1"), token("d-1", "doctor"), null).andExpect(status().isOk());
+        call(get("/api/v1/followup-channels/by-encounter/enc-1"), token("u-ngoai"), null).andExpect(status().isForbidden());
+        call(get("/api/v1/followup-channels/by-encounter/enc-khong-co"), token("u-fu1"), null).andExpect(status().isNotFound());
+    }
 
-        // gửi lại yêu cầu khi đã có phiên mở: trả đúng phiên cũ, không sinh thêm báo cáo
-        reset(ai);
-        call(post("/api/v1/conversations/" + ids[0] + "/request-consultation"), token("u-req"), Map.of("reason", "lại")).andExpect(jsonPath("$.data.id").value(ids[1]));
+    @Test
+    void patientAndDoctorChatInTheChannelWithoutAiAndStrangersAreRejected() throws Exception {
+        String channel = openChannel("enc-2", "u-fu2", "d-1");
+        String patient = token("u-fu2"), doctor = token("d-1", "doctor");
+        call(post("/api/v1/conversations/" + channel + "/messages"), patient, Map.of("client_message_id", "c1", "content", "Thuốc bôi bị rát")).andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.user_message.sender").value("patient")).andExpect(jsonPath("$.data.assistant_message").doesNotExist());
+        call(post("/api/v1/conversations/" + channel + "/messages"), doctor, Map.of("client_message_id", "c2", "content", "Ngưng thuốc 2 ngày")).andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.data.user_message.sender").value("doctor"));
         verify(ai, never()).startTurn(any());
-        call(post("/api/v1/conversations/" + ids[0] + "/request-consultation"), token("u-khac"), Map.of("reason", "x")).andExpect(status().isForbidden());
-        call(post("/api/v1/conversations/" + ids[0] + "/request-consultation"), token("u-req"), Map.of("reason", " ")).andExpect(status().isUnprocessableEntity());
+
+        JsonNode messages = data(call(get("/api/v1/conversations/" + channel + "/messages"), doctor, null));
+        assertEquals(List.of("patient", "doctor"), List.of(messages.get(0).get("sender").asText(), messages.get(1).get("sender").asText()));
+        call(get("/api/v1/conversations/" + channel + "/messages"), token("d-2", "doctor"), null).andExpect(status().isForbidden());
+        call(get("/api/v1/conversations/" + channel + "/stream"), token("u-ngoai"), null).andExpect(status().isForbidden());
+        call(post("/api/v1/conversations/" + channel + "/messages"), token("d-2", "doctor"), Map.of("client_message_id", "c3", "content", "x")).andExpect(status().isNotFound());
+
+        // bác sĩ không xem được hội thoại AI của bệnh nhân
+        String[] ai = createConversation("u-fu2", "Xin chào");
+        call(get("/api/v1/conversations/" + ai[0] + "/messages"), doctor, null).andExpect(status().isForbidden());
+        call(post("/api/v1/conversations/" + ai[0] + "/messages"), doctor, Map.of("client_message_id", "c4", "content", "x")).andExpect(status().isNotFound());
     }
 
     @Test
-    void doctorListAcceptReplyAndResolveWithRoleAndOwnershipRules() throws Exception {
-        String[] ids = requestConsultation("u-doc");
-        String doctor = token("d-1", "doctor"), other = token("d-2", "doctor");
-        call(get("/api/v1/doctor/consultations"), token("u-doc"), null).andExpect(status().isForbidden());
-        call(get("/api/v1/doctor/consultations"), doctor, null).andExpect(status().isOk()).andExpect(jsonPath("$.data[?(@.id=='" + ids[1] + "')].patient.full_name").value("Bệnh nhân pp-u-doc"))
-                .andExpect(jsonPath("$.data[?(@.id=='" + ids[1] + "')].clinical_facts.length()").value(0));
-        // bác sĩ chưa nhận ca không đọc được hội thoại không có phiên nào của mình; ca đang chờ thì được xem
-        call(get("/api/v1/conversations/" + ids[0] + "/messages"), doctor, null).andExpect(status().isOk());
-        call(get("/api/v1/conversations/" + ids[0] + "/messages"), token("d-3", "doctor"), null).andExpect(status().isOk());
+    void channelBecomesReadOnlyAfterFollowupUntilAndDoctorCanOnlyExtendWhileOpen() throws Exception {
+        String channel = openChannel("enc-3", "u-fu3", "d-1");
+        String patient = token("u-fu3"), doctor = token("d-1", "doctor");
+        call(post("/api/v1/doctor/followup-channels/" + channel + "/extend"), doctor, null).andExpect(status().isConflict());
 
-        call(post("/api/v1/doctor/consultations/" + ids[1] + "/accept"), doctor, null).andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("active")).andExpect(jsonPath("$.data.doctor_id").value("d-1"));
-        JsonNode messages = data(call(get("/api/v1/conversations/" + ids[0] + "/messages"), token("u-doc"), null));
-        assertEquals("Bác sĩ BS. d-1 đã tham gia cuộc trò chuyện", messages.get(messages.size() - 1).get("content").asText());
-        // bác sĩ khác không thấy và không nhận được ca đã có người phụ trách
-        call(post("/api/v1/doctor/consultations/" + ids[1] + "/accept"), other, null).andExpect(status().isForbidden());
-        call(get("/api/v1/doctor/consultations/" + ids[1]), other, null).andExpect(status().isForbidden());
-        call(get("/api/v1/doctor/consultations"), other, null).andExpect(jsonPath("$.data[?(@.id=='" + ids[1] + "')]").isEmpty());
-        call(get("/api/v1/conversations/" + ids[0] + "/messages"), other, null).andExpect(status().isForbidden());
+        Instant until = Instant.now().plusSeconds(3600);
+        setUntil("enc-3", until);
+        call(post("/api/v1/doctor/followup-channels/" + channel + "/extend"), patient, null).andExpect(status().isForbidden());
+        call(post("/api/v1/doctor/followup-channels/" + channel + "/extend"), doctor, Map.of("days", 100)).andExpect(status().isUnprocessableEntity());
+        String extended = data(call(post("/api/v1/doctor/followup-channels/" + channel + "/extend"), doctor, Map.of("days", 10)).andExpect(status().isOk())).get("followup_until").asText();
+        assertEquals(until.plusSeconds(10 * 86400).toEpochMilli(), Instant.parse(extended).toEpochMilli());
 
-        // bác sĩ đang phụ trách thì AI im lặng: tin bệnh nhân chỉ ghi lại
-        reset(ai);
-        call(post("/api/v1/conversations/" + ids[0] + "/messages"), token("u-doc"), Map.of("client_message_id", "c9", "content", "thưa bác sĩ"))
-                .andExpect(status().isAccepted()).andExpect(jsonPath("$.data.assistant_message").doesNotExist());
-        verify(ai, never()).startTurn(any());
-        call(post("/api/v1/doctor/consultations/" + ids[1] + "/reply"), doctor, Map.of("content", "Bạn cho xem ảnh nhé")).andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.sender").value("doctor")).andExpect(jsonPath("$.data.content").value("Bạn cho xem ảnh nhé"));
-
-        call(post("/api/v1/doctor/consultations/" + ids[1] + "/resolve"), doctor, null).andExpect(jsonPath("$.data.status").value("resolved"));
-        call(post("/api/v1/doctor/consultations/" + ids[1] + "/resolve"), doctor, null).andExpect(status().isConflict());
-        call(post("/api/v1/doctor/consultations/" + ids[1] + "/reply"), doctor, Map.of("content", "x")).andExpect(status().isConflict());
-        call(post("/api/v1/doctor/consultations/" + ids[1] + "/accept"), doctor, null).andExpect(status().isConflict());
-        // ca đã đóng: bác sĩ chỉ đọc được tới tin mốc kết thúc và không mở được stream; bệnh nhân vẫn đọc hết
-        call(get("/api/v1/conversations/" + ids[0] + "/stream"), doctor, null).andExpect(status().isForbidden());
-        JsonNode forDoctor = data(call(get("/api/v1/conversations/" + ids[0] + "/messages"), doctor, null));
-        assertEquals("consultation_resolved", forDoctor.get(forDoctor.size() - 1).get("metadata").get("message_type").asText());
+        setUntil("enc-3", Instant.now().minusSeconds(60));
+        call(get("/api/v1/followup-channels/by-encounter/enc-3"), patient, null).andExpect(jsonPath("$.data.status").value("read_only"));
+        call(post("/api/v1/conversations/" + channel + "/messages"), patient, Map.of("client_message_id", "c", "content", "x")).andExpect(status().isConflict());
+        call(post("/api/v1/conversations/" + channel + "/messages"), doctor, Map.of("client_message_id", "c", "content", "x")).andExpect(status().isConflict());
+        call(get("/api/v1/conversations/" + channel + "/messages"), patient, null).andExpect(status().isOk());
+        call(post("/api/v1/doctor/followup-channels/" + channel + "/extend"), doctor, null).andExpect(status().isConflict());
+        call(post("/api/v1/conversations/" + channel + "/video-calls"), doctor, null).andExpect(status().isConflict());
     }
 
     @Test
-    void replyOnPendingSessionAcceptsItFirst() throws Exception {
-        String[] ids = requestConsultation("u-reply");
-        call(post("/api/v1/doctor/consultations/" + ids[1] + "/reply"), token("d-1", "doctor"), Map.of("content", "Chào bạn")).andExpect(status().isOk());
-        call(get("/api/v1/doctor/consultations/" + ids[1]), token("d-1", "doctor"), null).andExpect(jsonPath("$.data.status").value("active"));
-        JsonNode types = data(call(get("/api/v1/conversations/" + ids[0] + "/messages"), token("u-reply"), null));
-        assertEquals(List.of("consultation_requested", "consultation_accepted", "text"),
-                List.of(types.get(types.size() - 3).get("metadata").get("message_type").asText(), types.get(types.size() - 2).get("metadata").get("message_type").asText(),
-                        types.get(types.size() - 1).get("metadata").get("message_type").asText()));
-    }
-
-    @Test
-    void aiReportIsStoredShownToDoctorAndFeedsLaterReports() throws Exception {
-        String[] first = requestConsultation("u-rep");
-        internal(post("/internal/sessions/" + first[1] + "/report"), Map.of("report_summary", "## Lý do khám\nNgứa", "status", "ready")).andExpect(status().isOk());
-        internal(post("/internal/sessions/" + first[1] + "/report"), Map.of("report_summary", "## Lý do khám\nNgứa (bản mới)", "status", "ready")).andExpect(status().isOk());
-        call(get("/api/v1/doctor/consultations/" + first[1]), token("d-1", "doctor"), null).andExpect(jsonPath("$.data.report.summary").value("## Lý do khám\nNgứa (bản mới)"));
-        internal(post("/internal/sessions/khong-co/report"), Map.of("report_summary", "x")).andExpect(status().isNotFound());
-
-        // phiên sau của cùng hồ sơ thấy báo cáo trước; chính phiên đó thì bị loại trừ
-        call(post("/api/v1/doctor/consultations/" + first[1] + "/accept"), token("d-1", "doctor"), null).andExpect(status().isOk());
-        call(post("/api/v1/doctor/consultations/" + first[1] + "/resolve"), token("d-1", "doctor"), null).andExpect(status().isOk());
-        assertEquals("## Lý do khám\nNgứa (bản mới)", data(internal(get("/internal/patients/pp-u-rep/latest-report").param("exclude_session_id", "phien-moi"), null)).get("summary").asText());
-        assertTrue(data(internal(get("/internal/patients/pp-u-rep/latest-report").param("exclude_session_id", first[1]), null)).get("summary").isNull());
-    }
-
-    @Test
-    void finalizedCallFromClinicalResolvesTheSession() throws Exception {
-        String[] ids = requestConsultation("u-fin");
-        call(post("/api/v1/doctor/consultations/" + ids[1] + "/accept"), token("d-1", "doctor"), null).andExpect(status().isOk());
-        internal(post("/internal/sessions/" + ids[1] + "/finalized"), Map.of("doctor_id", "d-1")).andExpect(status().isOk());
-        call(get("/api/v1/doctor/consultations/" + ids[1]), token("d-1", "doctor"), null).andExpect(jsonPath("$.data.status").value("resolved"));
-        internal(post("/internal/sessions/" + ids[1] + "/finalized"), Map.of()).andExpect(status().isBadRequest());
-    }
-
-    /** Phiên tư vấn đã được bác sĩ `d-1` nhận; trả (conversationId, sessionId). */
-    String[] activeSession(String patient) throws Exception {
-        String[] ids = requestConsultation(patient);
-        call(post("/api/v1/doctor/consultations/" + ids[1] + "/accept"), token("d-1", "doctor"), null).andExpect(status().isOk());
-        reset(inbox);
-        return ids;
+    void doctorListsOnlyTheirOwnChannelsWithPatientAndLastMessage() throws Exception {
+        String mine = openChannel("enc-4", "u-fu4", "d-list");
+        openChannel("enc-5", "u-fu5", "d-khac");
+        call(post("/api/v1/conversations/" + mine + "/messages"), token("u-fu4"), Map.of("client_message_id", "c", "content", "Em đã đỡ ngứa")).andExpect(status().isAccepted());
+        call(get("/api/v1/doctor/followup-channels"), token("u-fu4"), null).andExpect(status().isForbidden());
+        call(get("/api/v1/doctor/followup-channels"), token("d-list", "doctor"), null).andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].conversation_id").value(mine)).andExpect(jsonPath("$.data[0].patient_name").value("Bệnh nhân pp-u-fu4"))
+                .andExpect(jsonPath("$.data[0].preview").value("Em đã đỡ ngứa"));
     }
 
     @Test
     void videoCallLifecycleNotifiesBothUsersAndPostsLinesInTheChat() throws Exception {
-        String[] ids = activeSession("u-call");
+        String channel = openChannel("enc-6", "u-call", "d-1");
         String doctor = token("d-1", "doctor"), patient = token("u-call");
-        call(post("/api/v1/conversations/" + ids[0] + "/video-calls"), patient, null).andExpect(status().isForbidden());
+        call(post("/api/v1/conversations/" + channel + "/video-calls"), patient, null).andExpect(status().isForbidden());
+        call(post("/api/v1/conversations/" + channel + "/video-calls"), token("d-2", "doctor"), null).andExpect(status().isForbidden());
 
-        String callId = data(call(post("/api/v1/conversations/" + ids[0] + "/video-calls"), doctor, Map.of("mode", "video")).andExpect(status().isCreated())
+        String callId = data(call(post("/api/v1/conversations/" + channel + "/video-calls"), doctor, Map.of("mode", "video")).andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.status").value("pending")).andExpect(jsonPath("$.data.doctor_id").value("d-1"))).get("id").asText();
         verify(inbox).publish(eq("user:calls:d-1"), any());
         verify(inbox).publish(eq("user:calls:u-call"), any());
-        call(post("/api/v1/conversations/" + ids[0] + "/video-calls"), doctor, null).andExpect(status().isConflict());
+        call(post("/api/v1/conversations/" + channel + "/video-calls"), doctor, null).andExpect(status().isConflict());
         call(post("/api/v1/video-calls/" + callId + "/signal"), doctor, Map.of("kind", "offer", "payload", Map.of("sdp", "x"))).andExpect(status().isConflict());
         call(post("/api/v1/video-calls/" + callId + "/accept"), doctor, null).andExpect(status().isForbidden());
         call(post("/api/v1/video-calls/" + callId + "/accept"), token("u-ngoai"), null).andExpect(status().isForbidden());
@@ -455,30 +421,30 @@ class ConsultationApiTest {
         call(post("/api/v1/video-calls/" + callId + "/end"), patient, null).andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("ended"));
         call(post("/api/v1/video-calls/" + callId + "/end"), doctor, null).andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("ended"));
 
-        JsonNode messages = data(call(get("/api/v1/conversations/" + ids[0] + "/messages"), patient, null));
+        JsonNode messages = data(call(get("/api/v1/conversations/" + channel + "/messages"), patient, null));
         JsonNode first = messages.get(messages.size() - 2), last = messages.get(messages.size() - 1);
         assertEquals(List.of("video_call", "doctor", "Cuộc gọi bắt đầu"), List.of(first.get("metadata").get("message_type").asText(), first.get("sender").asText(), first.get("content").asText()));
         assertTrue(last.get("content").asText().startsWith("Cuộc gọi kết thúc · 00:0"));
         assertEquals("ended", last.get("metadata").get("video_call").get("status").asText());
         // cuộc gọi mới được khi cuộc trước đã kết thúc
-        call(post("/api/v1/conversations/" + ids[0] + "/video-calls"), doctor, null).andExpect(status().isCreated());
+        call(post("/api/v1/conversations/" + channel + "/video-calls"), doctor, null).andExpect(status().isCreated());
     }
 
     @Test
-    void videoCallRejectedByPatientAndCallRequiresActiveSession() throws Exception {
-        String[] pending = requestConsultation("u-nocall");
-        call(post("/api/v1/conversations/" + pending[0] + "/video-calls"), token("d-1", "doctor"), null).andExpect(status().isConflict());
+    void videoCallRejectedByPatientOrMissedAndAiConversationCannotBeCalled() throws Exception {
+        String[] aiChat = createConversation("u-nocall", "Xin chào");
+        call(post("/api/v1/conversations/" + aiChat[0] + "/video-calls"), token("d-1", "doctor"), null).andExpect(status().isNotFound());
 
-        String[] ids = activeSession("u-reject");
-        String callId = data(call(post("/api/v1/conversations/" + ids[0] + "/video-calls"), token("d-1", "doctor"), null).andExpect(status().isCreated())).get("id").asText();
+        String channel = openChannel("enc-7", "u-reject", "d-1");
+        String callId = data(call(post("/api/v1/conversations/" + channel + "/video-calls"), token("d-1", "doctor"), null).andExpect(status().isCreated())).get("id").asText();
         call(post("/api/v1/video-calls/" + callId + "/end"), token("u-reject"), null).andExpect(status().isOk());
-        JsonNode messages = data(call(get("/api/v1/conversations/" + ids[0] + "/messages"), token("u-reject"), null));
+        JsonNode messages = data(call(get("/api/v1/conversations/" + channel + "/messages"), token("u-reject"), null));
         assertEquals("Bệnh nhân đã từ chối cuộc gọi", messages.get(messages.size() - 1).get("content").asText());
 
-        String missed = data(call(post("/api/v1/conversations/" + ids[0] + "/video-calls"), token("d-1", "doctor"), null).andExpect(status().isCreated())).get("id").asText();
+        String missed = data(call(post("/api/v1/conversations/" + channel + "/video-calls"), token("d-1", "doctor"), null).andExpect(status().isCreated())).get("id").asText();
         call(post("/api/v1/video-calls/" + missed + "/end"), token("d-1", "doctor"), Map.of("reason", "missed")).andExpect(status().isOk());
-        assertEquals("Cuộc gọi nhỡ", data(call(get("/api/v1/conversations/" + ids[0] + "/messages"), token("u-reject"), null)).get(
-                data(call(get("/api/v1/conversations/" + ids[0] + "/messages"), token("u-reject"), null)).size() - 1).get("content").asText());
+        JsonNode after = data(call(get("/api/v1/conversations/" + channel + "/messages"), token("u-reject"), null));
+        assertEquals("Cuộc gọi nhỡ", after.get(after.size() - 1).get("content").asText());
     }
 
     @Autowired

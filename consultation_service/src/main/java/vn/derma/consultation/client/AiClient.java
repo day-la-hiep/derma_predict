@@ -19,7 +19,7 @@ public class AiClient {
 
     /** Khớp `TurnRequest` của ai; chỉ mang id và nội dung, ai tự kéo lịch sử và hồ sơ. */
     public record TurnRequest(String type, String conversationId, String messageId, String userMessageId, String corrId, String content,
-            String answer, List<AttachmentRef> attachedFiles, String sessionId, String patientProfileId, String reason) {
+            String answer, List<AttachmentRef> attachedFiles) {
     }
 
     private final RestClient http;

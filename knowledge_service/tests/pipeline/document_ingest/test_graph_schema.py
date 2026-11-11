@@ -1,6 +1,6 @@
 """Test danh mục quan hệ / loại thực thể do bác sĩ định nghĩa: dùng trong bước graph, graph_index và validate khi tạo.
 
-python -m unittest pipeline.document_ingest.tests.test_graph_schema -v"""
+python -m unittest tests.pipeline.document_ingest.test_graph_schema -v"""
 
 import json
 import unittest
@@ -13,8 +13,8 @@ from app.services.document_ingest_pipeline_service import DocumentIngestPipeline
 from app.services.graph_schema_service import GraphSchemaService
 
 from app.pipeline.document_ingest.stages.step5_graph import EXTRACT_PROMPT
-from app.pipeline.document_ingest.tests.test_document_pipeline import FakeEmbedding
-from app.pipeline.document_ingest.tests.test_graph import CHUNKS, GraphBase, graph_llm
+from tests.pipeline.document_ingest.test_document_pipeline import FakeEmbedding
+from tests.pipeline.document_ingest.test_graph import CHUNKS, GraphBase, graph_llm
 
 GROUP = EntityTypeCreate(id="patient_group", label="PatientGroup", title="Nhóm bệnh nhân", hint="nhóm bệnh nhân tiếng Anh, vd 'children'")
 REL = RelationCreate(relation_type="DISEASE_AFFECTS_GROUP", topic="disease", object_type="patient_group", title="hay gặp ở",

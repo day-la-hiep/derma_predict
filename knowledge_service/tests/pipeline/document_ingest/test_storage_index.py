@@ -1,6 +1,6 @@
 """Test lưu trữ (MinIO qua MemoryMinio) và bước lưu vào kho tri thức (Qdrant in-memory + embedding giả).
 
-python -m unittest pipeline.document_ingest.tests.test_storage_index -v"""
+python -m unittest tests.pipeline.document_ingest.test_storage_index -v"""
 
 import unittest
 
@@ -11,7 +11,7 @@ from derma_shared.errors import PipelineError
 
 from app.pipeline.document_ingest.profile import default_profile
 from app.pipeline.document_ingest.stages import StageError
-from app.pipeline.document_ingest.tests.test_document_pipeline import DIM, Base, FakeEmbedding, _pages
+from tests.pipeline.document_ingest.test_document_pipeline import DIM, Base, FakeEmbedding, _pages
 
 class StorageTest(Base):
     def test_records_in_db_and_files_in_object_store(self) -> None:

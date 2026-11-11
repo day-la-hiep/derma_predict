@@ -21,14 +21,13 @@ import vn.derma.clinical.common.AuthenticatedUser;
 import vn.derma.clinical.common.CurrentUser;
 import vn.derma.clinical.client.IdentityClient;
 import vn.derma.clinical.dto.FinalizeDtos.EncounterDraftOutput;
-import vn.derma.clinical.dto.FinalizeDtos.FinalizeDraftOutput;
 import vn.derma.clinical.dto.FinalizeDtos.FinalizeInput;
 import vn.derma.clinical.dto.FinalizeDtos.FinalizeReportItemOutput;
 import vn.derma.clinical.dto.FinalizeDtos.FinalizeReportOutput;
 import vn.derma.clinical.dto.FinalizeDtos.PatientFinalizeReportOutput;
 import vn.derma.clinical.service.FinalizeReportService;
 
-/** Báo cáo kết luận. `/doctor/consultations/{id}/finalize*` nằm ở đây, không phải consultation (gateway route theo đường dẫn dài hơn trước). */
+/** Báo cáo kết luận theo lần khám (encounter). */
 @RestController
 @RequestMapping("/api/v1")
 @AllArgsConstructor
@@ -40,25 +39,6 @@ public class FinalizeController {
     @GetMapping("/patient-profiles/{profileId}/finalize-reports")
     ApiResponse<List<PatientFinalizeReportOutput>> listForPatient(@CurrentUser AuthenticatedUser user, @PathVariable String profileId) {
         return new ApiResponse<>(service.listForPatient(user.id(), profileId));
-    }
-
-    @GetMapping("/doctor/consultations/{sessionId}/finalize-reports")
-    ApiResponse<List<FinalizeReportOutput>> listForSession(@CurrentUser AuthenticatedUser user, @PathVariable String sessionId) {
-        requireDoctor(user);
-        return new ApiResponse<>(service.listForSession(sessionId, user.id()));
-    }
-
-    @GetMapping("/doctor/consultations/{sessionId}/finalize-draft")
-    ApiResponse<FinalizeDraftOutput> draftForSession(@CurrentUser AuthenticatedUser user, @PathVariable String sessionId) {
-        requireDoctor(user);
-        return new ApiResponse<>(service.draftForSession(sessionId, user.id()));
-    }
-
-    @PostMapping("/doctor/consultations/{sessionId}/finalize")
-    @ResponseStatus(HttpStatus.CREATED)
-    ApiResponse<FinalizeReportOutput> finalizeSession(@CurrentUser AuthenticatedUser user, @PathVariable String sessionId, @Valid @RequestBody FinalizeInput body) {
-        requireDoctor(user);
-        return new ApiResponse<>(service.finalizeSession(sessionId, user.id(), doctorName(user), body));
     }
 
     @GetMapping("/doctor/finalize-reports")
