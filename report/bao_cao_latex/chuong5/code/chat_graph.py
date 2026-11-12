@@ -1,0 +1,5 @@
+graph = StateGraph(ChatState, context_schema=AgentContext)
+graph.add_node("triage", triage)
+graph.add_edge(START, "triage")
+graph.add_edge(START, "pre_diagnosis")
+graph.add_edge("pre_diagnosis", END)

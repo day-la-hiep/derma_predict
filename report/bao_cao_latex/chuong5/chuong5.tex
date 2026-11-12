@@ -2,24 +2,261 @@
 \chapter[\MakeUppercase{Thiết kế chatbot tiền chẩn đoán da liễu}]{Thiết kế chatbot tiền chẩn đoán da liễu}
 \label{ch:chuong5}
 
-% TODO: chỉ có outline. Nội dung bản cũ lưu ở chuong5/luu_tru/chuong5_noi_dung_cu.tex (không được nạp vào main.tex).
+Chương này mô tả cách chatbot lập luận trong một lượt hội thoại: lọc ý định, trích dữ kiện, tra cứu, đánh giá bằng chứng và trả lời. Hệ thống chạy theo kiến trúc microservice (Chương~\ref{ch:chuong2}); phần lập luận nằm ở dịch vụ agent (\texttt{ai}), phần hội thoại và SSE nằm ở dịch vụ hội thoại (\texttt{consultation}).
 
 \section{Luồng xử lý tổng quát của một lượt chat}
+\label{sec:luong-tong-quat}
+
+Một lượt chat đi qua các thành phần sau:
+
+\begin{enumerate}
+  \item \textbf{Giao diện} gửi tin nhắn tới Gateway. Gateway định tuyến sang dịch vụ hội thoại.
+  \item \textbf{Dịch vụ hội thoại} lưu tin người dùng và tin trợ lý rỗng (trạng thái \texttt{queued}) trong cơ sở dữ liệu riêng. Sau đó gọi dịch vụ agent qua giao diện nội bộ và không chờ kết quả.
+  \item \textbf{Dịch vụ agent} nhận yêu cầu, build ngữ cảnh, rồi chạy luồng LangGraph (khung xây dựng đồ thị trạng thái cho agent).
+  \item \textbf{Trong lúc chạy}, dịch vụ agent ghi từng bước lập luận và từng đoạn chữ của câu trả lời vào luồng dữ liệu Redis (Redis Stream, có replay). Dịch vụ hội thoại đọc stream và chuyển nguyên văn về giao diện qua SSE (Server-Sent Events).
+  \item \textbf{Khi lượt kết thúc}, dịch vụ agent ghi kết quả lâm sàng vào dịch vụ lâm sàng (\texttt{clinical}) qua \texttt{apply-turn}, rồi gửi kết quả về dịch vụ hội thoại. Dịch vụ hội thoại cập nhật tin trợ lý và báo giao diện hoàn tất.
+\end{enumerate}
+
+Mỗi hội thoại là một phiên (\texttt{thread}) của LangGraph. Trạng thái của luồng được lưu bằng điểm lưu trạng thái (checkpoint) trong PostgreSQL. Lượt sau đọc lại checkpoint, nên chatbot nhớ lịch sử và trạng thái tiền chẩn đoán của lượt trước. Mỗi hội thoại chỉ chạy một lượt tại một thời điểm; dịch vụ hội thoại trả 409 nếu gửi thêm khi đang có tin trợ lý ở trạng thái \texttt{queued} hoặc \texttt{question}.
+
+Cấu trúc yêu cầu mà dịch vụ hội thoại gửi sang dịch vụ agent (\texttt{ai\_service/app/dto/turn\_request.py}):
+
+\codeblock{chuong5/code/turn_request}{Cấu trúc yêu cầu turn từ dịch vụ hội thoại sang dịch vụ agent}{lst:turn-request}
+
+Dịch vụ hội thoại phát yêu cầu và nhận kết quả qua client HTTP:
+
+\codeblock{chuong5/code/dispatch_turn}{Phát yêu cầu turn sang dịch vụ agent}{lst:dispatch-turn}
+
+Dịch vụ agent xử lý một turn : build ngữ cảnh, chạy đồ thị, phát sự kiện lên Redis Stream, rồi gửi kết quả về dịch vụ hội thoại:
+
+\codeblock{chuong5/code/handle_turn}{Xử lý một turn và gửi kết quả về dịch vụ hội thoại}{lst:handle-turn}
+
+Dịch vụ hội thoại đọc Redis Stream và đẩy về giao diện qua SSE ():
+
+\codeblock{chuong5/code/stream_pump}{Đọc Redis Stream và đẩy sự kiện qua SSE}{lst:stream-pump}
 
 \section{Luồng tiền chẩn đoán: xử lý mô tả triệu chứng và hình ảnh}
+\begin{figure}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  node distance=0pt,
+  svc/.style={draw, rounded corners=3pt, minimum width=2.6cm, minimum height=0.9cm, align=center, font=\small},
+  io/.style={draw, rounded corners=3pt, minimum width=2.6cm, minimum height=0.9cm, align=center, font=\small, fill=gray!12},
+  ar/.style={-{Stealth[length=2mm]}, thick},
+  lb/.style={font=\scriptsize, fill=white, inner sep=1pt}
+]
+  \node[io] (fe) at (0,0) {Giao dien (FE)};
+  \node[svc] (gw) at (3.4,0) {Gateway};
+  \node[svc] (cs) at (6.8,0) {Consultation};
+  \node[svc] (ai) at (3.4,-2.4) {AI};
+  \node[svc] (cl) at (0,-2.4) {Clinical};
+  \node[svc] (kn) at (6.8,-2.4) {Knowledge};
+  \node[io] (rs) at (3.4,-4.6) {Redis Stream};
+  \draw[ar] (fe) -- node[lb, above] {1} (gw);
+  \draw[ar] (gw) -- node[lb, above] {2} (cs);
+  \draw[ar] (cs.south) -- ++(0,-0.3) -| node[lb, pos=0.25, above] {3} (ai.north);
+  \draw[ar] (ai.west) -- node[lb, above] {7a} (cl.east);
+  \draw[ar] (ai.east) -- node[lb, above] {7b} (kn.west);
+  \draw[ar] (ai.south) -- node[lb, right] {5} (rs.north);
+  \draw[ar] (rs.west) -- ++(-1.2,0) |- node[lb, pos=0.3, left] {6} (cs.south west);
+  \draw[ar] (cs.north) -- ++(0,0.5) -| node[lb, pos=0.25, above] {8} (fe.north);
+\end{tikzpicture}%
+}
+\caption{Luồng xử lý tổng quát 1 lượt chat (microservice)}
+\label{fig:luong-tong-quat}
+\end{figure}
+
+\label{sec:tien-chan-doan}
 
 \subsection{Luồng xử lý mô tả triệu chứng}
 
+Luồng tiền chẩn đoán là một máy trạng thái gồm các nút nối với nhau (LangGraph \texttt{StateGraph}). Bước đầu \texttt{load\_memory} đọc bộ nhớ dài hạn của bệnh nhân (mục~\ref{sec:bo-nho}). Sau đó luồng chạy song song hai làn:
+
+\begin{itemize}
+  \item \textbf{Làn chữ (\texttt{text\_flow}):} suy luận từ mô tả của người bệnh. Luôn chạy.
+  \item \textbf{Làn ảnh (\texttt{image\_flow}):} suy luận từ ảnh đính kèm. Chỉ chạy khi tin nhắn có ảnh.
+\end{itemize}
+
+Hai làn gặp nhau ở nút \texttt{label\_evidence} của làn chữ. Các nút của làn chữ theo thứ tự:
+
+\begin{enumerate}
+  \item \texttt{extract\_facts}: trích dữ kiện lâm sàng từ lời người bệnh (mục~\ref{sec:trich-du-kien}).
+  \item \texttt{plan}: lập kế hoạch truy vấn. Nếu không có truy vấn nào, nhảy thẳng tới \texttt{answer}.
+  \item \texttt{choose\_tools}: chọn công cụ tra cứu phù hợp.
+  \item \texttt{tools}: gọi công cụ (tra sách, đồ thị, ca tương tự, bộ nhớ bệnh nhân).
+  \item \texttt{label\_evidence}: gắn mã \texttt{E\#} cho mỗi bằng chứng được dùng.
+  \item \texttt{reflect}: đánh giá giả thuyết. Nếu còn thiếu căn cứ và chưa quá 3 vòng, quay lại \texttt{choose\_tools}.
+  \item \texttt{answer}: sinh câu trả lời dựa trên bằng chứng.
+\end{enumerate}
+
+Nút \texttt{triage} trước đó phân loại tin nhắn: trả lời ngay (chào hỏi, câu ngoài phạm vi) hoặc chuyển sang tiền chẩn đoán. Tin có ảnh luôn đi thẳng sang tiền chẩn đoán. LLM nhận sáu tin gần nhất để hiểu ngữ cảnh.
+
+Các công cụ tiền chẩn đoán được đăng ký :
+
+
+\begin{figure}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  node distance=0pt,
+  n/.style={draw, rounded corners=2pt, minimum width=2.6cm, minimum height=0.75cm, align=center, font=\small},
+  ar/.style={-{Stealth[length=2mm]}, thick},
+  lb/.style={font=\scriptsize, fill=white, inner sep=1pt}
+]
+  % buoc dau
+  \node[n, fill=gray!12] (mem) at (0,0) {load\_memory};
+  % lan chu (cot trai)
+  \node[n] (ef) at (-4.0,-1.9) {extract\_facts};
+  \node[n] (pl) at (-4.0,-3.3) {plan};
+  \node[n] (ct) at (-4.0,-4.7) {choose\_tools};
+  \node[n] (tl) at (-4.0,-6.1) {tools};
+  \node[n] (le) at (-4.0,-7.5) {label\_evidence};
+  \node[n] (rf) at (-4.0,-8.9) {reflect};
+  \node[n] (an) at (-4.0,-10.3) {answer};
+  % lan anh (cot phai)
+  \node[n] (ic) at (4.0,-4.7) {image\_cnn};
+  \node[n] (iv) at (6.8,-4.7) {image\_vision};
+  \node[n] (id) at (5.4,-6.1) {image\_done};
+  % khung lan chu
+  \draw[dashed, rounded corners=4pt] (-5.6,-1.3) rectangle (-2.4,-11.0);
+  \node[font=\small\bfseries, anchor=south] at (-4.0,-1.25) {text\_flow};
+  % khung lan anh
+  \draw[dashed, rounded corners=4pt] (2.6,-3.8) rectangle (8.0,-6.9);
+  \node[font=\small\bfseries, anchor=south] at (5.3,-3.75) {image\_flow};
+  % mui ten lan chu
+  \draw[ar] (mem) -- (ef);
+  \draw[ar] (ef) -- (pl);
+  \draw[ar] (pl) -- (ct);
+  \draw[ar] (ct) -- (tl);
+  \draw[ar] (tl) -- (le);
+  \draw[ar] (le) -- (rf);
+  \draw[ar] (rf) -- (an);
+  % plan khong co truy van -> answer (di ben trai khung)
+  \draw[ar] (pl.west) -- ++(-1.2,0) |- (an.west);
+  \node[lb] at (-6.0,-6.8) {khong co truy van};
+  % vong tra cuu: reflect -> choose_tools (di ben trai, sat hon)
+  \draw[ar] (rf.west) -- ++(-0.6,0) |- (ct.west);
+  \node[lb] at (-5.0,-6.8) {con thieu (<=3 vong)};
+  % lan anh
+  \draw[ar] (mem) -- (ic);
+  \draw[ar] (mem) -- (iv);
+  \draw[ar] (ic) -- (id);
+  \draw[ar] (iv) -- (id);
+  \draw[ar] (id) -- (le);
+\end{tikzpicture}%
+}
+\caption{Luồng tiền chẩn đoán: làn chữ và làn ảnh}
+\label{fig:luong-tien-chan-doan}
+\end{figure}
+
+\codeblock{chuong5/code/build_tools}{Đăng ký công cụ tiền chẩn đoán}{lst:build-tools}
+
+Công cụ \texttt{hybrid\_retrieval} gộp semantic search (Qdrant, cơ sở dữ liệu vector) và BM25 (thuật toán xếp hạng từ khóa), sau đó xếp hạng lại (rerank). Công cụ \texttt{query\_document\_graph} truy vấn đồ thị trích từ sách. Công cụ \texttt{search\_finalize\_report} tra ca bệnh thực tế đã chốt. Kết quả mỗi công cụ được gắn mã \texttt{E\#} bởi mã chương trình dựa trên tên công cụ và nội dung, không do LLM quyết định.
+
+Một giả thuyết bệnh chỉ được giữ khi trích dẫn ít nhất một mã \texttt{E\#} hợp lệ. Khi không có giả thuyết nào đạt điều kiện, chatbot không nêu tên bệnh, không xếp hạng và không nêu độ tin cậy. Câu trả lời gồm ba phần: nói rõ chưa tra cứu được nguồn để đối chiếu, nhắc lại điều người bệnh đã mô tả, rồi hỏi thêm hoặc khuyên khám da liễu kèm dấu hiệu cần đi khám ngay.
+
 \subsection{Luồng xử lý hình ảnh}
+
+Làn ảnh chạy song song với làn chữ, chỉ khi tin nhắn có ảnh:
+
+\begin{enumerate}
+  \item \texttt{image\_cnn}: phân loại ảnh bằng mạng nơ-ron tích chập (CNN) 22 lớp (MobileNetV3), trả về top-5 nhãn và độ tin cậy.
+  \item \texttt{image\_vision}: mô tả ảnh bằng mô hình vision (MedGemma qua Ollama, nếu cấu hình). Nếu không chạy được, bước này báo lỗi rồi bỏ qua, CNN vẫn chạy.
+  \item \texttt{image\_done}: gom kết quả, lưu vào ngữ cảnh (\texttt{turn\_images}) để ghi vào dịch vụ lâm sàng ở cuối lượt.
+\end{enumerate}
+
+Kết quả CNN được cross-check với giả thuyết từ làn chữ: nếu nhãn CNN trùng với giả thuyết đang xét, ảnh được gắn vào đợt bệnh tương ứng. Nếu không xác định được duy nhất (hội thoại nhiều đợt không khớp), ảnh bị bỏ và ghi cảnh báo ở dịch vụ lâm sàng.
 
 \subsection{Phối hợp các luồng}
 
+Hai làn gặp nhau ở \texttt{label\_evidence}: kết quả ảnh (nếu có) được dùng làm bằng chứng bổ sung cho giả thuyết. Đồ thị LangGraph định nghĩa :
+
+\codeblock{chuong5/code/chat_graph}{Định nghĩa đồ thị chat}{lst:chat-graph}
+
+Luồng tiền chẩn đoán (\texttt{pre\_diagnosis}) là một đồ thị con (compiled subgraph) được gọi như một nút của đồ thị chính. Kết quả trả về của lượt là \texttt{AIMessage} cuối cùng của các nút \texttt{triage} hoặc \texttt{pre\_diagnosis}.
 \section{Dữ kiện liên quan đến bệnh nhân}
+\label{sec:du-kien-benh-nhan}
+
+Một lượt chat không chỉ trả lời câu hỏi hiện tại. Chatbot còn trích và lưu dữ kiện lâm sàng, giữ trạng thái qua các lượt, và ghi nhớ thông tin giao tiếp dài hạn của bệnh nhân. Ba cơ chế này được mô tả ở các mục sau.
+
+\begin{figure}[H]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[
+  node distance=0pt,
+  box/.style={draw, rounded corners=3pt, minimum width=3.0cm, minimum height=0.85cm, align=center, font=\small},
+  io/.style={draw, rounded corners=3pt, minimum width=3.0cm, minimum height=0.85cm, align=center, font=\small, fill=gray!12},
+  ar/.style={-{Stealth[length=2mm]}, thick},
+  lb/.style={font=\scriptsize, fill=white, inner sep=1pt}
+]
+  \node[io] (msg) at (0,0) {Tin nhan nguoi benh};
+  \node[box] (ext) at (3.6,0) {extract\_facts};
+  \node[box] (ctx) at (7.2,0) {AgentContext};
+  \node[box] (fin) at (10.8,0) {finish\_turn};
+  \node[io] (cl) at (10.8,-2.2) {Clinical (apply-turn)};
+  \node[box] (mem) at (3.6,-2.2) {patient\_memory};
+  \node[io] (store) at (0,-2.2) {LangGraph Store};
+  \node[box] (load) at (0,-4.4) {load\_memory};
+  \draw[ar] (msg) -- node[lb, above] {1} (ext);
+  \draw[ar] (ext) -- node[lb, above] {2} (ctx);
+  \draw[ar] (ctx) -- node[lb, above] {3} (fin);
+  \draw[ar] (fin) -- node[lb, right] {4} (cl);
+  \draw[ar] (msg) -- ++(0,-1.1) -| node[lb, pos=0.25, above] {5} (mem.north);
+  \draw[ar] (mem) -- node[lb, above] {6} (store);
+  \draw[ar] (store) -- node[lb, left] {7} (load);
+  \draw[ar] (load) -- ++(0,1.1) -| node[lb, pos=0.25, above] {8} (ctx.south west);
+\end{tikzpicture}%
+}
+\caption{Luồng trích và lưu dữ kiện liên quan đến bệnh nhân}
+\label{fig:du-kien-benh-nhan}
+\end{figure}
 
 \subsection{Trích dữ kiện lâm sàng từ lời người bệnh}
+\label{sec:trich-du-kien}
+
+Nút \texttt{extract\_facts} gọi mô hình ngôn ngữ với prompt chuyên biệt, trích từ tin nhắn các dữ kiện có cấu trúc. Mỗi dữ kiện gồm loại, nhãn, chi tiết, vùng da và danh sách số thứ tự tin nhắn nguồn. Các loại dữ kiện: triệu chứng (\texttt{symptom}), tổn thương (\texttt{lesion}), tiền sử (\texttt{history}), thuốc (\texttt{medication}), dị ứng (\texttt{allergy}), khác (\texttt{other}). Ba loại cuối được coi là dữ kiện dài hạn.
+
+Mô hình trả về danh sách dữ kiện. Mã chương trình sau đó kiểm tra từng dữ kiện: số thứ tự tin nhắn nguồn phải hợp lệ, và các từ khóa của dữ kiện phải xuất hiện trong tin nhắn nguồn (cảnh báo nếu không khớp, tránh mô hình bịa dữ kiện). Chi tiết được cắt còn tối đa 300 ký tự. Vùng da được chuẩn hóa theo danh sách cho phép.
+
+\codeblock{chuong5/code/extracted_fact}{Mô hình dữ kiện trích xuất và kiểm tra bằng chứng}{lst:extracted-fact}
+
+Các dữ kiện của lượt hiện tại (\texttt{turn\_facts}) được lưu vào dịch vụ lâm sàng qua giao diện nội bộ \texttt{apply-turn} ở cuối lượt (bước \texttt{finish\_turn}). Dữ kiện dài hạn (dị ứng, tiền sử, thuốc) được đồng bộ với dịch vụ lâm sàng qua giao diện nội bộ cập nhật toàn bộ dữ kiện dài hạn.
 
 \subsection{Trạng thái giữ qua các lượt hội thoại}
 
+Trạng thái tiền chẩn đoán (giả thuyết, bằng chứng, dữ kiện) được giữ trong checkpoint của LangGraph, keyed theo mã hội thoại (\texttt{conversation\_id}). Khi người bệnh gửi tin tiếp theo, luồng đọc lại checkpoint và tiếp tục từ trạng thái trước, không hỏi lại những gì đã biết.
+
+Ngữ cảnh của một lượt (\texttt{AgentContext}) chứa các trường dữ liệu liên quan: \texttt{turn\_facts}, \texttt{turn\_hypotheses}, \texttt{turn\_images} (kết quả lâm sàng của lượt), \texttt{known\_facts} (dữ kiện hiện trạng trong cơ sở dữ liệu, nạp khi build ngữ cảnh), \texttt{memory\_text} (bộ nhớ dài hạn, nạp ở bước \texttt{load\_memory}). Các trường này được các nút của đồ thị ghi vào; \texttt{turn.py} gửi chúng về dịch vụ lâm sàng khi lượt kết thúc.
+
+Mỗi hội thoại chỉ chạy một lượt tại một thời điểm. Dịch vụ hội thoại trả 409 nếu gửi thêm khi đang có tin trợ lý ở trạng thái \texttt{queued} hoặc \texttt{question}.
+
 \subsection{Bộ nhớ dài hạn của bệnh nhân}
+\label{sec:bo-nho}
+
+Dịch vụ agent có công cụ \texttt{patient\_memory} đọc và ghi bộ nhớ dài hạn của bệnh nhân. Bộ nhớ này lưu thông tin giao tiếp, không lưu dữ kiện lâm sàng (dị ứng, tiền sử, thuốc đã được ghi vào dịch vụ lâm sàng). Ví dụ thông tin được lưu: ai đang được tư vấn cho (bệnh nhân hay con), cách xưng hô ưa thích, mức độ chi tiết muốn nghe, ưu tiên thời gian khám.
+
+Bộ nhớ dùng LangGraph Store, keyed theo mã hồ sơ bệnh nhân (\texttt{patient\_profile\_id}), không theo tài khoản. Trong môi trường kiểm thử store chạy trong RAM; trong môi trường thật store dùng PostgreSQL riêng của dịch vụ agent.
+
+Quy trình cập nhật bộ nhớ sau mỗi lượt:
+
+\begin{enumerate}
+  \item \textbf{buffer\_message}: ghi tin nhắn người bệnh vào vùng chờ (pending) của store.
+  \item \textbf{run\_batch}: nếu đủ điều kiện (số tin chờ đạt ngưỡng hoặc đã qua khoảng thời gian), gọi mô hình ngôn ngữ so sánh vùng chờ với bộ nhớ hiện có và quyết định thao tác: thêm (\texttt{add}), cập nhật (\texttt{update}), hoặc bỏ qua (\texttt{skip}).
+  \item \textbf{apply\_ops}: thực thi các thao tác, ghi bộ nhớ mới.
+  \item \textbf{consolidate}: nếu số bộ nhớ vượt ngưỡng hoặc đã qua số ngày quy định, gom các bộ nhớ cũ thành danh sách ngắn hơn (lưu bản cũ vào vùng lưu trữ \texttt{memories\_archive} trước khi thay).
+\end{enumerate}
+
+Các bước này chạy nền (\texttt{\_schedule\_memory\_update}) sau khi câu trả lời đã gửi xong, nên không làm chậm lượt chat. Nếu lỗi, chỉ ghi log, không ảnh hưởng câu trả lời.
+
+\codeblock{chuong5/code/after_turn}{Cập nhật bộ nhớ dài hạn sau mỗi lượt}{lst:after-turn}
+
+Bộ nhớ được đọc ở bước \texttt{load\_memory} đầu lượt (\texttt{memory\_text}), rồi nối vào prompt của các nút sau, giúp chatbot nhớ các thông tin giao tiếp đã khai trước đó mà không cần hỏi lại.
 
 \section{Kết luận}
+\label{sec:ket-luan-chuong5}
+
+Chương này mô tả cách chatbot xử lý một lượt chat: nhận tin, lưu trạng thái, gọi dịch vụ agent, chạy đồ thị tiền chẩn đoán với hai làn chữ và ảnh, tra cứu bằng công cụ, gắn mã bằng chứng \texttt{E\#}, và trả lời dựa trên bằng chứng. Trạng thái được giữ qua các lượt bằng checkpoint. Dữ kiện lâm sàng được ghi vào dịch vụ lâm sàng ở cuối lượt. Bộ nhớ dài hạn giúp chatbot nhớ thông tin giao tiếp của bệnh nhân. Kết quả luôn là gợi ý tham khảo, không phải chẩn đoán y khoa.
+
+\endinput
+\endinput
