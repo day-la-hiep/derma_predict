@@ -1,0 +1,17 @@
+﻿\begin{Verbatim}[commandchars=\\\{\},numbers=left,numbersep=5pt,frame=single,framesep=4pt,breaklines=true,breakanywhere=true,fontsize=\fontsize{9pt}{10.5pt}\selectfont]
+\PY{k}{async} \PY{k}{def}\PY{+w}{ }\PY{n+nf}{handle\PYZus{}turn}\PY{p}{(}\PY{n}{req}\PY{p}{:} \PY{n}{TurnRequest}\PY{p}{)} \PY{o}{\PYZhy{}}\PY{o}{\PYZgt{}} \PY{k+kc}{None}\PY{p}{:}
+    \PY{k}{await} \PY{n}{\PYZus{}drive}\PY{p}{(}\PY{n}{req}\PY{p}{,} \PY{p}{\PYZob{}}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{messages}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{p}{[}\PY{n}{HumanMessage}\PY{p}{(}
+        \PY{n}{content}\PY{o}{=}\PY{n}{\PYZus{}human\PYZus{}message\PYZus{}content}\PY{p}{(}\PY{n}{req}\PY{p}{)}\PY{p}{,} \PY{n+nb}{id}\PY{o}{=}\PY{n}{req}\PY{o}{.}\PY{n}{user\PYZus{}message\PYZus{}id}\PY{p}{)}\PY{p}{]}\PY{p}{\PYZcb{}}\PY{p}{)}
+
+\PY{k}{async} \PY{k}{def}\PY{+w}{ }\PY{n+nf}{finish\PYZus{}turn}\PY{p}{(}\PY{n}{req}\PY{p}{,} \PY{n}{event}\PY{p}{,} \PY{o}{*}\PY{p}{,} \PY{n}{content}\PY{p}{,} \PY{n}{reasoning}\PY{o}{=}\PY{k+kc}{None}\PY{p}{,} \PY{n}{context}\PY{o}{=}\PY{k+kc}{None}\PY{p}{)}\PY{p}{:}
+    \PY{k}{await} \PY{n}{emit}\PY{p}{(}\PY{n}{req}\PY{o}{.}\PY{n}{conversation\PYZus{}id}\PY{p}{,} \PY{n}{event}\PY{p}{)}
+    \PY{k}{await} \PY{n}{get\PYZus{}redis\PYZus{}client}\PY{p}{(}\PY{p}{)}\PY{o}{.}\PY{n}{add\PYZus{}stream\PYZus{}event}\PY{p}{(}
+        \PY{n}{CONVERSATION\PYZus{}EVENTS\PYZus{}STREAM}\PY{o}{.}\PY{n}{format}\PY{p}{(}\PY{n}{conversation\PYZus{}id}\PY{o}{=}\PY{n}{req}\PY{o}{.}\PY{n}{conversation\PYZus{}id}\PY{p}{)}\PY{p}{,}
+        \PY{n}{STREAM\PYZus{}DONE\PYZus{}SENTINEL}\PY{p}{)}
+    \PY{k}{if} \PY{n}{context} \PY{o+ow}{is} \PY{o+ow}{not} \PY{k+kc}{None} \PY{o+ow}{and} \PY{p}{(}\PY{n}{context}\PY{o}{.}\PY{n}{turn\PYZus{}facts} \PY{o+ow}{or} \PY{n}{context}\PY{o}{.}\PY{n}{turn\PYZus{}hypotheses}
+            \PY{o+ow}{or} \PY{n}{context}\PY{o}{.}\PY{n}{turn\PYZus{}images}\PY{p}{)}\PY{p}{:}
+        \PY{k}{await} \PY{n}{\PYZus{}save\PYZus{}clinical\PYZus{}result}\PY{p}{(}\PY{n}{req}\PY{p}{,} \PY{n}{context}\PY{p}{)}
+    \PY{k}{await} \PY{n}{get\PYZus{}consultation\PYZus{}client}\PY{p}{(}\PY{p}{)}\PY{o}{.}\PY{n}{post\PYZus{}turn\PYZus{}result}\PY{p}{(}
+        \PY{n}{req}\PY{o}{.}\PY{n}{message\PYZus{}id}\PY{p}{,} \PY{p}{\PYZob{}}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{conversation\PYZus{}id}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{o}{.}\PY{o}{.}\PY{o}{.}\PY{p}{,} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{content}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{n}{content}\PY{p}{,}
+                         \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{status}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{done}\PY{l+s+s2}{\PYZdq{}}\PY{p}{,} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{choice}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{k+kc}{None}\PY{p}{,} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{reasoning}\PY{l+s+s2}{\PYZdq{}}\PY{p}{:} \PY{o}{.}\PY{o}{.}\PY{o}{.}\PY{p}{\PYZcb{}}\PY{p}{)}
+\end{Verbatim}
