@@ -61,46 +61,457 @@ Hệ thống được chia thành các nhóm chức năng chính bao gồm:
 
 \subsection{Use case chi tiết}
 
-\subsubsection{Module Hỏi đáp với chatbot tiền chẩn đoán}
+Phần này trình bày kịch bản chuẩn và các ngoại lệ cho từng use case chính của hệ thống theo mẫu use case chi tiết (use case, tác nhân, tiền/hậu điều kiện, kịch bản chính và ngoại lệ). Biểu đồ use case chi tiết cho từng use case được bổ sung riêng. Trong các kịch bản, hệ thống được gọi chung là ``hệ thống''; các giá trị cụ thể (tên đăng nhập, mật khẩu, dữ liệu mẫu) lấy từ tài khoản demo.
 
-Module này hỗ trợ bệnh nhân tương tác tự nhiên với tác nhân trí tuệ nhân tạo (AI Agent) nhằm sàng lọc ban đầu các triệu chứng da liễu:
-\begin{itemize}
-  \item \textbf{Tác nhân tham gia:} Bệnh nhân, Hệ thống AI (LangGraph Agent, Mô hình phân loại CNN, Knowledge Service).
-  \item \textbf{Mô tả hoạt động:} Bệnh nhân gửi mô tả triệu chứng bằng văn bản và tải lên hình ảnh vùng da tổn thương. Hệ thống kích hoạt mô hình mạng nơ-ron tích chập (CNN) để phân loại khả năng tổn thương, đồng thời Agent thực hiện lập luận nhiều bước:
-  \begin{itemize}
-    \item Gọi công cụ tìm kiếm ngữ nghĩa và tra cứu đồ thị tri thức da liễu từ Knowledge Base để đối chiếu guideline y khoa.
-    \item Tự động bóc tách các dữ kiện lâm sàng (\textit{clinical facts}) như vị trí tổn thương, thời gian khởi phát, mức độ ngứa rát, tiền sử dị ứng.
-    \item Phản hồi cho bệnh nhân kết quả tiền chẩn đoán mang tính tham khảo cùng giải thích trực quan, khuyến cáo mức độ cấp bách và hướng xử trí phù hợp.
-  \end{itemize}
+\subsubsection{UC1: Đăng ký và đăng nhập}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.4\linewidth,keepaspectratio]{chuong2/hinh/dang_nhap.jpg}
+  \caption{Sơ đồ use case chi tiết -- UC1: Đăng ký và đăng nhập}
+  \label{fig:uc1}
+\end{figure}
+
+Chức năng đăng nhập/đăng ký có các giao diện tương tác với người dùng:
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Đăng nhập/đăng ký -> Đề xuất UC đăng nhập/đăng ký
 \end{itemize}
 
-\subsubsection{Module Hỏi đáp với bác sĩ và báo cáo tiền khám}
+Như vậy, biểu đồ UC chi tiết cho modul đăng nhập/đăng ký được trình bày trong Hình trên. Các UC được mô tả như sau:
 
-Module này kết nối trực tiếp giữa bệnh nhân và bác sĩ chuyên khoa da liễu để tiến hành thăm khám chuyên sâu:
-\begin{itemize}
-  \item \textbf{Tác nhân tham gia:} Bệnh nhân, Bác sĩ, Hệ thống lâm sàng.
-  \item \textbf{Mô tả hoạt động:}
-  \begin{itemize}
-    \item \textbf{Đặt lịch hẹn và tiếp nhận khám:} Bệnh nhân lựa chọn bác sĩ và thời gian khám phù hợp; bác sĩ xem danh sách lịch hẹn và tiếp nhận lần khám (\textit{Encounter}).
-    \item \textbf{Báo cáo tổng hợp tiền khám:} Trước khi bắt đầu trao đổi, bác sĩ được cung cấp báo cáo tổng hợp tự động về bệnh nhân dựa trên các dữ kiện lâm sàng (\textit{clinical facts}) và giả thuyết thu thập từ phiên tương tác với chatbot, đi kèm bằng chứng trích dẫn và đồ thị tri thức hành trình bệnh nhân (\textit{PJKG}).
-    \item \textbf{Trao đổi trực tiếp:} Bác sĩ và bệnh nhân trao đổi qua tin nhắn văn bản, chia sẻ hình ảnh hoặc thực hiện cuộc gọi video trực tuyến (\textit{video call}) để quan sát tổn thương thực tế.
-    \item \textbf{Quản lý hồ sơ bệnh án và chốt kết luận:} Sau khi thăm khám, bác sĩ xác nhận hoặc điều chỉnh các dữ kiện lâm sàng, nhập nhận định chẩn đoán và hướng điều trị để chốt báo cáo kết luận (\textit{Finalize Report}). Ca bệnh được xác nhận có thể lưu trữ làm ca tham khảo chuẩn phục vụ làm giàu tri thức và tái huấn luyện mô hình.
-  \end{itemize}
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Đăng nhập/đăng ký}: UC này cho phép người dùng thực hiện đăng nhập hoặc đăng ký tài khoản để truy cập vào hệ thống.
 \end{itemize}
 
-\subsubsection{Module Quản lý Knowledge Base}
-
-Module phục vụ việc tiếp nhận, chuẩn hóa và số hóa nguồn tri thức y khoa chuyên ngành da liễu:
-\begin{itemize}
-  \item \textbf{Tác nhân tham gia:} Bác sĩ, Quản trị viên, Knowledge Worker.
-  \item \textbf{Mô tả hoạt động:}
-  \begin{itemize}
-    \item Bác sĩ/Quản trị viên tải lên tài liệu y khoa, giáo trình chuyên ngành định dạng PDF.
-    \item Hệ thống kích hoạt pipeline số hóa tài liệu tự động: trích xuất văn bản từng trang (\textit{ingest}), dùng mô hình ngôn ngữ lớn nhận diện cấu trúc mục lục (\textit{toc}), phân đoạn theo cấu trúc mục lục (\textit{chunks}), sinh vector nhúng và nạp vào cơ sở dữ liệu vector Qdrant (\textit{index}).
-    \item Cho phép người duyệt xem xét, chỉnh sửa và ghi đè (\textit{override}) kết quả ở từng bước nhằm đảm bảo độ chính xác học thuật trước khi đưa vào kho tri thức phục vụ tác nhân RAG.
+% bảng use case giãn dòng như văn bản: tắt giãn dòng đơn mặc định của longtable
+\renewcommand{\tablespacing}{}
+\begin{spacing}{1.5}
+\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.18\textwidth}|>{\raggedright\arraybackslash}p{0.77\textwidth}|}
+\hline
+\textbf{Use case} & Đăng ký / Đăng nhập \\ \hline
+\textbf{Tác nhân} & Người dùng (Bệnh nhân, Bác sĩ, Quản trị viên) \\ \hline
+\textbf{Tiền điều kiện} & Chưa đăng nhập vào hệ thống. \\ \hline
+\textbf{Hậu điều kiện} & Người dùng được xác thực, nhận cặp token (Access Token, Refresh Token) và chuyển vào giao diện tương ứng với vai trò. \\ \hline
+\textbf{Kịch bản chính} &
+\begin{enumerate}[nosep,leftmargin=*]
+  \item Người dùng mở ứng dụng, giao diện đăng nhập hiện lên với hai ô ``Tên đăng nhập'' và ``Mật khẩu'' cùng nút ``Đăng nhập''.
+  \item Nhập tên đăng nhập = \texttt{user-1}, mật khẩu = \texttt{123456}, nhấn ``Đăng nhập''; hệ thống kiểm tra tên đăng nhập tồn tại và so khớp mật khẩu (bcrypt).
+  \item Hệ thống phát hành Access Token (JWT, 30 phút) và Refresh Token (30 ngày), lưu Refresh Token trên Redis.
+  \item Client lưu token và chuyển vào giao diện theo vai trò.
+\end{enumerate} \\ \hline
+\textbf{Ngoại lệ} &
+\begin{itemize}[nosep,leftmargin=2.6em,labelwidth=2em,labelsep=0.5em,align=left]
+  \item[2.] Hệ thống báo đăng nhập không thành công (sai mật khẩu hoặc tài khoản không tồn tại).
+  \begin{itemize}[nosep,leftmargin=3em,labelwidth=2.4em,labelsep=0.4em,align=left]
+    \item[2.1] Người dùng click ``OK'' của thông báo.
+    \item[2.2] Hệ thống hiện giao diện đăng nhập: username = \texttt{user-1}, password = (trống).
+    \item[2.3] Người dùng sửa lại mật khẩu thành \texttt{123456}, click ``Đăng nhập''.
+    \item[2.4] Giao diện chính của bệnh nhân hiện lên.
   \end{itemize}
+  \item[4.] Token hết hạn.
+  \begin{itemize}[nosep,leftmargin=3em,labelwidth=2.4em,labelsep=0.4em,align=left]
+    \item[4.1] Client dùng Refresh Token để lấy Access Token mới.
+    \item[4.2] Nếu Refresh Token hết hạn, hệ thống bắt buộc đăng nhập lại (về bước 1).
+  \end{itemize}
+\end{itemize} \\ \hline
+\end{longtable}
+\end{spacing}
+
+\subsubsection{UC2: Hỏi đáp với chatbot tiền chẩn đoán}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/hoi_dap_chatbot.jpg}
+  \caption{Sơ đồ use case chi tiết -- UC2: Hỏi đáp với chatbot tiền chẩn đoán}
+  \label{fig:uc2}
+\end{figure}
+
+Chức năng hỏi đáp với chatbot tiền chẩn đoán có các giao diện tương tác với người dùng:
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Đăng nhập -> Đề xuất UC đăng nhập
 \end{itemize}
 
+\begin{itemize}[nosep,leftmargin=*]
+  \item Xem giao diện nhắn tin -> Đề xuất UC xem giao diện nhắn tin
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Lựa chọn model LLM/CNN -> Đề xuất UC lựa chọn model LLM/CNN
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Gửi tin nhắn -> Đề xuất UC gửi tin nhắn
+\end{itemize}
+
+Như vậy, biểu đồ UC chi tiết cho modul hỏi đáp với chatbot tiền chẩn đoán được trình bày trong Hình trên. Các UC được mô tả như sau:
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Xem giao diện nhắn tin}: UC này cho phép người dùng xem giao diện trò chuyện chính với chatbot.
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Lựa chọn model LLM/CNN}: UC này cho phép người dùng tùy chọn mô hình trí tuệ nhân tạo (LLM hoặc CNN) phù hợp để phục vụ cho quá trình hỏi đáp.
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Gửi tin nhắn}: UC này cho phép người dùng nhập nội dung câu hỏi và gửi đi để nhận phản hồi từ chatbot.
+\end{itemize}
+
+\begin{spacing}{1.5}
+\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.18\textwidth}|>{\raggedright\arraybackslash}p{0.77\textwidth}|}
+\hline
+\textbf{Use case} & Hỏi đáp với chatbot tiền chẩn đoán \\ \hline
+\textbf{Tác nhân} & Bệnh nhân, Hệ thống AI \\ \hline
+\textbf{Tiền điều kiện} & Bệnh nhân đã đăng nhập và có hồ sơ bệnh nhân. \\ \hline
+\textbf{Hậu điều kiện} & Tin nhắn và kết quả tiền chẩn đoán được lưu; các dữ kiện lâm sàng (\textit{clinical facts}) được trích xuất sang hệ thống lâm sàng. \\ \hline
+\textbf{Kịch bản chính} &
+\begin{enumerate}[nosep,leftmargin=*]
+  \item Bệnh nhân mở giao diện chat, chọn model LLM (mặc định Gemma 4 26B) và model CNN (mặc định EfficientNet-B0).
+  \item Bệnh nhân nhập mô tả: ``Da mặt nổi nhiều mụn đỏ, ngứa 3 ngày nay'' và đính kèm 1 ảnh tổn thương.
+  \item Hệ thống lưu tin nhắn người dùng (kèm \texttt{attached\_files}), tạo tin nhắn assistant (\texttt{status = queued}).
+  \item Hệ thống gửi yêu cầu lượt chạy sang tác nhân AI.
+  \item Tác nhân AI gọi mô hình CNN để phân loại ảnh, trả về top-5 nhãn kèm \% tin cậy (ví dụ: Acne 82\%, Rosacea 9\%).
+  \item Tác nhân AI gọi công cụ tìm kiếm ngữ nghĩa và tra cứu đồ thị tri thức để đối chiếu guideline y khoa.
+  \item Tác nhân AI tự động bóc tách các dữ kiện lâm sàng (vị trí: mặt; thời gian: 3 ngày; triệu chứng: ngứa; mức độ: đỏ).
+  \item Tác nhân AI stream câu trả lời về giao diện theo thời gian thực (SSE): giải thích tham khảo, khuyến cáo mức độ cấp bách, hướng xử trí.
+  \item Kết thúc lượt, hệ thống ghi nhận dữ kiện lâm sàng vào hồ sơ bệnh nhân.
+  \item Bệnh nhân xem kết quả tiền chẩn đoán mang tính tham khảo cùng khuyến cáo mức độ cấp bách.
+\end{enumerate} \\ \hline
+\textbf{Ngoại lệ} &
+\begin{itemize}[nosep,leftmargin=2.6em,labelwidth=2em,labelsep=0.5em,align=left]
+  \item[5.] Ảnh không tải được từ kho lưu trữ.
+  \begin{itemize}[nosep,leftmargin=3em,labelwidth=2.4em,labelsep=0.4em,align=left]
+    \item[5.1] Agent báo ``Không tìm thấy ảnh'', tiếp tục xử lý phần văn bản.
+    \item[5.2] Hệ thống vẫn stream câu trả lời dựa trên mô tả văn bản.
+  \end{itemize}
+  \item[8.] LLM hoặc dịch vụ tri thức lỗi.
+  \begin{itemize}[nosep,leftmargin=3em,labelwidth=2.4em,labelsep=0.4em,align=left]
+    \item[8.1] Agent trả thông báo lỗi, tin nhắn assistant chuyển trạng thái \texttt{done} với nội dung lỗi.
+    \item[8.2] Bệnh nhân có thể gửi lại tin nhắn.
+  \end{itemize}
+\end{itemize} \\ \hline
+\end{longtable}
+\end{spacing}
+
+\subsubsection{UC3: Đặt lịch hẹn và tiếp nhận lần khám}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/dat_lich_hen.jpg}
+  \caption{Sơ đồ use case chi tiết -- UC3: Đặt lịch hẹn và tiếp nhận lần khám}
+  \label{fig:uc3}
+\end{figure}
+
+Chức năng đặt lịch hẹn và tiếp nhận lần khám có các giao diện tương tác với bệnh nhân và bác sĩ:
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Đăng nhập (Bệnh nhân đăng nhập, Bác sĩ đăng nhập) -> Đề xuất UC đăng nhập (UC bệnh nhân đăng nhập, UC bác sĩ đăng nhập)
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Bệnh nhân xem màn hình lịch khám -> Đề xuất UC bệnh nhân xem màn hình lịch khám
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Bệnh nhân gửi yêu cầu -> Đề xuất UC bệnh nhân gửi yêu cầu
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Bác sĩ xem màn hình ca khám -> Đề xuất UC bác sĩ xem màn hình ca khám
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Bác sĩ xem chi tiết ca khám -> Đề xuất UC bác sĩ xem chi tiết ca khám
+\end{itemize}
+
+Như vậy, biểu đồ UC chi tiết cho modul đặt lịch hẹn và tiếp nhận lần khám được trình bày trong Hình trên. Các UC được mô tả như sau:
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Bệnh nhân xem màn hình lịch khám}: UC này cho phép bệnh nhân xem thông tin về các lịch khám hiện có trên hệ thống.
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Bệnh nhân gửi yêu cầu}: UC này cho phép bệnh nhân điền thông tin và gửi yêu cầu đặt lịch hẹn khám bệnh.
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Bác sĩ xem màn hình ca khám}: UC này cho phép bác sĩ theo dõi danh sách các ca khám được đăng ký.
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Bác sĩ xem chi tiết ca khám}: UC này cho phép bác sĩ xem thông tin chi tiết của một ca khám cụ thể để thực hiện tiếp nhận lần khám.
+\end{itemize}
+
+\begin{spacing}{1.5}
+\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.18\textwidth}|>{\raggedright\arraybackslash}p{0.77\textwidth}|}
+\hline
+\textbf{Use case} & Đặt lịch hẹn và tiếp nhận lần khám \\ \hline
+\textbf{Tác nhân} & Bệnh nhân, Bác sĩ \\ \hline
+\textbf{Tiền điều kiện} & Bệnh nhân đã đăng nhập; đợt bệnh của hồ sơ đang mở, chưa quá hạn, đã có giả thuyết của AI và chưa có lịch hẹn còn hiệu lực; bác sĩ đã đăng nhập. \\ \hline
+\textbf{Hậu điều kiện} & Lịch hẹn (\texttt{Appointment}) được tạo và được bác sĩ xác nhận; lần khám (\texttt{Encounter}, trạng thái \texttt{open}) được tạo, đợt bệnh chuyển \texttt{in\_exam}, kênh trao đổi bác sĩ -- bệnh nhân được mở. \\ \hline
+\textbf{Kịch bản chính} &
+\begin{enumerate}[nosep,leftmargin=*]
+  \item Bệnh nhân Nguyễn Văn An bấm mục ``Lịch khám'' ở sidebar của giao diện.
+  \item Hệ thống hiện màn hình ``Lịch khám'' với 2 tab ``Đang theo dõi'' và ``Lịch hẹn''.
+  \item Tab ``Đang theo dõi'' hiện danh sách các vấn đề bệnh nhân đang gặp. Mỗi dòng hiện tên vùng da, thời gian cập nhật, tóm tắt dữ kiện và nút ``Đặt lịch''.
+  \item Bệnh nhân bấm ``Đặt lịch'' ở dòng vùng chân (ngứa rát kèm vài mảng đỏ ở cẳng chân).
+  \item Hệ thống hiện hộp thoại ``Đặt lịch · Chân'' gồm ô chọn thời gian, ô lý do (không bắt buộc) và nút ``Gửi yêu cầu''.
+  \item Bệnh nhân chọn thời gian 08:00 ngày 26/11/2026, nhập lý do rồi bấm ``Gửi yêu cầu''.
+\end{enumerate} \\ \cline{2-2}
+\textbf{Kịch bản chính (tiếp)} &
+\begin{enumerate}[nosep,leftmargin=*,start=7]
+  \item Hệ thống kiểm tra điều kiện đặt lịch, tạo lịch hẹn ở trạng thái ``Chờ'', hiện thông báo ``Đã gửi yêu cầu đặt lịch''; dòng vùng chân đổi nút ``Đặt lịch'' thành trạng thái ``Chờ'', tab ``Lịch hẹn'' thêm dòng ``Chân · 26/11/2026 08:00'' kèm dòng phụ ``Chờ bác sĩ nhận'', trạng thái ``Chờ'' và nút ``Huỷ''.
+  \item Bác sĩ bấm mục ``Ca khám'' ở sidebar của giao diện.
+  \item Hệ thống hiện giao diện ``Ca khám'' gồm bộ lọc trạng thái, ô ``Tìm bệnh nhân'' và bảng các ca khám.
+  \item Bác sĩ xem danh sách ca khám, bấm nút ``Xác nhận lịch'' (dấu $\checkmark$) ở dòng của bệnh nhân Nguyễn Văn An.
+  \item Hệ thống đổi trạng thái ca khám thành ``Đã hẹn'' và gán bác sĩ cho lịch; phía bệnh nhân, dòng lịch hiện ``BS. Trần Thị Bình'' thay cho ``Chờ bác sĩ nhận''.
+  \item Bác sĩ bấm nút ``Bắt đầu khám'' (dấu $\blacktriangleright$): hệ thống đổi trạng thái thành ``Đang khám'' và mở kênh trao đổi bác sĩ -- bệnh nhân.
+  \item Hệ thống mở trang ``Chi tiết ca khám'' kèm bản tổng hợp tiền khám: dữ kiện lâm sàng, giả thuyết AI và bằng chứng trích từ chat, ảnh tổn thương kèm dự đoán CNN, lịch sử khám.
+  \item Bác sĩ trao đổi thêm với bệnh nhân ở khung ``Trao đổi với bệnh nhân'' và chuẩn bị buổi khám.
+\end{enumerate} \\ \hline
+\textbf{Ngoại lệ} &
+\begin{itemize}[nosep,leftmargin=2.6em,labelwidth=2em,labelsep=0.5em,align=left]
+  \item[7.] Không tạo được lịch hẹn: đợt bệnh đã có lịch hẹn còn hiệu lực, chưa đủ thông tin (chưa có giả thuyết AI), đợt bệnh đã quá hạn hoặc thời gian hẹn không ở tương lai.
+  \begin{itemize}[nosep,leftmargin=3em,labelwidth=2.4em,labelsep=0.4em,align=left]
+    \item[7.1] Hệ thống báo lỗi tương ứng, không tạo lịch hẹn.
+    \item[7.2] Bệnh nhân huỷ lịch hẹn cũ (nhập lý do) hoặc quay lại chat mô tả thêm triệu chứng rồi đặt lại với thời gian khác.
+  \end{itemize}
+  \item[10.] Lịch đã được bác sĩ khác xác nhận trước đó.
+  \begin{itemize}[nosep,leftmargin=3em,labelwidth=2.4em,labelsep=0.4em,align=left]
+    \item[10.1] Hệ thống báo ``Chỉ xác nhận được lịch hẹn đang chờ.'', lịch đã biến khỏi bộ lọc ``Chờ xác nhận''.
+    \item[10.2] Bác sĩ tải lại danh sách ca khám (chỉ bác sĩ đã nhận mới thấy lịch này).
+  \end{itemize}
+  \item[12.] Không bắt đầu khám được vì đợt bệnh không còn mở.
+  \begin{itemize}[nosep,leftmargin=3em,labelwidth=2.4em,labelsep=0.4em,align=left]
+    \item[12.1] Hệ thống báo ``Đợt bệnh không còn mở, hãy đổi sang đợt khác hoặc huỷ lịch.''
+    \item[12.2] Bác sĩ đổi lịch sang đợt khác của cùng hồ sơ (khối ``Bệnh nhân có vấn đề ở vùng khác\ldots'') hoặc huỷ lịch kèm lý do; nếu bệnh nhân không đến thì đánh dấu ``Bệnh nhân không đến''.
+  \end{itemize}
+\end{itemize} \\ \hline
+\end{longtable}
+\end{spacing}
+
+\subsubsection{UC4: Tư vấn trực tiếp và gọi video với bác sĩ}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/tu_van_truc_tiep.jpg}
+  \caption{Sơ đồ use case chi tiết -- UC4: Tư vấn trực tiếp và gọi video với bác sĩ}
+  \label{fig:uc4}
+\end{figure}
+
+Chức năng tư vấn trực tiếp và gọi video có các giao diện tương tác với bệnh nhân và bác sĩ:
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Đăng nhập (Bệnh nhân đăng nhập, Bác sĩ đăng nhập) -> Đề xuất UC đăng nhập (UC bệnh nhân đăng nhập, UC bác sĩ đăng nhập)
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Bệnh nhân xem giao diện lịch khám -> Đề xuất UC bệnh nhân xem giao diện lịch khám
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Bác sĩ xem giao diện chi tiết ca khám -> Đề xuất UC bác sĩ xem giao diện chi tiết ca khám
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Nhắn tin -> Đề xuất UC nhắn tin
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Gọi video -> Đề xuất UC gọi video
+\end{itemize}
+
+Như vậy, biểu đồ UC chi tiết cho modul tư vấn trực tiếp và gọi video được trình bày trong Hình trên. Các UC được mô tả như sau:
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Bệnh nhân xem giao diện lịch khám}: UC này cho phép bệnh nhân xem giao diện thông tin lịch khám của mình.
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Bác sĩ xem giao diện chi tiết ca khám}: UC này cho phép bác sĩ xem giao diện thông tin chi tiết của ca khám cần tư vấn.
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Nhắn tin}: UC này cho phép bệnh nhân và bác sĩ trao đổi thông tin qua tin nhắn văn bản trực tiếp.
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Gọi video}: UC này cho phép bệnh nhân và bác sĩ thực hiện cuộc gọi video trực tuyến để phục vụ quá trình thăm khám và tư vấn.
+\end{itemize}
+
+\begin{spacing}{1.5}
+\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.18\textwidth}|>{\raggedright\arraybackslash}p{0.77\textwidth}|}
+\hline
+\textbf{Use case} & Tư vấn trực tiếp và gọi video với bác sĩ \\ \hline
+\textbf{Tác nhân} & Bệnh nhân, Bác sĩ \\ \hline
+\textbf{Tiền điều kiện} & Đã có cuộc hội thoại hoặc lần khám (\texttt{Encounter}) đang mở. \\ \hline
+\textbf{Hậu điều kiện} & Tin nhắn và cuộc gọi video được lưu; bác sĩ quan sát tổn thương trực tiếp. \\ \hline
+\textbf{Kịch bản chính} &
+\begin{enumerate}[nosep,leftmargin=*]
+  \item Bác sĩ và bệnh nhân trao đổi qua kênh chat: bác sĩ gửi ``Bạn có thể gửi ảnh vùng da tổn thương hiện tại không?''.
+  \item Bệnh nhân gửi thêm 1 hình ảnh tổn thương qua chat.
+  \item Bác sĩ khởi tạo cuộc gọi video (WebRTC); hệ thống tạo \texttt{VideoCall} (trạng thái \texttt{pending}).
+  \item Bệnh nhân chấp nhận cuộc gọi; trạng thái chuyển \texttt{ongoing}, bắt đầu ghi nhận thời điểm.
+  \item Hai bên trao đổi video thời gian thực: bác sĩ quan sát trực tiếp tổn thương, yêu cầu bệnh nhân xoay camera.
+  \item Kết thúc cuộc gọi, trạng thái \texttt{ended}, ghi nhận thời điểm bắt đầu/kết thúc.
+\end{enumerate} \\ \hline
+\textbf{Ngoại lệ} &
+\begin{itemize}[nosep,leftmargin=2.6em,labelwidth=2em,labelsep=0.5em,align=left]
+  \item[3.] Kết nối video thất bại (mạng/firewall).
+  \begin{itemize}[nosep,leftmargin=3em,labelwidth=2.4em,labelsep=0.4em,align=left]
+    \item[3.1] Hệ thống báo lỗi, hai bên tiếp tục trao đổi qua tin nhắn.
+    \item[3.2] Bác sĩ có thể thử gọi lại.
+  \end{itemize}
+  \item[5.] Mất kết nối giữa chừng.
+  \begin{itemize}[nosep,leftmargin=3em,labelwidth=2.4em,labelsep=0.4em,align=left]
+    \item[5.1] Trạng thái cuộc gọi chuyển \texttt{ended}.
+    \item[5.2] Hai bên có thể gọi lại.
+  \end{itemize}
+\end{itemize} \\ \hline
+\end{longtable}
+\end{spacing}
+
+\subsubsection{UC5: Chốt báo cáo kết luận và nạp ca bệnh}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/nap_ca_benh.jpg}
+  \caption{Sơ đồ use case chi tiết -- UC5: Chốt báo cáo kết luận và nạp ca bệnh}
+  \label{fig:uc5}
+\end{figure}
+
+Chức năng chốt báo cáo kết luận và nạp ca bệnh có các giao diện tương tác với bác sĩ:
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Đăng nhập -> Đề xuất UC đăng nhập
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Bác sĩ xem giao diện ca khám -> Đề xuất UC bác sĩ xem giao diện ca khám
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Bác sĩ kết luận ca khám -> Đề xuất UC bác sĩ kết luận ca khám
+\end{itemize}
+
+Như vậy, biểu đồ UC chi tiết cho modul chốt báo cáo kết luận và nạp ca bệnh được trình bày trong Hình trên. Các UC được mô tả như sau:
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Bác sĩ xem giao diện ca khám}: UC này cho phép bác sĩ theo dõi và xem thông tin giao diện của các ca khám cần xử lý.
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Bác sĩ kết luận ca khám}: UC này cho phép bác sĩ nhập thông tin chẩn đoán, chốt báo cáo kết luận cho ca khám và nạp dữ liệu ca bệnh vào hệ thống.
+\end{itemize}
+
+\begin{spacing}{1.5}
+\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.18\textwidth}|>{\raggedright\arraybackslash}p{0.77\textwidth}|}
+\hline
+\textbf{Use case} & Chốt báo cáo kết luận và nạp ca bệnh \\ \hline
+\textbf{Tác nhân} & Bác sĩ \\ \hline
+\textbf{Tiền điều kiện} & Bác sĩ đã thăm khám (\texttt{Encounter} đang mở). \\ \hline
+\textbf{Hậu điều kiện} & Báo cáo kết luận (\texttt{FinalizeReport}) được lưu; ca bệnh được nạp vào Knowledge Base (nếu được chọn làm ca tham khảo). \\ \hline
+\textbf{Kịch bản chính} &
+\begin{enumerate}[nosep,leftmargin=*]
+  \item Bác sĩ nhập nhận định: ``Viêm da cơ địa (Eczema) mức độ trung bình'', hướng điều trị, ghi chú.
+  \item Bác sĩ xác nhận các dữ kiện lâm sàng AI đề xuất (ngứa, đỏ, khô da) và điều chỉnh nếu cần.
+  \item Hệ thống trích xuất thêm dữ kiện mới từ mô tả bác sĩ.
+  \item Hệ thống lưu snapshot báo cáo kết luận (hồ sơ bệnh nhân, mức khẩn cấp, dữ kiện kèm nguồn trích dẫn).
+  \item Hệ thống mở kênh theo dõi sau khám (\texttt{doctor\_followup}) với thời hạn 30 ngày.
+  \item Bác sĩ đánh dấu ca bệnh tham khảo; hệ thống nạp ca bệnh vào Knowledge Base.
+  \item \texttt{Encounter} chuyển trạng thái \texttt{closed}.
+\end{enumerate} \\ \hline
+\textbf{Ngoại lệ} &
+\begin{itemize}[nosep,leftmargin=2.6em,labelwidth=2em,labelsep=0.5em,align=left]
+  \item[3.] AI không trích xuất được dữ kiện.
+  \begin{itemize}[nosep,leftmargin=3em,labelwidth=2.4em,labelsep=0.4em,align=left]
+    \item[3.1] Bác sĩ vẫn chốt báo cáo với dữ kiện đã có.
+    \item[3.2] Hệ thống lưu báo cáo bình thường.
+  \end{itemize}
+  \item[4.] Thiếu chẩn đoán khi đã có \texttt{Encounter}.
+  \begin{itemize}[nosep,leftmargin=3em,labelwidth=2.4em,labelsep=0.4em,align=left]
+    \item[4.1] Hệ thống báo lỗi.
+    \item[4.2] Bác sĩ bổ sung chẩn đoán, hệ thống lưu báo cáo.
+  \end{itemize}
+\end{itemize} \\ \hline
+\end{longtable}
+\end{spacing}
+
+\subsubsection{UC6: Số hóa giáo trình vào Knowledge Base}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/nap_kb.jpg}
+  \caption{Sơ đồ use case chi tiết -- UC6: Số hóa giáo trình vào Knowledge Base}
+  \label{fig:uc6}
+\end{figure}
+
+Chức năng số hóa sách giáo khoa vào kho tri thức có các giao diện tương tác với quản trị viên:
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Đăng nhập -> Đề xuất UC đăng nhập
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Thêm sách -> Đề xuất UC thêm sách
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item Xem giao diện pipeline số hóa -> Đề xuất UC xem giao diện pipeline số hóa
+\end{itemize}
+
+Như vậy, biểu đồ UC chi tiết cho modul số hóa sách giáo khoa vào kho tri thức được trình bày trong Hình trên. Các UC được mô tả như sau:
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Thêm sách}: UC này cho phép quản trị viên tải lên và thêm các tài liệu sách giáo khoa mới vào hệ thống để tiến hành xử lý.
+\end{itemize}
+
+\begin{itemize}[nosep,leftmargin=*]
+  \item \textbf{Xem giao diện pipeline số hóa}: UC này cho phép quản trị viên theo dõi tiến trình và giao diện luồng xử lý số hóa dữ liệu sách giáo khoa vào kho tri thức.
+\end{itemize}
+
+\begin{spacing}{1.5}
+\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.18\textwidth}|>{\raggedright\arraybackslash}p{0.77\textwidth}|}
+\hline
+\textbf{Use case} & Số hóa giáo trình vào Knowledge Base \\ \hline
+\textbf{Tác nhân} & Quản trị viên, Knowledge Worker \\ \hline
+\textbf{Tiền điều kiện} & Quản trị viên đã đăng nhập; có file PDF giáo trình. \\ \hline
+\textbf{Hậu điều kiện} & Tài liệu được trích xuất, phân đoạn và nạp vector vào Qdrant; có thể truy xuất qua RAG. \\ \hline
+\textbf{Kịch bản chính} &
+\begin{enumerate}[nosep,leftmargin=*]
+  \item Quản trị viên tải lên file PDF giáo trình da liễu (ví dụ ``Habif Clinical Dermatology.pdf'', 45 MB).
+  \item Hệ thống kiểm tra file PDF hợp lệ (bắt đầu bằng \texttt{\%PDF}, kích thước $\le$ 500 MB), tạo bản ghi \texttt{Document} và 4 bước (\texttt{ingest}, \texttt{toc}, \texttt{chunks}, \texttt{index}) ở trạng thái \texttt{not\_started}.
+  \item Knowledge Worker thực thi bước \textit{ingest}: trích xuất văn bản từng trang, lưu \texttt{pages.jsonl} vào MinIO.
+  \item Người duyệt xem kết quả, nhấn \texttt{approve}; bước chuyển \texttt{approved}.
+  \item Knowledge Worker thực thi bước \textit{toc}: AI nhận diện cấu trúc mục lục, trả về cây mục; người duyệt chỉnh sửa (\textit{override}) nếu cần, rồi \texttt{approve}.
+  \item Knowledge Worker thực thi bước \textit{chunks}: phân đoạn văn bản theo mục lục, lưu \texttt{chunks.jsonl}.
+  \item Knowledge Worker thực thi bước \textit{index}: sinh vector nhúng (OpenRouter) và nạp vào Qdrant.
+  \item Tài liệu sẵn sàng phục vụ truy xuất ngữ nghĩa cho tác nhân AI.
+\end{enumerate} \\ \hline
+\textbf{Ngoại lệ} &
+\begin{itemize}[nosep,leftmargin=2.6em,labelwidth=2em,labelsep=0.5em,align=left]
+  \item[2.] File không phải PDF hoặc vượt 500 MB.
+  \begin{itemize}[nosep,leftmargin=3em,labelwidth=2.4em,labelsep=0.4em,align=left]
+    \item[2.1] Hệ thống từ chối upload, báo lỗi.
+    \item[2.2] Người dùng chọn file khác và tải lại.
+  \end{itemize}
+  \item[3.] Một bước thất bại.
+  \begin{itemize}[nosep,leftmargin=3em,labelwidth=2.4em,labelsep=0.4em,align=left]
+    \item[3.1] Trạng thái \texttt{failed}, thông báo lỗi hiển thị nguyên văn.
+    \item[3.2] Người duyệt sửa tham số và chạy lại.
+  \end{itemize}
+\end{itemize} \\ \hline
+\end{longtable}
+\end{spacing}
+\renewcommand{\tablespacing}{\singlespacing}
 \section{Thiết kế thực thể}
 
 \subsection{Các lớp thực thể liên quan}

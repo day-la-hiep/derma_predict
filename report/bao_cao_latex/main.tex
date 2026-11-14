@@ -100,8 +100,10 @@
 \setstretch{1.5}
 \setlength{\parindent}{1.27cm}
 \setlength{\parskip}{6pt plus 1pt}  % trước đoạn 0 pt, sau đoạn 6 pt
-% setspace đã tự dùng giãn dòng đơn cho bảng/hình nổi (table, figure) và chú thích; longtable và các khối còn lại cần khai báo thêm
-\AtBeginEnvironment{longtable}{\singlespacing}
+% setspace đã tự dùng giãn dòng đơn cho bảng/hình nổi (table, figure) và chú thích; longtable và các khối còn lại cần khai báo thêm.
+% Bảng use case cần giãn dòng như văn bản nên đổi \tablespacing trước khi mở bảng.
+\newcommand{\tablespacing}{\singlespacing}
+\AtBeginEnvironment{longtable}{\tablespacing}
 \AtBeginEnvironment{quote}{\singlespacing}
 \AtBeginEnvironment{quotation}{\singlespacing}
 \AtBeginEnvironment{thebibliography}{\singlespacing}
