@@ -2,7 +2,7 @@ import json
 import unittest
 
 from app.reasoning.retrieval_evidence import add_retrieval_evidence, ground_hypotheses_in_evidence, label_tool_evidence
-from app.graph.pre_diagnosis_schemas import ReflectHypothesis
+from app.graph.v2.pre_diagnosis_schemas import ReflectHypothesis
 from app.tools.hybrid_retrieval.fusion import book_result
 
 _TRIPLE = {"subject": "allergic contact dermatitis", "relation": "DISEASE_PHENOTYPE_POSITIVE", "object": "Eczema", "display": None, "evidence": "Viêm da tiếp xúc dị ứng biểu hiện bằng dát đỏ", "pages": [122], "document_id": "d1"}

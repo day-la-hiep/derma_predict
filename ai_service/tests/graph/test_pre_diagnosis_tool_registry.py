@@ -1,8 +1,8 @@
 import unittest
 from unittest.mock import patch
 
-from app.tools import pre_diagnosis_tool_registry as registry
-from app.prompt.pre_diagnosis_prompts import CHOOSE_SYSTEM, FINALIZE_REPORT_LINE
+from app.tools.v2 import pre_diagnosis_tool_registry as registry
+from app.prompt.v2.pre_diagnosis_prompts import CHOOSE_SYSTEM, FINALIZE_REPORT_LINE
 
 
 class FinalizeReportToggleTest(unittest.TestCase):

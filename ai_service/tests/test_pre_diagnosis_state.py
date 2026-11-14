@@ -23,8 +23,8 @@ from app.reasoning.patient_fact_extractor import (
 from app.context.agent_context import AgentContext
 from app.common.tracing import build_run_config
 from app.graph.chat_graph import build_chat_graph
-from app.graph.pre_diagnosis_graph import _after_plan
-from app.state.pre_diagnosis_state import PreDiagnosisState
+from app.graph.v2.pre_diagnosis_graph import _after_plan
+from app.state.v2.pre_diagnosis_state import PreDiagnosisState
 from app.config.settings import settings
 
 

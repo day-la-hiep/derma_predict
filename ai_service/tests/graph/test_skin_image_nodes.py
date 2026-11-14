@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock, patch
 
 from app.context.agent_context import AgentContext
 from app.tools.skin_image import cross_check as image_evidence
-from app.graph import skin_image_nodes as image
+from app.graph.v2 import skin_image_nodes as image
 from app.tools.skin_image import analysis as image_tools
 from langchain.messages import AIMessage, HumanMessage
 
-from app.graph.pre_diagnosis_graph import _after_choose, _after_prepare, build_pre_diagnosis_graph
+from app.graph.v2.pre_diagnosis_graph import _after_choose, _after_prepare, build_pre_diagnosis_graph
 
 
 class _Store:
@@ -131,7 +131,7 @@ class JoinCrossCheckTest(unittest.IsolatedAsyncioTestCase):
 
 class IsolationTest(unittest.TestCase):
     def test_image_state_has_no_text_keys(self) -> None:
-        from app.state.pre_diagnosis_state import SkinImageState
+        from app.state.v2.pre_diagnosis_state import SkinImageState
 
         self.assertEqual(set(SkinImageState.__annotations__), {"image_cnn", "image_cases", "image_vision"})  # không messages / facts
 

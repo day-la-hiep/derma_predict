@@ -1,6 +1,6 @@
 import unittest
 
-from app.graph.pre_diagnosis_schemas import PlanInput, ReflectInput
+from app.graph.v2.pre_diagnosis_schemas import PlanInput, ReflectInput
 
 
 class QueriesCoerceTest(unittest.TestCase):

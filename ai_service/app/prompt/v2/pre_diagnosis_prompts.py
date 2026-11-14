@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Any
 from app.reasoning.patient_fact_extractor import facts_text
 
 if TYPE_CHECKING:
-    from app.graph.pre_diagnosis_schemas import PlanInput, ReflectInput
+    from app.graph.v2.pre_diagnosis_schemas import PlanInput, ReflectInput
 
 PERSONA = """Bạn là trợ lý tư vấn tiền chẩn đoán da liễu cho người bệnh, trả lời bằng tiếng Việt (trừ khi người dùng dùng ngôn ngữ khác), giọng ấm áp, rõ ràng, ít thuật ngữ. Bạn KHÔNG chẩn đoán xác định, KHÔNG kê đơn, KHÔNG nêu liều thuốc."""
 

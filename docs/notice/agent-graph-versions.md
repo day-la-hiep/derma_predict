@@ -1,5 +1,8 @@
 # Hai phiên bản graph tiền chẩn đoán (v1 / v2)
 
+## Vị trí code (chuẩn bị v3)
+Mọi thứ riêng của flow tiền chẩn đoán v2 nằm trong thư mục `v2/` của `ai_service/app/`: `graph/v2/` (graph, nodes, schemas, `skin_image_nodes`), `prompt/v2/`, `state/v2/`, `tools/v2/` (registry). v3 thêm `.../v3/` cạnh đó, dùng lại phần chung (`reasoning/`, `tools/*`, `context/`, `chat_graph.py`) hoặc copy rồi sửa. Tên node `pre_diagnosis` của chat graph giữ nguyên (FE/SSE phụ thuộc); các đường dẫn `agent/graph/...` bên dưới là của monolith cũ, đọc là `app/graph/v2/...`.
+
 ## Quy tắc
 - **Đã xoá graph v1** (`create_agent` + middleware, critic, `ask_user`, `AGENT_GRAPH_VERSION`, `build_agent_graph`) khỏi `ai_service`; lịch sử nằm trong git. Chỉ còn v2; các đoạn dưới nhắc "v1" là để so sánh lịch sử. Cũng đã xoá `ask_user`, nhánh `interrupt`/`resume` trong `turn.py` và `type="resume"` của `TurnRequest` (v2 không bao giờ hỏi lại bằng interrupt). Đã bỏ luôn `choice`/`question` ở `finish_turn`, consultation (endpoint `/questions/{id}/answer`, status `question`) và FE. Chat graph là `triage` → `pre_diagnosis`.
 - **v2** (`agent/graph/`): `StateGraph` `prepare_turn → (text_flow ∥ image_flow)`: làn chữ `text_flow` = `extract_facts → plan → choose_tools → tools → label_evidence → reflect → answer`, làn ảnh `image_flow` = `(image_cnn ∥ image_vision) → image_done`` (`plan` không có truy vấn mới thì sang thẳng `answer`). Sơ đồ và ví dụ chạy: `tmp/reasoning_core_flow.html`.

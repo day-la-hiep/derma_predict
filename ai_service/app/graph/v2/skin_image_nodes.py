@@ -7,7 +7,7 @@ from langgraph.runtime import Runtime
 from app.reasoning.retrieval_evidence import add_retrieval_evidence
 from app.tools.skin_image.cross_check import merge_cnn_candidates, format_similar_cases_hint, cross_check_image_against_hypotheses, format_cnn_top_labels
 from app.context.agent_context import AgentContext
-from app.state.pre_diagnosis_state import SkinImageState, PreDiagnosisState
+from app.state.v2.pre_diagnosis_state import SkinImageState, PreDiagnosisState
 from app.middleware.tool_step_events import emit_tool_step
 from app.tools.skin_image.analysis import predict_skin_image_labels, describe_skin_image_with_vision, search_similar_cases_by_cnn_label
 from app.config.settings import settings

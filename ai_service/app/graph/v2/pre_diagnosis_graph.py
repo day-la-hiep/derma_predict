@@ -9,10 +9,10 @@ from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
 
 from app.context.agent_context import AgentContext
-from app.graph.skin_image_nodes import image_cnn, image_done, image_vision
-from app.graph.pre_diagnosis_nodes import answer, choose_tools_node, extract_facts_node, label_evidence_node, plan, prepare_turn_node, reflect
-from app.state.pre_diagnosis_state import SkinImageState, PreDiagnosisState
-from app.tools.pre_diagnosis_tool_registry import build_tools, on_tool_error
+from app.graph.v2.skin_image_nodes import image_cnn, image_done, image_vision
+from app.graph.v2.pre_diagnosis_nodes import answer, choose_tools_node, extract_facts_node, label_evidence_node, plan, prepare_turn_node, reflect
+from app.state.v2.pre_diagnosis_state import SkinImageState, PreDiagnosisState
+from app.tools.v2.pre_diagnosis_tool_registry import build_tools, on_tool_error
 
 logger = logging.getLogger(__name__)
 

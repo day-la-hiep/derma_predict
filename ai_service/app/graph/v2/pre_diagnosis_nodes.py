@@ -10,11 +10,11 @@ from app.reasoning.retrieval_evidence import STATEFUL_TOOLS, add_retrieval_evide
 from app.reasoning.patient_fact_extractor import extract_facts, facts_text, get_facts_fingerprint, merge_facts
 from app.reasoning.structured_llm_calls import build_task_reminder, get_model_for_turn, get_model_retries, invoke_structured_with_retry
 from app.context.agent_context import AgentContext
-from app.graph.skin_image_nodes import join_images
-from app.graph.pre_diagnosis_schemas import PlanInput, ReflectInput
-from app.state.pre_diagnosis_state import PreDiagnosisState
+from app.graph.v2.skin_image_nodes import join_images
+from app.graph.v2.pre_diagnosis_schemas import PlanInput, ReflectInput
+from app.state.v2.pre_diagnosis_state import PreDiagnosisState
 from app.middleware.tool_step_events import REASONING_TOOL, emit_tool_start, emit_tool_step
-from app.prompt.pre_diagnosis_prompts import (
+from app.prompt.v2.pre_diagnosis_prompts import (
     ANSWER_FOUND,
     ANSWER_NONE,
     CHOOSE_SYSTEM,

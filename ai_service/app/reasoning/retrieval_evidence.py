@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from app.common.clinical_codes import normalize_body_site, normalize_code
 
 if TYPE_CHECKING:
-    from app.graph.pre_diagnosis_schemas import ReflectHypothesis
+    from app.graph.v2.pre_diagnosis_schemas import ReflectHypothesis
 
 logger = logging.getLogger(__name__)
 

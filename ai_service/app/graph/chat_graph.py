@@ -8,7 +8,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph  # pyright: ignore[reportMissingTypeStubs]
 from langgraph.runtime import Runtime
 
-from app.graph.pre_diagnosis_graph import build_pre_diagnosis_graph
+from app.graph.v2.pre_diagnosis_graph import build_pre_diagnosis_graph
 from app.graph.intent_triage_node import triage
 from app.state.chat_state import ChatState
 from app.context.agent_context import AgentContext
