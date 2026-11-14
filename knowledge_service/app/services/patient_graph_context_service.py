@@ -63,7 +63,7 @@ CALL (seeds) {
 }
 WITH d, seeds, sum(w) AS score, collect(DISTINCT via)[..4] AS why
 WHERE NOT d IN seeds
-RETURN d.name AS name, score, why
+RETURN d.id AS id, d.name AS name, score, why
 ORDER BY score DESC
 LIMIT $pool
 """
@@ -88,6 +88,43 @@ MATCH (c:Entity {type: 'disease'}) WHERE c.name IN $names
 MATCH (d)-[e:CONTRAINDICATION]-(c) WHERE coalesce(e.source, 'KG') IN $edge_sources
 RETURN DISTINCT d.name AS drug, c.name AS disease
 """
+
+
+async def resolve_node_pairs(kg: KnowledgeGraphService, pairs: list[dict[str, str]]) -> dict[tuple[str, str], dict[str, Any]]:
+    """(type, id) → nút đồ thị (có `eid`); cặp không còn trong đồ thị thì vắng mặt."""
+    rows = await kg.run(_RESOLVE_SEEDS, pairs=pairs) if pairs else []
+    return {(r["type"], r["id"]): r for r in rows}
+
+
+async def rank_diseases(kg: KnowledgeGraphService, positive_eids: list[str], absent_eids: list[str], top_k: int) -> list[dict[str, Any]]:
+    """Bệnh ứng viên từ nút đã khớp: điểm đặc hiệu `3 / ln(2 + degree)`, trừ `ABSENT_PENALTY` mỗi triệu chứng bị phủ định; dùng chung cho tab bác sĩ và agent v3."""
+    if not positive_eids:
+        return []
+    rows = await kg.run(_CANDIDATES, edge_sources=EDGE_SOURCES, seed_ids=positive_eids, pool=POOL)
+    absent_by_disease: dict[str, list[str]] = {}
+    if absent_eids and rows:
+        for r in await kg.run(_ABSENT_PHENOTYPES, edge_sources=EDGE_SOURCES, absent_ids=absent_eids, names=[r["name"] for r in rows]):
+            absent_by_disease[r["name"]] = r["absent"]
+    scored = [
+        {"id": r.get("id"), "name": r["name"], "score": round(r["score"] - ABSENT_PENALTY * len(absent_by_disease.get(r["name"], [])), 3),
+         "why": r["why"], "absent": absent_by_disease.get(r["name"], [])}
+        for r in rows
+    ]
+    return sorted((c for c in scored if c["score"] > 0), key=lambda c: c["score"], reverse=True)[:top_k]
+
+
+async def get_drug_notes(kg: KnowledgeGraphService, drug_eids: list[str], symptom_eids: list[str], diseases: list[str]) -> list[str]:
+    """Thuốc đang dùng có thể gây triệu chứng đang có, hoặc chống chỉ định với bệnh ứng viên (theo tên)."""
+    if not drug_eids:
+        return []
+    notes: list[str] = []
+    if symptom_eids:
+        for r in await kg.run(_DRUG_EFFECTS, edge_sources=EDGE_SOURCES, drug_ids=drug_eids, symptom_ids=symptom_eids):
+            notes.append(f"Thuốc đang dùng {r['drug']} có thể gây {r['symptom']} (tác dụng phụ ghi trong đồ thị).")
+    if diseases:
+        for r in await kg.run(_CONTRAINDICATIONS, edge_sources=EDGE_SOURCES, drug_ids=drug_eids, names=diseases):
+            notes.append(f"Thuốc đang dùng {r['drug']} chống chỉ định với {r['disease']} (bệnh ứng viên).")
+    return notes
 
 
 def _is_taking_drug(fact: PatientFactOutput) -> bool:
@@ -138,33 +175,16 @@ class PatientGraphContextService:
         )
 
     async def _resolve_nodes(self, facts: list[PatientFactOutput]) -> list[tuple[PatientFactOutput, dict[str, Any]]]:
-        pairs = [{"type": f.object_type, "id": f.kg_node_id} for f in facts]
-        rows = await self._kg.run(_RESOLVE_SEEDS, pairs=pairs)
-        by_key = {(r["type"], r["id"]): r for r in rows}
-        resolved = [(f, by_key[(f.object_type, f.kg_node_id)]) for f in facts if (f.object_type, f.kg_node_id) in by_key]
+        by_key = await resolve_node_pairs(self._kg, [{"type": f.object_type, "id": f.kg_node_id} for f in facts if f.kg_node_id])
+        resolved = [(f, by_key[(f.object_type, f.kg_node_id)]) for f in facts if f.kg_node_id and (f.object_type, f.kg_node_id) in by_key]
         for f in facts:
             if (f.object_type, f.kg_node_id) not in by_key:
                 logger.warning("patient-graph-context: nút %s (%s) của fact '%s' không còn trong đồ thị", f.kg_node_id, f.object_type, f.label)
         return resolved
 
     async def _get_candidates(self, positive: list[dict[str, Any]], absent: list[dict[str, Any]], top_k: int) -> list[CandidateDisease]:
-        if not positive:
-            return []
-        rows = await self._kg.run(_CANDIDATES, edge_sources=EDGE_SOURCES, seed_ids=[n["eid"] for n in positive], pool=POOL)
-        absent_by_disease: dict[str, list[str]] = {}
-        if absent and rows:
-            for r in await self._kg.run(_ABSENT_PHENOTYPES, edge_sources=EDGE_SOURCES, absent_ids=[n["eid"] for n in absent], names=[r["name"] for r in rows]):
-                absent_by_disease[r["name"]] = r["absent"]
-        scored = [
-            CandidateDisease(
-                name=r["name"],
-                score=round(r["score"] - ABSENT_PENALTY * len(absent_by_disease.get(r["name"], [])), 3),
-                why=r["why"],
-                absent=absent_by_disease.get(r["name"], []),
-            )
-            for r in rows
-        ]
-        return sorted((c for c in scored if c.score > 0), key=lambda c: c.score, reverse=True)[:top_k]
+        ranked = await rank_diseases(self._kg, [n["eid"] for n in positive], [n["eid"] for n in absent], top_k)
+        return [CandidateDisease(name=c["name"], score=c["score"], why=c["why"], absent=c["absent"]) for c in ranked]
 
     async def _get_questions(self, diseases: list[str], known_phenotype_ids: list[str]) -> list[DiscriminatingQuestion]:
         if len(diseases) < 2:
@@ -173,17 +193,7 @@ class PatientGraphContextService:
         return [DiscriminatingQuestion(phenotype=q["phenotype"], present_in=q["present_in"], absent_in=q["absent_in"]) for q in result["questions"]]
 
     async def _get_drug_notes(self, drugs: list[dict[str, Any]], symptoms: list[dict[str, Any]], diseases: list[str]) -> list[str]:
-        if not drugs:
-            return []
-        notes: list[str] = []
-        drug_ids = [d["eid"] for d in drugs]
-        if symptoms:
-            for r in await self._kg.run(_DRUG_EFFECTS, edge_sources=EDGE_SOURCES, drug_ids=drug_ids, symptom_ids=[s["eid"] for s in symptoms]):
-                notes.append(f"Thuốc đang dùng {r['drug']} có thể gây {r['symptom']} (tác dụng phụ ghi trong đồ thị).")
-        if diseases:
-            for r in await self._kg.run(_CONTRAINDICATIONS, edge_sources=EDGE_SOURCES, drug_ids=drug_ids, names=diseases):
-                notes.append(f"Thuốc đang dùng {r['drug']} chống chỉ định với {r['disease']} (bệnh ứng viên).")
-        return notes
+        return await get_drug_notes(self._kg, [d["eid"] for d in drugs], [s["eid"] for s in symptoms], diseases)
 
     async def _get_book_evidence(self, diseases: list[str]) -> list[BookEvidence]:
         evidence: list[BookEvidence] = []

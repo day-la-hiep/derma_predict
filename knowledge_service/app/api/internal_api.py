@@ -15,6 +15,7 @@ from app.services.document_graph_service import DocumentGraphService
 from app.services.kg_intent_service import INTENTS, run_intent
 from app.services.knowledge_graph_service import KnowledgeGraphService
 from app.services.patient_fact_linker import PatientFactLinker
+from app.services.patient_graph_context_service import EDGE_SOURCES, get_drug_notes, rank_diseases, resolve_node_pairs
 from app.services.retrieval_corpus import CORPORA, DOCUMENT_CORPUS
 from app.services.retrieval_service import RetrievalFilter, RetrievalService
 
@@ -69,9 +70,35 @@ class LinkCandidatesInput(BaseModel):
 
 
 class DiscriminatingQuestionsInput(BaseModel):
-    diseases: list[str]
+    diseases: list[str] = []
+    disease_ids: list[str] | None = None  # có thì bỏ bước tra tên, dùng cạnh KG + DOC như agent v3
     known_phenotype_ids: list[str] | None = None
     top_k: int = Field(default=3, ge=1, le=5)
+
+
+class NodeRef(BaseModel):
+    type: Literal["effect/phenotype", "disease", "drug", "exposure"]
+    id: str
+
+
+class RankDiseasesInput(BaseModel):
+    present: list[NodeRef] = Field(max_length=50)
+    absent: list[NodeRef] = Field(default_factory=lambda: list[NodeRef](), max_length=50)
+    top_k: int = Field(default=12, ge=1, le=30)
+
+
+class DiseaseIdsInput(BaseModel):
+    names: list[str] = Field(max_length=10)
+
+
+class DiseaseProfileInput(BaseModel):
+    disease_ids: list[str] = Field(max_length=20)
+
+
+class DrugNotesInput(BaseModel):
+    drugs: list[NodeRef] = Field(max_length=20)
+    symptoms: list[NodeRef] = Field(default_factory=lambda: list[NodeRef](), max_length=50)
+    disease_names: list[str] = Field(default_factory=lambda: list[str](), max_length=20)
 
 
 @router.post("/search/semantic", response_model=ApiResponse[list[dict[str, Any]]])
@@ -113,9 +140,38 @@ async def list_kg_intents() -> ApiResponse[list[str]]:
 
 @router.post("/kg/discriminating-questions", response_model=ApiResponse[dict[str, Any]])
 async def get_discriminating_questions(body: DiscriminatingQuestionsInput, kg: KnowledgeGraph) -> ApiResponse[dict[str, Any]]:
+    if body.disease_ids:
+        return ApiResponse(data=await kg.discriminating_questions(
+            [], body.known_phenotype_ids, body.top_k, disease_ids=body.disease_ids, edge_sources=EDGE_SOURCES))
     return ApiResponse(data=await kg.discriminating_questions(body.diseases, body.known_phenotype_ids, body.top_k))
 
 
 @router.post("/kg/link-candidates", response_model=ApiResponse[list[dict[str, Any]]])
 async def get_link_candidates(body: LinkCandidatesInput, linker: Linker) -> ApiResponse[list[dict[str, Any]]]:
     return ApiResponse(data=[await linker.find_link_candidates(m.text, m.text_en, m.object_type, body.limit) for m in body.mentions])
+
+
+@router.post("/kg/rank-diseases", response_model=ApiResponse[list[dict[str, Any]]])
+async def post_rank_diseases(body: RankDiseasesInput, kg: KnowledgeGraph) -> ApiResponse[list[dict[str, Any]]]:
+    nodes = await resolve_node_pairs(kg, [n.model_dump() for n in [*body.present, *body.absent]])
+    present = [nodes[(n.type, n.id)]["eid"] for n in body.present if (n.type, n.id) in nodes]
+    absent = [nodes[(n.type, n.id)]["eid"] for n in body.absent if n.type == "effect/phenotype" and (n.type, n.id) in nodes]
+    return ApiResponse(data=await rank_diseases(kg, present, absent, body.top_k))
+
+
+@router.post("/kg/disease-ids", response_model=ApiResponse[dict[str, list[str]]])
+async def post_disease_ids(body: DiseaseIdsInput, kg: KnowledgeGraph) -> ApiResponse[dict[str, list[str]]]:
+    return ApiResponse(data={name: await kg.disease_ids_for(name) for name in body.names})
+
+
+@router.post("/kg/disease-profile", response_model=ApiResponse[dict[str, Any]])
+async def post_disease_profile(body: DiseaseProfileInput, kg: KnowledgeGraph) -> ApiResponse[dict[str, Any]]:
+    return ApiResponse(data=await kg.get_disease_profiles(body.disease_ids, EDGE_SOURCES))
+
+
+@router.post("/kg/drug-notes", response_model=ApiResponse[list[str]])
+async def post_drug_notes(body: DrugNotesInput, kg: KnowledgeGraph) -> ApiResponse[list[str]]:
+    nodes = await resolve_node_pairs(kg, [n.model_dump() for n in [*body.drugs, *body.symptoms]])
+    drugs = [nodes[(n.type, n.id)]["eid"] for n in body.drugs if (n.type, n.id) in nodes]
+    symptoms = [nodes[(n.type, n.id)]["eid"] for n in body.symptoms if (n.type, n.id) in nodes]
+    return ApiResponse(data=await get_drug_notes(kg, drugs, symptoms, body.disease_names))

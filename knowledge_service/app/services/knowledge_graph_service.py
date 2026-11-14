@@ -1,4 +1,5 @@
 """Truy vấn knowledge graph da liễu trên Neo4j"""
+import math
 import re
 from typing import Any, LiteralString
 
@@ -82,6 +83,15 @@ RETURN d.id AS did, p.id AS pid, p.name AS pname,
 """
 
 
+# Phenotype có / không có của bệnh, kèm degree để tính trọng số đặc hiệu `3 / ln(2 + degree)` như khi xếp hạng bệnh.
+_DISEASE_PROFILE_QUERY = """
+MATCH (d:Entity {type: 'disease'}) WHERE d.id IN $dids
+OPTIONAL MATCH (d)-[e:DISEASE_PHENOTYPE_POSITIVE|DISEASE_PHENOTYPE_NEGATIVE]-(p:Entity {type: 'effect/phenotype'}) WHERE coalesce(e.source, 'KG') IN $edge_sources
+RETURN DISTINCT d.id AS did, d.name AS dname, p.id AS pid, p.name AS pname, type(e) AS rel,
+       CASE WHEN p IS NULL THEN 0 ELSE COUNT { (p)-[x:DISEASE_PHENOTYPE_POSITIVE]-() WHERE coalesce(x.source, 'KG') IN $edge_sources } END AS degree
+"""
+
+
 class KnowledgeGraphService:
     def __init__(self, neo4j: Neo4jClient) -> None:
         self._neo4j = neo4j
@@ -147,25 +157,38 @@ class KnowledgeGraphService:
         found = await self.run("MATCH (n:Entity) WHERE elementId(n) IN $eids RETURN n.id AS id", eids=[r["id"] for r in rows])
         return [r["id"] for r in found]
 
+    async def get_disease_profiles(self, disease_ids: list[str], edge_sources: list[str]) -> dict[str, dict[str, Any]]:
+        """{id bệnh: {name, positive: [{id, name, weight}], negative: [...]}}; id không có trong đồ thị thì vắng mặt."""
+        profiles: dict[str, dict[str, Any]] = {}
+        for r in await self.run(_DISEASE_PROFILE_QUERY, dids=disease_ids, edge_sources=edge_sources):
+            profile = profiles.setdefault(r["did"], {"name": r["dname"], "positive": [], "negative": []})
+            if r["pid"] is None:
+                continue
+            side = "positive" if r["rel"] == "DISEASE_PHENOTYPE_POSITIVE" else "negative"
+            profile[side].append({"id": r["pid"], "name": r["pname"], "weight": round(3.0 / math.log(2.0 + r["degree"]), 3)})
+        return profiles
+
     async def discriminating_questions(
-        self, diseases: list[str], known_phenotype_ids: list[str] | None = None, top_k: int = 3
+        self, diseases: list[str], known_phenotype_ids: list[str] | None = None, top_k: int = 3, disease_ids: list[str] | None = None,
+        edge_sources: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Chọn phenotype nên HỎI tiếp để phân biệt các bệnh đang cân nhắc"""
-        names = list(dict.fromkeys(n.strip() for n in diseases if n.strip()))[:5]
+        """Chọn phenotype nên HỎI tiếp để phân biệt các bệnh đang cân nhắc; có `disease_ids` thì bỏ bước tra tên (khoá kết quả là id)."""
+        names = list(dict.fromkeys(n.strip() for n in (disease_ids or diseases) if n.strip()))[:5]
         if len(names) < 2:
             return {"questions": [], "note": "Cần ít nhất 2 bệnh để phân biệt."}
         known = set(known_phenotype_ids or [])
+        sources = {"edge_sources": edge_sources} if edge_sources else {}
 
         sets: dict[str, dict[str, str]] = {}
         unresolved: list[str] = []
         degree: dict[str, int] = {}
         for name in names:
-            dids = await self.disease_ids_for(name)
+            dids = [name] if disease_ids else await self.disease_ids_for(name)
             if not dids:
                 unresolved.append(name)
                 continue
             phenos: dict[str, str] = {}
-            for r in await self.run(_DISEASE_PHENOTYPES_QUERY, dids=dids):
+            for r in await self.run(_DISEASE_PHENOTYPES_QUERY, dids=dids, **sources):
                 phenos[r["pid"]] = r["pname"]
                 degree[r["pid"]] = r["degree"]
             sets[name] = phenos

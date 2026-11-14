@@ -1,7 +1,7 @@
 .PHONY: infra infra-down services-db services-up services-down services-build test \
         identity consultation clinical gateway knowledge knowledge-worker knowledge-migrate ai frontend \
         identity-test consultation-test clinical-test gateway-test knowledge-test ai-test shared-test \
-        reindex-cases data-export data-restore reseed-users
+        reindex-cases tag-chunk-diseases data-export data-restore reseed-users
 
 # ---- hạ tầng (Postgres, Redis, RabbitMQ, Qdrant, Neo4j, MinIO, coturn) ----
 infra:
@@ -58,6 +58,10 @@ frontend:
 # nạp lại Qdrant + đồ thị bệnh nhân từ báo cáo kết luận đã chốt ở clinical (knowledge phải đang chạy)
 reindex-cases:
 	curl -sS -X POST http://localhost:3054/internal/cases/reindex -H "X-Internal-Key: $${INTERNAL_API_KEY:-derma-internal-key-change-in-production}"
+
+# gắn primary/mentioned_disease_ids cho chunk sách trong Qdrant (chạy lại sau mỗi lần index sách); ARGS=--dry-run để chỉ xem thống kê
+tag-chunk-diseases:
+	cd knowledge_service && uv run python -m app.scripts.tag_chunk_diseases $(ARGS)
 
 # ---- chạy bằng Docker: 6 service + worker (cần make infra và make services-db trước; OPENROUTER_API_KEY lấy từ .env ở gốc repo) ----
 services-build:
