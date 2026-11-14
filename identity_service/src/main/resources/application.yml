@@ -31,3 +31,4 @@ derma:
   internal-api-key: ${INTERNAL_API_KEY:derma-internal-key-change-in-production}
   clinical-url: ${CLINICAL_URL:http://localhost:3053}
   consultation-url: ${CONSULTATION_URL:http://localhost:3052}
+  knowledge-url: ${KNOWLEDGE_URL:http://localhost:3054}

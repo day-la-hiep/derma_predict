@@ -12,7 +12,6 @@ import type {
   ChatStreamEvent,
   Conversation,
   FileAttachment,
-  MessageChoice,
   ReasoningStep,
 } from "./types";
 
@@ -79,11 +78,6 @@ interface ChatState {
     content: string,
     isCanvas?: boolean
   ) => Promise<void>;
-  /** Người dùng chọn hoặc tự nhập phương án cho câu hỏi agent đưa ra */
-  answerChoice: (
-    messageId: string,
-    answer: { optionId: string; label: string; custom?: boolean }
-  ) => void;
   hasActiveStream: (conversationId: string) => boolean;
   /** Người dùng bấm Dừng: yêu cầu agent ngừng turn đang chạy */
   stopTurn: (conversationId: string) => Promise<void>;
@@ -131,7 +125,6 @@ function normalizeStreamEvent(rawEvent: ChatStreamEvent): import("./types").Flat
         stepId: rMeta.stepId ?? `${messageId}-step-1`,
         title: rMeta.title,
         stepType: rMeta.stepType ?? (rMeta.toolMetadata?.name === "ask_tool" ? "tool_call" : "default"),
-        choice: rMeta.choice,
       };
     }
     if (status === "reasoning_step_delta") {
@@ -152,7 +145,6 @@ function normalizeStreamEvent(rawEvent: ChatStreamEvent): import("./types").Flat
         conversationId,
         stepId: rMeta.stepId ?? `${messageId}-step-1`,
         stepType: rMeta.stepType,
-        choice: rMeta.choice,
       };
     }
   }
@@ -205,42 +197,19 @@ export const useChatStore = create<ChatState>((set, get) => {
           title: event.title,
           content: "",
           status: "processing",
-          // stepType của event SSE còn là `tool_call` / `tool_ask`; ở dạng lưu chỉ còn `tool`
-          type: event.stepType === "tool_call" || event.stepType === "tool_ask" ? "tool" : "default",
-          choice: event.choice,
+          // stepType của event SSE là `tool_call`; ở dạng lưu chỉ còn `tool`
+          type: event.stepType === "tool_call" ? "tool" : "default",
         };
-        const isToolAsk = step.type === "tool" || !!event.choice;
 
         patchMessage(event.messageId, (m) => {
           const list = m.reasoning ?? [];
           const exists = list.some((s) => s.id === step.id);
           const updated = exists
-            ? list.map((s) => (s.id === step.id ? { ...s, ...step, choice: step.choice ?? s.choice } : s))
+            ? list.map((s) => (s.id === step.id ? { ...s, ...step } : s))
             : [...list, step];
 
-          const stepChoice = event.choice || step.choice;
-          const nextChoice = stepChoice ? { ...(m.choice || {}), ...stepChoice } : m.choice;
-          const nextStatus = (isToolAsk || !!nextChoice) ? "question" : m.status;
-
-          return {
-            ...m,
-            status: nextStatus,
-            choice: nextChoice,
-            reasoning: updated,
-          };
+          return { ...m, reasoning: updated };
         });
-
-        if (isToolAsk && event.choice) {
-          set((state) => ({
-            activeStreams: {
-              ...state.activeStreams,
-              [event.conversationId]: Math.max(
-                0,
-                (state.activeStreams[event.conversationId] ?? 0) - 1
-              ),
-            },
-          }));
-        }
         break;
       }
       case "reasoning.step_delta": {
@@ -258,37 +227,8 @@ export const useChatStore = create<ChatState>((set, get) => {
         patchMessage(event.messageId, (m) => ({
           ...m,
           reasoning: (m.reasoning ?? []).map((step) =>
-            step.id === event.stepId
-              ? {
-                  ...step,
-                  status: "done",
-                  choice: event.choice
-                    ? { ...step.choice, ...event.choice }
-                    : step.choice,
-                }
-              : step
+            step.id === event.stepId ? { ...step, status: "done" } : step
           ),
-          choice:
-            event.choice && m.choice
-              ? { ...m.choice, ...event.choice }
-              : m.choice,
-        }));
-        break;
-      }
-      case "message.question": {
-        patchMessage(event.messageId, (m) => ({
-          ...m,
-          status: "question",
-          choice: event.choice,
-        }));
-        set((state) => ({
-          activeStreams: {
-            ...state.activeStreams,
-            [event.conversationId]: Math.max(
-              0,
-              (state.activeStreams[event.conversationId] ?? 0) - 1
-            ),
-          },
         }));
         break;
       }
@@ -359,7 +299,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         patchMessage(event.messageId, (m) => {
           // node lỗi giữa chừng thì không có tool_result; đóng bước còn quay để spinner không treo
           const existingList = (m.reasoning ?? []).map((s) =>
-            s.status === "processing" && !s.choice ? { ...s, status: "done" as const } : s
+            s.status === "processing" ? { ...s, status: "done" as const } : s
           );
           const incomingList = event.reasoning ?? [];
 
@@ -377,21 +317,10 @@ export const useChatStore = create<ChatState>((set, get) => {
             const exStep = existingMap.get(incStep.id);
             if (!exStep) return incStep;
 
-            const baseChoice = incStep.choice || exStep.choice;
-            const mergedChoice: MessageChoice | undefined = baseChoice
-              ? {
-                  questionId: incStep.choice?.questionId || exStep.choice?.questionId || "",
-                  question: incStep.choice?.question || exStep.choice?.question || "",
-                  options: incStep.choice?.options || exStep.choice?.options || [],
-                  answered: incStep.choice?.answered || exStep.choice?.answered,
-                }
-              : undefined;
-
             return {
               ...exStep,
               ...incStep,
-              type: incStep.type || exStep.type || (mergedChoice ? "tool" : "default"),
-              choice: mergedChoice,
+              type: incStep.type || exStep.type || "default",
             };
           });
 
@@ -714,80 +643,6 @@ export const useChatStore = create<ChatState>((set, get) => {
               0,
               (state.activeStreams[activeId] ?? 0) - 1
             ),
-          },
-        }));
-      });
-    },
-
-    answerChoice(messageId, answer) {
-      const state = get();
-      let target: ChatMessage | undefined;
-      let convId = "";
-      for (const [cid, list] of Object.entries(state.messagesByConversation)) {
-        const found = list.find((m) => m.id === messageId);
-        if (found) {
-          target = found;
-          convId = cid;
-          break;
-        }
-      }
-      if (!target?.choice || target.choice.answered) return;
-
-      let answerLabelText = answer.label;
-      if (answer.optionId === "skip") {
-        answerLabelText = "Bỏ qua";
-      } else if (answer.custom) {
-        answerLabelText = `${answer.label} (Tự nhập)`;
-      }
-
-      const answeredObj = { optionId: answer.optionId, label: answerLabelText, custom: answer.custom };
-
-      // Đánh dấu câu trả lời đã chọn trực tiếp vào reasoning step & choice của tin nhắn assistant
-      patchMessage(messageId, (m) => {
-        const reasoningList = m.reasoning ?? [];
-        const updatedReasoning = reasoningList.map((rs) =>
-          rs.choice ? { ...rs, choice: { ...rs.choice, answered: answeredObj } } : rs
-        );
-        return {
-          ...m,
-          status: "streaming",
-          isOptionResponse: true,
-          content: "",
-          reasoning: updatedReasoning,
-          choice: m.choice ? { ...m.choice, answered: answeredObj } : undefined,
-        };
-      });
-
-      const nowIso = new Date().toISOString();
-      set((s) => ({
-        activeStreams: {
-          ...s.activeStreams,
-          [convId]: (s.activeStreams[convId] ?? 0) + 1,
-        },
-        conversations: s.conversations.map((c) =>
-          c.id === convId ? { ...c, updatedAt: nowIso } : c
-        ),
-      }));
-
-      Promise.resolve(
-        chatService.answerQuestion({
-          conversationId: convId,
-          questionId: target.choice.questionId,
-          optionId: answer.optionId,
-          label: answerLabelText,
-          custom: answer.custom,
-        })
-      ).catch(() => {
-        console.error("Gửi câu trả lời thất bại");
-        patchMessage(messageId, (m) => ({
-          ...m,
-          status: "done",
-          content: m.content || "Đã có lỗi khi gửi yêu cầu, vui lòng thử lại.",
-        }));
-        set((s) => ({
-          activeStreams: {
-            ...s.activeStreams,
-            [convId]: Math.max(0, (s.activeStreams[convId] ?? 0) - 1),
           },
         }));
       });

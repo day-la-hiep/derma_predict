@@ -2,7 +2,7 @@
 # Xoá dữ liệu người dùng rồi nạp lại seed demo:
 #   - Postgres: toàn bộ bảng của database identity, consultation, clinical
 #   - Qdrant:   mọi điểm trong collection ca bệnh đã chốt (derma_finalize_reports)
-#   - Neo4j:    node hành trình bệnh nhân (Patient, ConsultationSession, ClinicalFact, SuspectedCondition, Advice, PatientImage)
+#   - Neo4j:    node hành trình bệnh nhân (Patient, ConsultationSession, ClinicalFact, SuspectedCondition, Advice, PatientImage) và graph theo dõi fact (PtLesion, PtLiteral)
 #   - Postgres ai: checkpoint hội thoại và bộ nhớ bệnh nhân của agent (schema langgraph)
 #   - MinIO:    ảnh đính kèm tin nhắn (bucket derma-attachments)
 # Sau khi dọn sạch, nạp lại:
@@ -10,6 +10,7 @@
 #   - consultation:  scripts/seed/consultation.sql  (hội thoại AI, tin nhắn, kênh theo dõi sau khám)
 #   - clinical:      scripts/seed/clinical.sql      (đợt bệnh, giả thuyết, dữ kiện, lịch hẹn đủ trạng thái, lần khám, báo cáo kết luận)
 #   - Qdrant + Neo4j: gọi POST /internal/cases/reindex của knowledge để dựng từ báo cáo kết luận mẫu (cần knowledge đang chạy và key embedding)
+#   - Neo4j (graph theo dõi fact): scripts/seed/patient_facts.json qua POST /internal/patient-facts/apply của knowledge (cần knowledge đang chạy; key LLM để khớp nút đồ thị tri thức, thiếu key thì fact giữ dạng chữ)
 # Giữ nguyên schema, flyway_schema_history, database knowledge, chunk sách trong Qdrant, đồ thị sách/DermO trong Neo4j, bucket sách (derma-documents, derma-books).
 # Cần `make infra` và các service đã chạy Flyway ít nhất một lần.
 # Dùng: ./scripts/reseed-user-data.sh [--yes]   (--yes bỏ bước hỏi xác nhận)
@@ -69,7 +70,7 @@ fi
 # Neo4j: chỉ các label của hành trình bệnh nhân; đồ thị sách (Entity) và DermoTerm không đụng tới
 echo "==> Neo4j: xoá node hành trình bệnh nhân"
 docker exec "$NEO4J_CONTAINER" cypher-shell -u "$NEO4J_USER" -p "$NEO4J_PASSWORD" \
-  "MATCH (n) WHERE any(l IN labels(n) WHERE l IN ['Patient','ConsultationSession','ClinicalFact','SuspectedCondition','Advice','PatientImage']) DETACH DELETE n"
+  "MATCH (n) WHERE any(l IN labels(n) WHERE l IN ['Patient','ConsultationSession','ClinicalFact','SuspectedCondition','Advice','PatientImage','PtLesion','PtLiteral']) DETACH DELETE n"
 
 # agent: checkpoint theo hội thoại và bộ nhớ theo bệnh nhân; giữ bảng *_migrations để service không chạy lại migration
 echo "==> Postgres ai: xoá checkpoint và bộ nhớ agent"
@@ -106,6 +107,24 @@ if curl -sf -m 5 -o /dev/null "$KNOWLEDGE_URL/docs" || curl -sf -m 5 -o /dev/nul
   fi
 else
   echo "knowledge ($KNOWLEDGE_URL) chưa chạy: chạy 'make reindex-cases' sau khi bật knowledge để có ca bệnh trong Qdrant và Neo4j." >&2
+fi
+
+echo "==> knowledge: nạp fact mẫu vào graph theo dõi (scripts/seed/patient_facts.json)"
+if curl -sf -m 5 -o /dev/null "$KNOWLEDGE_URL/openapi.json"; then
+  KNOWLEDGE_URL="$KNOWLEDGE_URL" INTERNAL_API_KEY="${INTERNAL_API_KEY:-derma-internal-key-change-in-production}" python3 - <<'PY'
+import json, os, urllib.request
+
+for item in json.load(open("scripts/seed/patient_facts.json", encoding="utf-8")):
+    request = urllib.request.Request(
+        os.environ["KNOWLEDGE_URL"] + "/internal/patient-facts/apply", data=json.dumps(item).encode(), method="POST",
+        headers={"X-Internal-Key": os.environ["INTERNAL_API_KEY"], "content-type": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=300) as response:
+        result = json.load(response)["data"]
+    print(f"  {item['patient_id']}: ghi {result['applied']}/{len(item['facts'])} fact", "- bỏ: " + str(result["skipped"]) if result["skipped"] else "")
+PY
+else
+  echo "knowledge ($KNOWLEDGE_URL) chưa chạy: fact mẫu chưa vào graph theo dõi; bật knowledge rồi chạy lại bước này (xem scripts/seed/patient_facts.json)." >&2
 fi
 
 echo "Xong: user-1, doctor-1, admin-1 (mật khẩu 123456), 4 hồ sơ bệnh nhân và dữ liệu mẫu (7 hội thoại AI, 8 đợt bệnh, 6 lịch hẹn ở mọi trạng thái, 3 báo cáo kết luận, 4 kênh theo dõi)."

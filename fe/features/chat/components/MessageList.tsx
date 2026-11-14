@@ -135,7 +135,6 @@ export function MessageList({
             {hasReasoning && (
               <ReasoningSection
                 steps={message.reasoning!}
-                messageId={message.id}
                 streaming={message.status === "streaming"}
               />
             )}

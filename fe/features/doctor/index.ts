@@ -10,4 +10,5 @@ export { SuggestionPanel } from "./components/SuggestionPanel";
 export { EMPTY_FINALIZE, FinalizeReportForm, isFinalizeComplete } from "./components/FinalizeReportForm";
 export { patientSubtitle } from "./components/PatientProfileDetails";
 export * from "./constants";
+export { describeFactContext, isAbsentFact } from "./factContext";
 export type * from "./types";

@@ -21,7 +21,8 @@ import vn.derma.clinical.config.DermaProperties;
 @Slf4j
 public class AiClient {
 
-    public record DescribedFact(String factType, String label, String detail) {
+    /** `siteText`/`onsetText` chỉ có khi bác sĩ viết rõ trong mô tả. */
+    public record DescribedFact(String factType, String label, String detail, String siteText, String onsetText) {
     }
 
     private record Data(List<DescribedFact> facts) {
@@ -37,10 +38,10 @@ public class AiClient {
     }
 
     /** `known` là các dữ kiện đã giữ; ai chỉ trả dữ kiện mới hoặc đổi giá trị so với chúng. */
-    public List<DescribedFact> extractFactsFromDescription(String description, String bodySite, List<DescribedFact> known) {
+    public List<DescribedFact> extractFactsFromDescription(String description, List<DescribedFact> known) {
         try {
             ApiResponse<Data> body = http.post().uri("/internal/extract-facts-from-description")
-                    .body(Map.of("description", description, "body_site", bodySite, "known_facts", known)).retrieve()
+                    .body(Map.of("description", description, "known_facts", known)).retrieve()
                     .body(new ParameterizedTypeReference<ApiResponse<Data>>() {
                     });
             return body == null || body.data() == null || body.data().facts() == null ? List.of() : body.data().facts();

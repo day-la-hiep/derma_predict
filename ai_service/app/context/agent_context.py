@@ -29,14 +29,16 @@ class AgentContext:
     # Ghi đè mức trần của graph cho riêng lượt này (None = dùng mặc định trong `graph/nodes.py`); chủ yếu để thử trong `agent/test/debug_app.py`.
     max_tool_rounds: int | None = None
     max_model_retries: int | None = None
-    # Memory dài hạn của người dùng, đọc một lần ở node đầu của lượt (`load_memory`); các node sau chỉ nối chuỗi này vào prompt, không chạm store.
-    memory_text: str = ""
     # Làn ảnh (`image_flow`) đặt kết quả vào đây khi xong; `label_evidence` của làn chữ chờ nó. Dùng Future vì state graph cha chỉ được ghi khi cả hai làn kết thúc.
     image_result: "asyncio.Future[ImageResult] | None" = None
-    # Fact hiện trạng trong DB (dài hạn + đợt đang hoạt động), nạp ở `build_context`; bảng là nguồn chính, state chỉ là bộ đệm.
+    # Fact hiện hành trong graph theo dõi của bệnh nhân (knowledge), nạp ở `build_context`; graph là nguồn chính, state chỉ là bộ đệm.
     known_facts: list[dict[str, Any]] = field(default_factory=list)
+    # Tổn thương đã có của bệnh nhân (`{id, site_text, scope}`): bộ trích chọn "gắn vào tổn thương X" hoặc tạo mới.
+    known_lesions: list[dict[str, Any]] = field(default_factory=list)
     # Kết quả lâm sàng của lượt, các node ghi vào đây; `turn.py` gửi về Core khi lượt xong (cùng cách `reasoning_steps`).
     turn_facts: list[dict[str, Any]] = field(default_factory=list)
+    # Đã ghi `turn_facts` vào graph theo dõi (tool `query_patient_graph` ghi sớm để tra được fact của chính lượt này); `turn.py` khỏi ghi lại.
+    turn_facts_saved: bool = False
     turn_hypotheses: list[dict[str, Any]] = field(default_factory=list)
     turn_images: list[dict[str, Any]] = field(default_factory=list)
     # Số lần đã gọi theo tên hiển thị của tool trong lượt (vòng lặp tra cứu gọi lại cùng tool) → id bước không đè nhau.

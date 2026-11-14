@@ -8,8 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.api import router
 from app.config.settings import settings
-from app.reasoning.description_fact_extractor import DescriptionExtractionError, extract_facts_from_description
-from app.reasoning.patient_fact_extractor import ExtractedFact, ExtractedFacts
+from app.reasoning.description_fact_extractor import DescribedFact, DescribedFacts, DescriptionExtractionError, extract_facts_from_description
 
 
 class FakeStructured:
@@ -31,8 +30,8 @@ class FakeModel:
         return self._structured
 
 
-def fact(label: str, detail: str, kind: str = "lesion") -> ExtractedFact:
-    return ExtractedFact(template_label=label, fact_type=kind, detail=detail)  # type: ignore[arg-type]
+def fact(label: str, detail: str, kind: str = "lesion", site: str = "", onset: str = "") -> DescribedFact:
+    return DescribedFact(template_label=label, fact_type=kind, detail=detail, site_text=site, onset_text=onset)  # type: ignore[arg-type]
 
 
 class DescriptionFactsTest(unittest.TestCase):
@@ -42,15 +41,20 @@ class DescriptionFactsTest(unittest.TestCase):
             return asyncio.run(extract_facts_from_description(text, known or [])), structured
 
     def test_blank_description_skips_llm(self):
-        out, s = self._run(ExtractedFacts(), text="  ")
+        out, s = self._run(DescribedFacts(), text="  ")
         self.assertEqual((out, s.calls), ([], 0))
 
     def test_returns_facts_and_drops_identical_known(self):
         known = [{"fact_type": "symptom", "template_label": "Ngứa", "detail": "về đêm"}]
-        result = ExtractedFacts(facts=[fact("Mảng đỏ", "bờ rõ 2cm"), fact("ngứa", "về đêm", "symptom"), fact("Ngứa", "liên tục", "symptom")])
+        result = DescribedFacts(facts=[fact("Mảng đỏ", "bờ rõ 2cm"), fact("ngứa", "về đêm", "symptom"), fact("Ngứa", "liên tục", "symptom")])
         out, _ = self._run(result, known)
         # "ngứa / về đêm" trùng hệt nên bỏ; "Ngứa / liên tục" đổi giá trị nên giữ để clinical ghi đè
         self.assertEqual([(f["label"], f["detail"]) for f in out], [("Mảng đỏ", "bờ rõ 2cm"), ("Ngứa", "liên tục")])
+
+    def test_site_and_onset_are_passed_through_trimmed_only_when_present(self):
+        result = DescribedFacts(facts=[fact("Mảng đỏ", "bờ rõ", "lesion", " khuỷu tay ", " 2 tuần "), fact("Ngứa", "liên tục", "symptom")])
+        out, _ = self._run(result, [])
+        self.assertEqual([(f["site_text"], f["onset_text"]) for f in out], [("khuỷu tay", "2 tuần"), ("", "")])
 
     def test_failure_raises_after_retry(self):
         structured = FakeStructured(RuntimeError("boom"))
@@ -75,10 +79,10 @@ class EndpointTest(unittest.TestCase):
         self.assertEqual(self.client.post("/internal/extract-facts-from-description", json={"description": "x"}).status_code, 403)
 
     def test_success_wraps_in_data(self):
-        structured = FakeStructured(ExtractedFacts(facts=[fact("Mảng đỏ", "bờ rõ")]))
+        structured = FakeStructured(DescribedFacts(facts=[fact("Mảng đỏ", "bờ rõ")]))
         with patch("app.reasoning.description_fact_extractor.get_model", return_value=FakeModel(structured)):
-            r = self.client.post("/internal/extract-facts-from-description", headers=self.headers, json={"description": "mảng đỏ bờ rõ", "body_site": "tay"})
-        self.assertEqual(r.json(), {"data": {"facts": [{"fact_type": "lesion", "label": "Mảng đỏ", "detail": "bờ rõ"}]}})
+            r = self.client.post("/internal/extract-facts-from-description", headers=self.headers, json={"description": "mảng đỏ bờ rõ"})
+        self.assertEqual(r.json(), {"data": {"facts": [{"fact_type": "lesion", "label": "Mảng đỏ", "detail": "bờ rõ", "site_text": "", "onset_text": ""}]}})
 
     def test_llm_failure_is_502_with_message(self):
         structured = FakeStructured(RuntimeError("boom"))

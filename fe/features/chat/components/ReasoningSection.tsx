@@ -4,16 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import {
   Brain,
   Check,
-  CheckCircle2,
   ChevronDown,
   Copy,
   Loader2,
   Sparkles,
   Wrench,
 } from "lucide-react";
-import type { ReasoningStep, ChoiceOption } from "../types";
-import { useChatStore } from "../store";
-import { Button } from "@/components/ui/button";
+import type { ReasoningStep } from "../types";
 import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
@@ -75,17 +72,6 @@ export function formatReasoningSteps(steps: ReasoningStep[]): string {
         const outputPrefix = hasInput ? "**Output**:\n" : "";
         text += `\n\n${outputPrefix}${step.content.trim()}`;
       }
-      if (step.choice) {
-        text += `\n\n**Câu hỏi**: ${step.choice.question}`;
-        if (step.choice.options?.length) {
-          text +=
-            "\n**Phương án**:\n" +
-            step.choice.options.map((opt) => `- ${opt.label}`).join("\n");
-        }
-        if (step.choice.answered) {
-          text += `\n**Đã chọn**: ${step.choice.answered.label}`;
-        }
-      }
       return text;
     })
     .join("\n\n---\n\n");
@@ -112,33 +98,18 @@ export function formatSingleStep(step: ReasoningStep, index?: number): string {
     const outputPrefix = hasInput ? "[Output]:\n" : "";
     text += `\n\n${outputPrefix}${step.content.trim()}`;
   }
-  if (step.choice) {
-    text += `\n\n[Câu hỏi]: ${step.choice.question}`;
-    if (step.choice.options?.length) {
-      text +=
-        `\n[Phương án]:\n` +
-        step.choice.options.map((opt) => `- ${opt.label}`).join("\n");
-    }
-    if (step.choice.answered) {
-      text += `\n[Đã chọn]: ${step.choice.answered.label}`;
-    }
-  }
   return text;
 }
 
 function StepItem({
   step,
-  messageId,
   index,
 }: {
   step: ReasoningStep;
-  messageId?: string;
   index?: number;
   isLast?: boolean;
 }) {
-  const isToolCall = step.type === "tool" || !!step.choice;
-  const hasChoice = !!step.choice;
-  const isAnswered = !!step.choice?.answered;
+  const isToolCall = step.type === "tool";
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [inputCopied, setInputCopied] = useState(false);
@@ -169,14 +140,6 @@ function StepItem({
     setOutputCopied(true);
     toast.success("Đã sao chép output của tool");
     setTimeout(() => setOutputCopied(false), 2000);
-  };
-
-  const handleSelectOption = (option: ChoiceOption) => {
-    if (!messageId || !step.choice) return;
-    useChatStore.getState().answerChoice(messageId, {
-      optionId: option.id,
-      label: option.label,
-    });
   };
 
   const handleCopyStep = (e: React.MouseEvent) => {
@@ -253,15 +216,6 @@ function StepItem({
                   >
                     <Wrench className="size-2.5" />
                     Tool
-                  </Badge>
-                )}
-                {hasChoice && isAnswered && (
-                  <Badge
-                    variant="outline"
-                    className="shrink-0 border-emerald-500/30 bg-emerald-500/10 text-[10px] text-emerald-600 dark:text-emerald-400 py-0 px-2 font-medium rounded-full"
-                  >
-                    <CheckCircle2 className="size-2.5 text-emerald-500 dark:text-emerald-400 mr-1" />
-                    <span className="max-w-[120px] truncate">{step.choice?.answered?.label}</span>
                   </Badge>
                 )}
               </div>
@@ -402,69 +356,6 @@ function StepItem({
               <span>Đang thực hiện bước này...</span>
             </div>
           )}
-
-          {/* Tool Call câu hỏi phương án */}
-          {hasChoice && (
-            <div className="mt-3 space-y-2.5 border border-border bg-card p-4 rounded-xl shadow-xs">
-              <div className="flex items-center gap-2 border-b border-border/60 pb-2">
-                <span className="font-mono text-xs font-semibold text-brand">
-                  [Câu hỏi làm rõ]
-                </span>
-                <span className="text-xs font-medium text-foreground">
-                  {step.choice?.question}
-                </span>
-              </div>
-
-              {isAnswered && (
-                <div className="flex items-center justify-between border border-brand/30 bg-brand/5 p-2.5 rounded-lg text-xs">
-                  <div className="flex items-center gap-2 text-foreground">
-                    <span className="size-1.5 rounded-full bg-brand" />
-                    <span>Lựa chọn đã ghi nhận: <strong className="text-brand font-semibold">{step.choice?.answered?.label}</strong></span>
-                  </div>
-                  <Badge variant="outline" className="border-brand/30 bg-brand text-brand-foreground text-[10px] py-0 px-2 rounded-full">
-                    Đã chọn
-                  </Badge>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                {step.choice?.options.map((opt) => {
-                  const isSelected =
-                    step.choice?.answered?.optionId === opt.id ||
-                    step.choice?.answered?.label === opt.label;
-
-                  if (isAnswered) {
-                    return (
-                      <div
-                        key={opt.id}
-                        className={cn(
-                          "flex items-center gap-2 border p-2.5 text-xs rounded-lg font-medium",
-                          isSelected
-                            ? "border-brand bg-brand/10 text-brand"
-                            : "border-border/60 bg-muted/20 text-muted-foreground/60"
-                        )}
-                      >
-                        {isSelected ? <Check className="size-3 text-brand" /> : <span className="size-3" />}
-                        <span className="truncate">{opt.label}</span>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <Button
-                      key={opt.id}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleSelectOption(opt)}
-                      className="rounded-xl border border-border hover:border-brand/40 hover:bg-muted justify-start text-xs font-normal"
-                    >
-                      {opt.label}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
       </CollapsibleContent>
     </Collapsible>
@@ -473,11 +364,9 @@ function StepItem({
 
 export function ReasoningSection({
   steps,
-  messageId,
   streaming,
 }: {
   steps: ReasoningStep[];
-  messageId?: string;
   streaming: boolean;
 }) {
   // Bắt đầu mở khi đang streaming (đang load), đóng khi đã hoàn thành
@@ -612,7 +501,6 @@ export function ReasoningSection({
             key={step.id}
             step={step}
             index={index}
-            messageId={messageId}
             isLast={index === steps.length - 1}
           />
         ))}

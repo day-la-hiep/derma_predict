@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 JSON_RESULT_TOOLS = {"hybrid_retrieval", "semantic_search", "keyword_search", "knowledge_graph_query"}
 
 
+# Kết quả phụ thuộc dữ kiện hiện có của người bệnh (đổi theo lượt), nên "đã gọi" phải tính cả bộ fact lúc gọi.
+STATEFUL_TOOLS = {"query_patient_graph"}
+
+
 def get_tool_call_key(name: str, args: Any) -> str:
     """Khoá chuẩn hoá của một lệnh gọi tool (khử trùng và hiển thị)."""
     return f"{name}({json.dumps(args, sort_keys=True, ensure_ascii=False)})"
@@ -85,9 +89,37 @@ def label_tool_evidence(tool: str, content: str) -> list[dict[str, Any]]:
             text = f"{t.get('subject')} –{relation}→ {t.get('object')}: “{str(t['evidence']).strip()}”"
             items.append({"kind": "evidence", "source": "đồ thị sách" + (f", trang {pages}" if pages else ""), "text": _clip(text)})
         return items
+    if tool == "query_patient_graph":
+        return _label_patient_graph(content)
     if tool in _HINT_TOOLS:
         return [{"kind": "hint", "source": tool, "text": _clip(content)}]
     return []
+
+
+def _label_patient_graph(content: str) -> list[dict[str, Any]]:
+    """Ứng viên, câu hỏi phân biệt, ghi chú thuốc là gợi ý (H#); chỉ câu trích từ sách mới là bằng chứng (E#)."""
+    try:
+        data = json.loads(content)
+    except ValueError as exc:
+        logger.warning("kết quả tool query_patient_graph không phải JSON hợp lệ: %s", exc)
+        return []
+    if not data.get("evidence_found"):
+        return []
+    source = "đồ thị tri thức theo dữ kiện của người bệnh"
+    items: list[dict[str, Any]] = []
+    for c in data.get("candidates") or []:
+        absent = f"; người bệnh KHÔNG có: {', '.join(c['absent'])}" if c.get("absent") else ""
+        items.append({"kind": "hint", "source": source, "text": _clip(f"Bệnh ứng viên {c['name']} (điểm {c['score']}): {'; '.join(c.get('why') or [])}{absent}")})
+    for q in data.get("questions") or []:
+        items.append({"kind": "hint", "source": source, "text": _clip(f"Nên hỏi thêm: {q['phenotype']} (có ở {', '.join(q['present_in'])}; không có ở {', '.join(q['absent_in'])})")})
+    for note in data.get("drug_notes") or []:
+        items.append({"kind": "hint", "source": source, "text": _clip(note)})
+    for e in data.get("book_evidence") or []:
+        if not str(e.get("evidence") or "").strip():
+            continue
+        pages = ", ".join(str(p) for p in e.get("pages") or [])
+        items.append({"kind": "evidence", "source": "đồ thị sách" + (f", trang {pages}" if pages else ""), "text": _clip(f"{e['disease']} –{e.get('relation')}→ {e.get('object')}: “{str(e['evidence']).strip()}”")})
+    return items
 
 
 def add_retrieval_evidence(evidence: list[dict[str, Any]], items: list[dict[str, Any]]) -> int:

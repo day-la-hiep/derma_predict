@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { FACT_TYPE_CONFIG, URGENCY_CONFIG, URGENCY_ORDER } from "../constants";
+import { describeFactContext, isAbsentFact } from "../factContext";
 import type { FactDraft, FinalizeInput } from "../types";
 import { FactSources } from "./FactSources";
 
@@ -54,10 +55,11 @@ function FactRow({ fact, onToggle }: { fact: FactDraft; onToggle: () => void }) 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className={cn("text-sm text-foreground", removed && "line-through")}>
-            <span className="font-medium">{fact.label}</span>
+            <span className="font-medium">{isAbsentFact(fact) ? "Không có " : ""}{fact.label}</span>
             <span className="ml-2 text-xs text-muted-foreground">{FACT_TYPE_CONFIG[fact.factType]?.label ?? fact.factType}</span>
           </p>
           {fact.detail && <p className="text-xs text-muted-foreground">{fact.detail}</p>}
+          {describeFactContext(fact) && <p className="text-xs text-muted-foreground">{describeFactContext(fact)}</p>}
         </div>
         <Button
           type="button"

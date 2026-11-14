@@ -8,7 +8,6 @@ import { ChatSidebar } from "./ChatSidebar";
 import { ChatHeader } from "./ChatHeader";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
-import { QuestionModal } from "./QuestionModal";
 import { AppointmentsView } from "@/features/appointments";
 import { ProfileView } from "@/features/patient-profile/components/ProfileView";
 import { useActiveProfile, useProfiles } from "@/features/patient-profile/hooks";
@@ -145,7 +144,6 @@ export function ChatPage() {
                   />
                 </div>
                 <div className="relative bg-background">
-                  {activeId && <QuestionModal conversationId={activeId} />}
                   <ChatInput
                     conversationId={activeId ?? undefined}
                     onOpenSidebar={() => setSidebarOpen(true)}

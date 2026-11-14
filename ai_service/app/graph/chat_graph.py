@@ -7,13 +7,11 @@ from langgraph.config import get_config, get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph  # pyright: ignore[reportMissingTypeStubs]
 from langgraph.runtime import Runtime
-from langgraph.store.base import BaseStore
 
 from app.graph.pre_diagnosis_graph import build_pre_diagnosis_graph
 from app.graph.intent_triage_node import triage
 from app.state.chat_state import ChatState
 from app.context.agent_context import AgentContext
-from app.tools.patient_memory import build_memory_store
 from app.config.settings import settings
 
 # Chỉ node `answer` được stream token; câu trả lời của triage (không qua token) do `turn.py` phát một lần.
@@ -78,7 +76,6 @@ def _after_triage(state: ChatState) -> str:
 
 def build_chat_graph(
     checkpointer: BaseCheckpointSaver[str] | None = None,
-    store: BaseStore | None = None,
     *,
     pre_diagnosis: CompiledStateGraph[Any, AgentContext, Any, Any]
     | None = None,
@@ -100,7 +97,6 @@ def build_chat_graph(
     return graph.compile(
         # Bản RAM dùng cho test/debug và lúc import; worker thay bằng Postgres khi khởi động (`agent/persistence.py`).
         checkpointer=checkpointer or InMemorySaver(),
-        store=store or build_memory_store(),
     )
 
 

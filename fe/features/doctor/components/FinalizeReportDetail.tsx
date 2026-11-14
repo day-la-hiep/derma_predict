@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { cn } from "@/lib/utils";
 import { FACT_TYPE_CONFIG } from "../constants";
+import { describeFactContext, isAbsentFact } from "../factContext";
 import { useProfileFinalizeReports } from "../hooks";
 import type { FinalizeReportItem, PatientProfile } from "../types";
 import { FactSources } from "./FactSources";
@@ -124,8 +125,10 @@ function FactsTab({ report }: { report: FinalizeReportItem }) {
         <li key={i} className="space-y-2 rounded-xl border border-border p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground">{f.label}</p>
-              <p className="text-[11px] text-muted-foreground">{FACT_TYPE_CONFIG[f.factType]?.label ?? f.factType}</p>
+              <p className="text-sm font-semibold text-foreground">{isAbsentFact(f) ? "Không có " : ""}{f.label}</p>
+              <p className="text-[11px] text-muted-foreground">
+                {[FACT_TYPE_CONFIG[f.factType]?.label ?? f.factType, describeFactContext(f)].filter(Boolean).join(" · ")}
+              </p>
             </div>
             <OriginBadge origin={f.origin} />
           </div>

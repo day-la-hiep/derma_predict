@@ -36,7 +36,7 @@ Hợp đồng liên service: `contracts/README.md`. Quy ước làm việc: skil
 - Dữ liệu sách đã copy từ `derma_hospital_db` sang database `knowledge` (files 8, documents 4, document_stages 24, document_overrides 3; checksum khớp); DB cũ không bị đụng.
 - Ảnh chỉ gắn vào đợt khi xác định được duy nhất (giả thuyết trùng nhãn CNN top-1, hoặc hội thoại chỉ chạm một vùng); hội thoại nhiều đợt mà không khớp thì bỏ ảnh và ghi `warn` ở clinical (hành vi kế thừa từ `archive/core/`).
 - Model mô tả ảnh (`AGENT_VISION_MODEL`, medgemma local qua Ollama) không chạy trên máy này nên bước mô tả ảnh báo lỗi kết nối rồi bỏ qua; CNN vẫn chạy.
-- Chưa kiểm `interrupt()` resume bằng câu hỏi chọn (`message.question`), cuộc gọi video.
+- Chưa kiểm cuộc gọi video.
 - Provider LLM đôi lúc trả 429; agent tự chuyển sang graph tiền chẩn đoán, không làm hỏng lượt.
 - Lỗi có sẵn từ `archive/core/` (kg_templates.py dòng 124, chữ rác chèn vào Cypher của intent `diseases_with_symptom`): đã sửa trong `knowledge_service`, `archive/core/` giữ nguyên.
 - Knowledge DB mới còn trống (chưa copy bảng sách từ `derma_hospital_db`); Qdrant/Neo4j dùng dữ liệu hiện có.

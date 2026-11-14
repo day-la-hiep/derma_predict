@@ -4,16 +4,10 @@ import httpx
 
 
 class ClinicalClient:
-    """Gọi clinical: kéo hồ sơ/fact của bệnh nhân và ghi kết quả lâm sàng của lượt."""
+    """Gọi clinical: ghi giả thuyết và ảnh của lượt (fact ghi vào graph qua knowledge)."""
 
     def __init__(self, http: httpx.AsyncClient) -> None:
         self._http = http
-
-    async def get_patient_context(self, profile_id: str) -> dict[str, Any]:
-        """`{facts: [{label, fact_type, detail, body_site}]}`."""
-        response = await self._http.get(f"/internal/patients/{profile_id}/context")
-        response.raise_for_status()
-        return response.json()["data"]
 
     async def apply_turn(self, body: dict[str, Any]) -> None:
         response = await self._http.post("/internal/episodes/apply-turn", json=body)
@@ -71,6 +65,22 @@ class KnowledgeClient:
     async def run_kg_intent(self, intent: str, entities: list[str], limit: int, translate: bool = True) -> tuple[list[dict[str, str]], list[str], dict[str, Any]]:
         data = await self._post("/internal/kg/intent", {"intent": intent, "entities": entities, "limit": limit, "translate": translate})
         return data["facts"], data["notes"], data["resolved"]
+
+    async def apply_patient_facts(self, patient_id: str, facts: list[dict[str, Any]]) -> dict[str, Any]:
+        """Ghi fact vào graph theo dõi; trả `{applied, skipped: [{index, reason}], lesions}`."""
+        return await self._post("/internal/patient-facts/apply", {"patient_id": patient_id, "facts": facts})
+
+    async def get_patient_facts(self, patient_id: str) -> dict[str, Any]:
+        """Fact hiện hành: `{lesions: [{id, site_text, scope}], facts: [...]}`."""
+        response = await self._http.get(f"/internal/patient-facts/{patient_id}")
+        response.raise_for_status()
+        return response.json()["data"]
+
+    async def get_patient_graph_context(self, patient_id: str, top_k: int = 5) -> dict[str, Any]:
+        """Bệnh ứng viên, triệu chứng nên hỏi tiếp, ghi chú thuốc và trích dẫn sách mở rộng từ fact đã khớp nút của bệnh nhân."""
+        response = await self._http.get(f"/internal/patient-facts/{patient_id}/context", params={"top_k": top_k})
+        response.raise_for_status()
+        return response.json()["data"]
 
     async def get_discriminating_questions(self, diseases: list[str], known_phenotype_ids: list[str] | None = None, top_k: int = 3) -> dict[str, Any]:
         return await self._post("/internal/kg/discriminating-questions", {"diseases": diseases, "known_phenotype_ids": known_phenotype_ids, "top_k": top_k})

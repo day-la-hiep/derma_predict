@@ -7,18 +7,17 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph  # pyright: ignore[reportMissingTypeStubs]
 from langgraph.prebuilt import ToolNode
 from langgraph.runtime import Runtime
-from langgraph.store.base import BaseStore
 
 from app.context.agent_context import AgentContext
 from app.graph.skin_image_nodes import image_cnn, image_done, image_vision
-from app.graph.pre_diagnosis_nodes import answer, choose_tools_node, extract_facts_node, label_evidence_node, load_memory_node, plan, reflect
+from app.graph.pre_diagnosis_nodes import answer, choose_tools_node, extract_facts_node, label_evidence_node, plan, prepare_turn_node, reflect
 from app.state.pre_diagnosis_state import SkinImageState, PreDiagnosisState
 from app.tools.pre_diagnosis_tool_registry import build_tools, on_tool_error
 
 logger = logging.getLogger(__name__)
 
 
-def _after_memory(state: PreDiagnosisState, runtime: Runtime[AgentContext]) -> list[str]:
+def _after_prepare(state: PreDiagnosisState, runtime: Runtime[AgentContext]) -> list[str]:
     return ["text_flow", "image_flow"] if runtime.context.image_keys else ["text_flow"]
 
 
@@ -71,15 +70,14 @@ def _image_flow() -> CompiledStateGraph[Any, AgentContext, Any, Any]:
 
 def build_pre_diagnosis_graph(
     checkpointer: BaseCheckpointSaver[str] | None = None,
-    store: BaseStore | None = None,
 ) -> CompiledStateGraph[Any, AgentContext, Any, Any]:
-    """`checkpointer` / `store` để None khi nối vào chat graph"""
+    """`checkpointer` để None khi nối vào chat graph"""
     graph = StateGraph(PreDiagnosisState, context_schema=AgentContext)
-    graph.add_node("load_memory", load_memory_node)
+    graph.add_node("prepare_turn", prepare_turn_node)
     graph.add_node("text_flow", _text_flow(build_tools()))
     graph.add_node("image_flow", _image_flow())
-    graph.add_edge(START, "load_memory")
-    graph.add_conditional_edges("load_memory", _after_memory, ["text_flow", "image_flow"])
+    graph.add_edge(START, "prepare_turn")
+    graph.add_conditional_edges("prepare_turn", _after_prepare, ["text_flow", "image_flow"])
     graph.add_edge("text_flow", END)
     graph.add_edge("image_flow", END)
-    return graph.compile(checkpointer=checkpointer, store=store, name="pre_diagnosis")
+    return graph.compile(checkpointer=checkpointer, name="pre_diagnosis")

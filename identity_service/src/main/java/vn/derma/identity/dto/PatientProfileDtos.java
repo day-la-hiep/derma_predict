@@ -14,7 +14,7 @@ public final class PatientProfileDtos {
     private PatientProfileDtos() {
     }
 
-    /** Fact dài hạn bệnh nhân tự khai; lưu ở clinical. */
+    /** Fact dài hạn bệnh nhân tự khai; lưu trong graph theo dõi ở knowledge. */
     public record ProfileFactInput(
             @NotNull @Pattern(regexp = "allergy|history|medication") String factType,
             @NotBlank @Size(max = 255) String label,

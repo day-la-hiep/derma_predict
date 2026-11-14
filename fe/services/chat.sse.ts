@@ -14,7 +14,6 @@ import {
   type ApiSendMessageResult,
 } from "./apiAdapters";
 import type {
-  AnswerQuestionInput,
   ChatService,
   ChatStreamEvent,
   CreateConversationInput,
@@ -134,19 +133,6 @@ const impl = {
     impl.openRoom(input.conversationId);
 
     return result;
-  },
-
-  async answerQuestion(input: AnswerQuestionInput) {
-    await api.post(
-      endpoints.answerQuestion(input.conversationId, input.questionId),
-      {
-        question_id: input.questionId,
-        option_id: input.optionId,
-        label: input.label,
-        custom: input.custom,
-      }
-    );
-    impl.openRoom(input.conversationId);
   },
 
   async cancelTurn(conversationId: string) {

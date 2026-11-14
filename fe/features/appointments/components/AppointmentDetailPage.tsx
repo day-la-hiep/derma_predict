@@ -6,7 +6,7 @@ import { ArrowLeft, CalendarDays, CheckCircle2, Inbox, Loader2, Play, MapPin, Me
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FACT_TYPE_CONFIG, PatientJourneyView, UrgencyBadge, useMyFinalizeReports, type ClinicalFact, type ClinicalFactType, type FinalizeReportItem } from "@/features/doctor";
+import { FACT_TYPE_CONFIG, PatientJourneyView, describeFactContext, isAbsentFact, UrgencyBadge, useMyFinalizeReports, type ClinicalFact, type ClinicalFactType, type FinalizeReportItem } from "@/features/doctor";
 import { FactSources } from "@/features/doctor/components/FactSources";
 import { doctorPaths } from "@/features/doctor/routes";
 import { CitationButton } from "@/features/citation";
@@ -213,8 +213,9 @@ function FactRows({ facts }: { facts: ClinicalFact[] }) {
                   <li key={f.id} className="py-2.5">
                     <div className="flex items-baseline justify-between gap-3">
                       <p className="text-sm text-foreground">
-                        <span className="font-medium">{f.templateLabel}</span>
+                        <span className="font-medium">{isAbsentFact(f) ? "Không có " : ""}{f.templateLabel}</span>
                         {f.detail && <span className="text-muted-foreground">: {f.detail}</span>}
+                        {describeFactContext(f) && <span className="ml-2 text-xs text-muted-foreground">({describeFactContext(f)})</span>}
                       </p>
                       <span className={cn("shrink-0 text-[11px]", f.verifiedAt ? "font-medium text-emerald-600" : "text-muted-foreground")}>
                         {f.verifiedAt ? "Đã xác nhận" : "Chưa xác nhận"}

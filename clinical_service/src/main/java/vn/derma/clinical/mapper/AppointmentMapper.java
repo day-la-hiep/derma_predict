@@ -20,8 +20,7 @@ import vn.derma.clinical.dto.AppointmentDtos.SourceMessageOutput;
 import vn.derma.clinical.client.IdentityClient.ProfileDetail;
 import vn.derma.clinical.dto.AppointmentDtos.ImagePredictionOutput;
 import vn.derma.clinical.entity.AiHypothesis;
-import vn.derma.clinical.entity.ClinicalFact;
-import vn.derma.clinical.entity.ClinicalProvenance;
+import vn.derma.clinical.model.PatientFact;
 import vn.derma.clinical.entity.Appointment;
 import vn.derma.clinical.entity.ClinicalEpisode;
 import vn.derma.clinical.entity.Encounter;
@@ -73,15 +72,14 @@ public interface AppointmentMapper {
     @Mapping(target = "updatedAt", source = "fact.updatedAt")
     @Mapping(target = "sourceMessageIds", source = "sourceMessageIds")
     @Mapping(target = "sourceMessages", source = "sourceMessages")
-    ClinicalFactOutput toFact(ClinicalFact fact, List<String> sourceMessageIds, List<SourceMessageOutput> sourceMessages);
+    @Mapping(target = "present", source = "fact.present")
+    @Mapping(target = "siteText", source = "fact.siteText")
+    @Mapping(target = "onsetText", source = "fact.onsetText")
+    @Mapping(target = "onsetAt", source = "fact.onsetAt")
+    @Mapping(target = "lesionId", source = "fact.lesionId")
+    ClinicalFactOutput toFact(PatientFact fact, List<String> sourceMessageIds, List<SourceMessageOutput> sourceMessages);
 
     SourceMessageOutput toSourceMessage(MessageInfo message);
-
-    /** Tin không lấy được từ consultation thì dùng đoạn trích đã chép cùng fact. */
-    @Mapping(target = "id", source = "messageId")
-    @Mapping(target = "sender", constant = "patient")
-    @Mapping(target = "content", source = "quote")
-    SourceMessageOutput toSourceMessage(ClinicalProvenance provenance);
 
     @Mapping(target = "allergies", source = "allergies")
     @Mapping(target = "medicalHistory", source = "medicalHistory")

@@ -6,14 +6,13 @@ from langchain.messages import AIMessage, HumanMessage, SystemMessage, ToolMessa
 from langgraph.runtime import Runtime
 
 from app.common.messages import get_dialogue_history, message_text
-from app.reasoning.retrieval_evidence import add_retrieval_evidence, get_tool_call_key, ground_hypotheses_in_evidence, label_tool_evidence
-from app.reasoning.patient_fact_extractor import LONG_TERM_TYPES, extract_facts, fact_key, facts_text, merge_facts
+from app.reasoning.retrieval_evidence import STATEFUL_TOOLS, add_retrieval_evidence, get_tool_call_key, ground_hypotheses_in_evidence, label_tool_evidence
+from app.reasoning.patient_fact_extractor import extract_facts, facts_text, get_facts_fingerprint, merge_facts
 from app.reasoning.structured_llm_calls import build_task_reminder, get_model_for_turn, get_model_retries, invoke_structured_with_retry
 from app.context.agent_context import AgentContext
 from app.graph.skin_image_nodes import join_images
 from app.graph.pre_diagnosis_schemas import PlanInput, ReflectInput
 from app.state.pre_diagnosis_state import PreDiagnosisState
-from app.middleware.patient_memory_prompt import inject_memory, load_memory
 from app.middleware.tool_step_events import REASONING_TOOL, emit_tool_start, emit_tool_step
 from app.prompt.pre_diagnosis_prompts import (
     ANSWER_FOUND,
@@ -39,10 +38,9 @@ def _rounds_cap(ctx: AgentContext) -> int:
     return MAX_TOOL_ROUNDS if ctx.max_tool_rounds is None else ctx.max_tool_rounds
 
 
-async def load_memory_node(state: PreDiagnosisState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
-    # Node đầu của lượt: đọc memory một lần rồi để trong context; plan / choose_tools / reflect / answer chỉ nối chuỗi này vào prompt.
+async def prepare_turn_node(state: PreDiagnosisState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
+    # Future phải tạo trong event loop của lượt, trước khi hai làn rẽ nhánh.
     ctx = runtime.context
-    ctx.memory_text = await load_memory(runtime.store, ctx.patient_profile_id)
     ctx.image_result = asyncio.get_running_loop().create_future() if ctx.image_keys else None
     return {}
 
@@ -50,7 +48,7 @@ async def load_memory_node(state: PreDiagnosisState, runtime: Runtime[AgentConte
 async def extract_facts_node(state: PreDiagnosisState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
     ctx = runtime.context
     messages = state["messages"]
-    # bảng là nguồn chính: giá trị trong DB (vd bác sĩ vừa xác nhận) đè giá trị cũ trong checkpoint
+    # graph theo dõi là nguồn chính: giá trị trong graph đè giá trị cũ trong checkpoint
     known = merge_facts(state.get("facts", []), ctx.known_facts)
     upto = state.get("facts_upto", 0)
     if upto > len(messages):
@@ -58,20 +56,15 @@ async def extract_facts_node(state: PreDiagnosisState, runtime: Runtime[AgentCon
         upto = 0
     fresh = get_dialogue_history(messages[upto:])
     transcript = [("PATIENT" if isinstance(m, HumanMessage) else "AI", str(m.text)) for m in fresh]
-    new = await extract_facts(known, transcript, ctx.model or None)
+    new = await extract_facts(known, transcript, ctx.model or None, ctx.known_lesions)
     # Chỉ số trong lượt này vô nghĩa ở lượt sau: đổi sang id tin nhắn.
     for f in new:
         f["source_messages"] = [fresh[i - 1].id for i in f["source_messages"] if fresh[i - 1].id]
     merged = merge_facts(known, new)
     if new:
         await emit_tool_step(ctx, "extract_facts", {"new": len(new)}, facts_text(merged))
-    # gửi Core: fact mới / đổi trong lượt + fact theo đợt còn chưa rõ vùng (chưa lưu được, Core gắn khi hội thoại đã có đợt)
-    saved = {fact_key(f) for f in ctx.known_facts}
-    pending = [
-        f for f in merged
-        if f.get("fact_type") not in LONG_TERM_TYPES and not f.get("body_site") and fact_key(f) not in saved
-    ]
-    ctx.turn_facts = list({fact_key(f): f for f in [*new, *pending]}.values())
+    # `turn.py` ghi sang graph theo dõi: chỉ fact mới / đổi trong lượt (mọi fact đều lưu được, không còn fact chờ vùng)
+    ctx.turn_facts = new
     return {"facts": merged, "facts_upto": len(messages)}
 
 
@@ -86,7 +79,7 @@ async def plan(state: PreDiagnosisState, runtime: Runtime[AgentContext]) -> dict
         f"Đã tra cứu (kèm kết quả): {'; '.join(state.get('call_results', [])) or '(chưa)'}\n\n"
         f"Bằng chứng đã thu được:\n{format_evidence_digest(evidence)}"
     )
-    system = inject_memory(PLAN_SYSTEM.format(context=context), ctx.memory_text)
+    system = PLAN_SYSTEM.format(context=context)
     await emit_tool_start(ctx, REASONING_TOOL, {"stage": "initial"})
     result = await invoke_structured_with_retry(ctx, PlanInput, [SystemMessage(content=system), *get_dialogue_history(state["messages"])])
     await emit_tool_step(ctx, REASONING_TOOL, {"stage": "initial"}, render_initial_plan(result))
@@ -108,7 +101,7 @@ def choose_tools_node(tools: list[Any]):
             f"Kết quả đã thu được (chỉ tra điều CÒN THIẾU, không tra lại điều đã có):\n{format_evidence_digest(state.get('evidence', []))}"
         )
         finalize_report = FINALIZE_REPORT_LINE if any(getattr(t, "name", "") == "search_finalize_report" for t in tools) else ""
-        system = inject_memory(CHOOSE_SYSTEM.format(context=context, finalize_report=finalize_report), ctx.memory_text)
+        system = CHOOSE_SYSTEM.format(context=context, finalize_report=finalize_report)
         model = get_model_for_turn(ctx).bind_tools(tools, tool_choice="any")
         base = [SystemMessage(content=system), *get_dialogue_history(state["messages"])]
         ai = AIMessage(content="")
@@ -125,8 +118,14 @@ def choose_tools_node(tools: list[Any]):
         # Bỏ lệnh trùng với lệnh đã gọi (kể cả trùng trong cùng một lượt): gọi lại y hệt chỉ trả kết quả cũ.
         done = set(state.get("done_calls", []))
         fresh: list[Any] = []
+        facts_mark = get_facts_fingerprint(state.get("facts", []))
+
+        def call_key(call: Any) -> str:
+            args = {**call["args"], "facts": facts_mark} if call["name"] in STATEFUL_TOOLS else call["args"]
+            return get_tool_call_key(call["name"], args)
+
         for c in ai.tool_calls:
-            key = get_tool_call_key(c["name"], c["args"])
+            key = call_key(c)
             if key in done:
                 logger.warning("bỏ lệnh trùng với lệnh đã gọi: %s", key[:160])
                 continue
@@ -138,7 +137,7 @@ def choose_tools_node(tools: list[Any]):
             ai = ai.model_copy(update={"tool_calls": fresh})
         for c in fresh:
             await emit_tool_start(ctx, c["name"], c["args"])
-        calls = [get_tool_call_key(c["name"], c["args"]) for c in fresh]
+        calls = [call_key(c) for c in fresh]
         # AIMessage chữ không kèm tool_calls không được vào lịch sử (sẽ bị `_history` tính nhầm là câu trả lời của trợ lý).
         return {
             "messages": [ai] if ai.tool_calls else [],
@@ -191,7 +190,7 @@ async def reflect(state: PreDiagnosisState, runtime: Runtime[AgentContext]) -> d
         f"Đã gọi (kèm kết quả): {'; '.join(state.get('call_results', [])) or '(chưa)'}\n\n"
         f"Bằng chứng và gợi ý truy xuất được:\n{format_evidence(evidence)}"
     )
-    system = inject_memory(REFLECT_SYSTEM.format(context=context), ctx.memory_text)
+    system = REFLECT_SYSTEM.format(context=context)
     await emit_tool_start(ctx, REASONING_TOOL, {"stage": "after_evidence"})
     result = await invoke_structured_with_retry(ctx, ReflectInput, [SystemMessage(content=system), *get_dialogue_history(state["messages"])])
     plan_, unsupported, notes = ground_hypotheses_in_evidence(result.hypotheses, evidence)
@@ -229,6 +228,6 @@ async def answer(state: PreDiagnosisState, runtime: Runtime[AgentContext]) -> di
         base = ANSWER_FOUND.format(context=context)
     else:
         base = ANSWER_NONE.format(context=format_clinical_block(state.get("facts", [])))
-    system = inject_memory(base, ctx.memory_text)
+    system = base
     ai = await get_model_for_turn(ctx).ainvoke([SystemMessage(content=system), *get_dialogue_history(state["messages"])])
     return {"messages": [ai]}

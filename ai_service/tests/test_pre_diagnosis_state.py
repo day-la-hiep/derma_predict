@@ -1,22 +1,30 @@
 import asyncio
 import unittest
-from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from app.reasoning.patient_fact_extractor import ExtractedFact, ExtractedFacts, extract_facts, merge_facts, validate_facts_evidence
+from app.reasoning.patient_fact_extractor import (
+    ExtractedFact,
+    ExtractedFacts,
+    assign_lesions,
+    build_fact_from_graph,
+    build_graph_fact,
+    extract_facts,
+    fact_key,
+    facts_text,
+    get_facts_fingerprint,
+    merge_facts,
+    validate_facts_evidence,
+)
 from app.context.agent_context import AgentContext
 from app.common.tracing import build_run_config
 from app.graph.chat_graph import build_chat_graph
-from app.graph.pre_diagnosis_nodes import load_memory_node
 from app.graph.pre_diagnosis_graph import _after_plan
 from app.state.pre_diagnosis_state import PreDiagnosisState
-from app.middleware.patient_memory_prompt import inject_memory, load_memory
-from langgraph.store.memory import InMemoryStore
 from app.config.settings import settings
 
 
@@ -55,8 +63,21 @@ class MergeFactsTest(unittest.TestCase):
         self.assertEqual(merged[0]["detail"], "nhiều về đêm")
 
     def test_same_label_different_type_kept(self):
-        merged = merge_facts([fact("Penicillin", "đang dùng", "medication")], [fact("Penicillin", "dị ứng", "allergy")])
+        taking = {**fact("Penicillin", "đang dùng", "medication"), "category": 5, "object_type": "drug", "kind": "taking"}
+        allergy = {**fact("Penicillin", "dị ứng", "allergy"), "category": 5, "object_type": "drug", "kind": "allergy"}
+        self.assertEqual(len(merge_facts([taking], [allergy])), 2)
+
+    def test_same_label_in_two_lesions_kept(self):
+        merged = merge_facts([{**fact("Ngứa", "ít"), "category": 1, "lesion": "L1"}], [{**fact("Ngứa", "nhiều"), "category": 1, "lesion": "L2"}])
         self.assertEqual(len(merged), 2)
+
+    def test_single_valued_attribute_replaced_by_name(self):
+        size = lambda value: {**fact(value, ""), "category": 3, "name": "kích thước", "lesion": "L1"}  # noqa: E731
+        merged = merge_facts([size("1 cm")], [size("3 cm")])
+        self.assertEqual([f["template_label"] for f in merged], ["3 cm"])
+
+    def test_legacy_fact_without_category_still_merges(self):
+        self.assertEqual(fact_key(fact("Ngứa", "x")), ("1", "", "ngứa"))
 
     def test_capped_to_latest(self):
         merged = merge_facts([], [fact(f"f{i}", "x") for i in range(50)])
@@ -64,8 +85,94 @@ class MergeFactsTest(unittest.TestCase):
         self.assertEqual(merged[-1]["template_label"], "f49")
 
     def test_validate_drops_bad_indices(self):
-        out = validate_facts_evidence([{**fact("Ngứa", "tay"), "source_messages": [1, 5, "a"]}], ["ngứa ở tay"])
+        out = validate_facts_evidence([{"template_label": "Ngứa", "category": 1, "detail": "tay", "source_messages": [1, 5, "a"]}], ["ngứa ở tay"])
         self.assertEqual(out[0]["source_messages"], [1])
+        self.assertEqual((out[0]["fact_type"], out[0]["present"], out[0]["kg_node_id"]), ("symptom", True, None))
+
+    def test_validate_drops_invalid_category_and_normalizes_enums(self):
+        out = validate_facts_evidence(
+            [
+                {"template_label": "x", "category": 99},
+                {"template_label": "dát", "category": 2, "object_type": "khong-co", "scope": "la", "name": "  Màu ", "present": 0},
+                {"template_label": "đỏ", "category": 3, "name": " Màu  Sắc "},
+                {"template_label": "đối xứng", "category": 3, "name": "Phân bố"},
+                {"template_label": "nắng", "category": 4, "effect": "bịa"},
+            ],
+            [],
+        )
+        self.assertEqual([f["template_label"] for f in out], ["dát", "đỏ", "đối xứng", "nắng"])
+        self.assertEqual((out[0]["object_type"], out[0]["scope"], out[0]["present"]), ("effect/phenotype", "skin", False))  # nhóm 2 mặc định phenotype
+        self.assertEqual(out[1]["object_type"], "")  # nhóm 3 là giá trị chữ, không khớp nút
+        self.assertEqual((out[0]["kind"], out[3]["effect"], out[3]["fact_type"]), ("primary", "", "history"))  # effect sai thì thành phơi nhiễm
+        self.assertEqual((out[1]["name"], out[2]["name"]), ("màu sắc", "distribution"))  # alias tiếng Việt về tên chuẩn
+
+    def test_history_defaults_match_stored_facts_so_keys_merge(self):
+        raw = [
+            {"template_label": "penicillin", "category": 5, "object_type": "drug", "kind": "", "of": ""},
+            {"template_label": "chàm", "category": 5, "object_type": "disease", "kind": "taking", "of": "mẹ"},
+        ]
+        out = validate_facts_evidence(raw, [])
+        self.assertEqual([(f["kind"], f["of"], f["fact_type"]) for f in out], [("taking", "", "medication"), ("", "self", "history")])
+        stored = build_fact_from_graph({"lesion_id": None, "category": 5, "relation": "PT_TAKES_DRUG", "label": "Penicillin", "object_type": "drug", "kind": "taking", "of": ""}, [])
+        self.assertEqual(fact_key(stored), fact_key(out[0]))  # fact lưu trong graph và fact mới trích cùng khoá
+
+    def test_assign_lesions_groups_by_temp_key_and_keeps_known(self):
+        facts = [
+            {**fact("ngứa", "x"), "category": 1, "lesion": "moi-1", "site_text": "khuỷu tay"},
+            {**fact("dát đỏ", "x"), "category": 2, "lesion": "moi-1"},
+            {**fact("ngứa", "y"), "category": 1, "lesion": "moi-2", "site_text": "bàn chân"},
+            {**fact("khó chịu", "z"), "category": 1, "lesion": "L-cu"},
+            {**fact("sốt", "z"), "category": 1, "scope": "body", "lesion": "moi-1"},
+        ]
+        out = assign_lesions(facts, [{"id": "L-cu", "site_text": "mặt"}])
+        self.assertEqual(out[0]["lesion"], out[1]["lesion"])
+        self.assertNotEqual(out[0]["lesion"], out[2]["lesion"])
+        self.assertEqual((out[3]["lesion"], out[4]["lesion"]), ("L-cu", ""))
+        self.assertEqual((out[1]["site_text"], out[2]["site_text"]), ("khuỷu tay", "bàn chân"))
+
+    def test_assign_lesions_without_ref_uses_last_known_or_creates_one(self):
+        loose = lambda: [{**fact("ngứa", "x"), "category": 1, "lesion": ""}]  # noqa: E731
+        self.assertEqual(assign_lesions(loose(), [{"id": "A"}, {"id": "B"}])[0]["lesion"], "B")
+        created = assign_lesions(loose(), [])[0]["lesion"]
+        self.assertTrue(created and created not in ("A", "B"))
+
+    def test_location_fact_names_the_new_lesion(self):
+        facts = [{**fact("mặt trong khuỷu tay", ""), "category": 3, "name": "location", "lesion": "moi-1"}, {**fact("ngứa", ""), "category": 1, "lesion": "moi-1"}]
+        out = assign_lesions(facts, [])
+        self.assertEqual(out[1]["site_text"], "mặt trong khuỷu tay")
+
+    def test_facts_text_marks_absent_resolved_and_site(self):
+        text = facts_text([
+            {**fact("ngứa", "về đêm"), "category": 1, "site_text": "tay", "onset_text": "2 tuần"},
+            {**fact("sốt", ""), "category": 1, "scope": "body", "present": False},
+            {**fact("ngứa", ""), "category": 1, "resolved": True},
+        ])
+        self.assertIn("- [triệu chứng @tay] ngứa: về đêm (khởi phát: 2 tuần)", text)
+        self.assertIn("KHÔNG CÓ sốt", text)
+        self.assertIn("ngứa (đã hết)", text)
+
+    def test_fingerprint_changes_with_facts(self):
+        base = [{**fact("ngứa", "ít"), "category": 1, "lesion": "L1"}]
+        same = [{**fact("ngứa", "ít"), "category": 1, "lesion": "L1"}]
+        self.assertEqual(get_facts_fingerprint(base), get_facts_fingerprint(same))
+        for changed in (
+            [{**base[0], "detail": "nhiều"}], [{**base[0], "present": False}], [{**base[0], "resolved": True}], [*base, {**fact("đau", ""), "category": 1, "lesion": "L1"}],
+        ):
+            self.assertNotEqual(get_facts_fingerprint(base), get_facts_fingerprint(changed))
+
+    def test_graph_roundtrip_keeps_key_and_fields(self):
+        graph = {"lesion_id": "L1", "category": 1, "relation": "PT_HAS_SYMPTOM", "label": "ngứa", "detail": "đêm", "object_type": "effect/phenotype",
+                 "kg_node_id": "989", "present": False, "status": "current", "name": "", "kind": "", "effect": "", "of": "", "onset_text": "2 tuần",
+                 "source_message_id": "m1", "link_method": "llm"}
+        known = build_fact_from_graph(graph, [{"id": "L1", "site_text": "tay", "scope": "skin"}])
+        sent = build_graph_fact(known)
+        self.assertEqual((known["site_text"], known["present"], known["fact_type"]), ("tay", False, "symptom"))
+        self.assertEqual(
+            (sent["category"], sent["lesion_id"], sent["kg_node_id"], sent["present"], sent["source_message_id"], sent["link_method"]),
+            (1, "L1", "989", False, "m1", "llm"),
+        )
+        new = {**fact("ngứa", "x"), "category": 1, "lesion": "L1"}
+        self.assertEqual(fact_key(known), fact_key(new))
 
 
 class ExtractFactsTest(unittest.TestCase):
@@ -79,9 +186,11 @@ class ExtractFactsTest(unittest.TestCase):
         self.assertEqual((out, s.calls), ([], 0))
 
     def test_returns_validated_facts(self):
-        result = ExtractedFacts(facts=[ExtractedFact(template_label="Ngứa", fact_type="symptom", detail="hai tay", source_messages=[1, 9])])
+        result = ExtractedFacts(facts=[ExtractedFact(template_label="Ngứa", category=1, detail="hai tay", site_text="hai tay", lesion="moi-1", source_messages=[1, 9])])
         out, _ = self._run(result, [("PATIENT", "tôi ngứa hai tay")])
         self.assertEqual(out[0]["source_messages"], [1])
+        self.assertEqual((out[0]["fact_type"], out[0]["site_text"]), ("symptom", "hai tay"))
+        self.assertTrue(out[0]["lesion"] and out[0]["lesion"] != "moi-1")
 
     def test_failure_returns_empty_after_retry(self):
         out, s = self._run(RuntimeError("boom"), [("PATIENT", "tôi ngứa")])
@@ -156,30 +265,6 @@ class CheckpointerSwapTest(unittest.TestCase):
         self.assertEqual(state.values["diag"]["facts"][0]["template_label"], "f")
         self.assertIsNotNone(swapped.get_tuple(cfg))
         self.assertIsNone(cast(Any, default_saver).get_tuple(cfg))
-
-
-class MemoryInjectedAtFirstNodeTest(unittest.TestCase):
-    def test_first_node_loads_and_later_nodes_never_touch_store(self):
-        ctx = AgentContext(user_id="u", conversation_id="c", patient_profile_id="p1")
-        load_mock = AsyncMock(return_value="- dị ứng penicillin")
-        state: Any = {"messages": [HumanMessage(content="tôi ngứa")]}
-        runtime: Any = SimpleNamespace(context=ctx, store=object())
-        with patch("app.graph.pre_diagnosis_nodes.load_memory", load_mock):
-            run(load_memory_node(state, runtime))
-        self.assertEqual((ctx.memory_text, load_mock.await_count), ("- dị ứng penicillin", 1))
-        load_mock.assert_awaited_once_with(runtime.store, "p1")
-        # các node sau chỉ nối chuỗi trong context
-        prompts = [inject_memory(f"base{i}", ctx.memory_text) for i in range(4)]
-        self.assertTrue(all("- dị ứng penicillin" in p for p in prompts))
-        self.assertEqual(load_mock.await_count, 1)
-
-    def test_inject_memory_is_pure(self):
-        self.assertEqual(inject_memory("base", ""), "base")
-        self.assertIn("- dị ứng penicillin", inject_memory("base", "- dị ứng penicillin"))
-
-    def test_load_memory_without_store_or_profile_is_empty(self):
-        self.assertEqual(run(load_memory(None, "p1")), "")
-        self.assertEqual(run(load_memory(InMemoryStore(), "")), "")
 
 
 if __name__ == "__main__":

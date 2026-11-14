@@ -40,6 +40,10 @@ export interface SnapshotFact {
   detail: string;
   origin: FactOrigin;
   sources: SnapshotMessage[];
+  /** vị trí, khởi phát và có/không (graph theo dõi); snapshot cũ không có */
+  siteText?: string | null;
+  onsetText?: string | null;
+  present?: boolean;
 }
 
 /** Bản chụp bất biến của phiếu bác sĩ đã chốt (cột `finalize_reports.snapshot`) */
@@ -89,6 +93,10 @@ export interface FactDraft {
   factType: ClinicalFactType;
   label: string;
   detail: string;
+  /** chỉ để hiển thị: lấy từ graph theo dõi của dữ kiện nguồn, server tự giữ khi chốt */
+  siteText?: string | null;
+  onsetText?: string | null;
+  present?: boolean;
   /** giá trị gốc để biết bác sĩ đã sửa hay chưa (tính origin hiển thị) */
   original: { label: string; detail: string; factType: ClinicalFactType; origin: FactOrigin } | null;
   sources: SnapshotMessage[];
@@ -138,6 +146,12 @@ export interface ClinicalFact {
   templateLabel: string;
   factType: ClinicalFactType;
   detail: string;
+  /** false = người bệnh nói không có ("không ngứa") */
+  present?: boolean;
+  /** vị trí (tổn thương) và khởi phát lấy từ graph theo dõi */
+  siteText?: string | null;
+  onsetText?: string | null;
+  onsetAt?: string | null;
   /** bác sĩ xác nhận lúc chốt; null = AI ghi, chưa kiểm chứng */
   verifiedAt: string | null;
   createdAt: string;

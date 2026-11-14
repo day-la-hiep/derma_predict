@@ -17,8 +17,7 @@ import vn.derma.clinical.dto.FinalizeDtos.SnapshotFact;
 import vn.derma.clinical.dto.FinalizeDtos.SnapshotMessage;
 import vn.derma.clinical.dto.FinalizeDtos.SnapshotProfile;
 import vn.derma.clinical.dto.FinalizeDtos.SnapshotProvenance;
-import vn.derma.clinical.entity.ClinicalFact;
-import vn.derma.clinical.entity.ClinicalProvenance;
+import vn.derma.clinical.model.PatientFact;
 import vn.derma.clinical.dto.FinalizeDtos.CaseInput;
 import vn.derma.clinical.dto.FinalizeDtos.FinalizeReportItemOutput;
 import vn.derma.clinical.dto.FinalizeDtos.FinalizeReportOutput;
@@ -78,7 +77,12 @@ public interface FinalizeMapper {
     @Mapping(target = "detail", source = "fact.detail")
     @Mapping(target = "origin", source = "origin")
     @Mapping(target = "provenances", source = "provenances")
-    SnapshotFact toSnapshotFact(ClinicalFact fact, String origin, List<SnapshotProvenance> provenances);
+    @Mapping(target = "siteText", source = "fact.siteText")
+    @Mapping(target = "onsetText", source = "fact.onsetText")
+    @Mapping(target = "onsetAt", source = "fact.onsetAt")
+    @Mapping(target = "kgNodeId", source = "fact.kgNodeId")
+    @Mapping(target = "present", source = "fact.present")
+    SnapshotFact toSnapshotFact(PatientFact fact, String origin, List<SnapshotProvenance> provenances);
 
     @Mapping(target = "sourceFactId", source = "fact.id")
     @Mapping(target = "factType", source = "fact.factType")
@@ -86,7 +90,11 @@ public interface FinalizeMapper {
     @Mapping(target = "detail", source = "fact.detail")
     @Mapping(target = "origin", source = "origin")
     @Mapping(target = "provenances", source = "provenances")
-    DraftFactOutput toDraftFact(ClinicalFact fact, String origin, List<SnapshotProvenance> provenances);
+    @Mapping(target = "siteText", source = "fact.siteText")
+    @Mapping(target = "onsetText", source = "fact.onsetText")
+    @Mapping(target = "onsetAt", source = "fact.onsetAt")
+    @Mapping(target = "present", source = "fact.present")
+    DraftFactOutput toDraftFact(PatientFact fact, String origin, List<SnapshotProvenance> provenances);
 
     @Mapping(target = "id", source = "image.id")
     @Mapping(target = "bodySite", source = "image.bodySite")
@@ -101,13 +109,6 @@ public interface FinalizeMapper {
     FileDto toFile(FileInfo file);
 
     SnapshotMessage toSnapshotMessage(MessageInfo message);
-
-    /** Tin không lấy được từ consultation thì dùng đoạn trích đã chép cùng fact. */
-    @Mapping(target = "id", source = "messageId")
-    @Mapping(target = "sender", constant = "patient")
-    @Mapping(target = "content", source = "quote")
-    @Mapping(target = "files", expression = "java(java.util.List.of())")
-    SnapshotMessage toSnapshotMessage(ClinicalProvenance provenance);
 
     default SnapshotProvenance toSnapshotProvenance(SnapshotMessage message) {
         return new SnapshotProvenance(message);

@@ -42,16 +42,6 @@ class KnowledgeClientTest(unittest.TestCase):
 
 
 class ClinicalAndConsultationClientTest(unittest.TestCase):
-    def test_patient_context_hits_internal_endpoint(self) -> None:
-        seen: list[httpx.Request] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            seen.append(request)
-            return httpx.Response(200, json={"data": {"facts": []}})
-
-        asyncio.run(ClinicalClient(make_http(handler)).get_patient_context("pp-1"))
-        self.assertEqual(seen[0].url.path, "/internal/patients/pp-1/context")
-
     def test_get_conversation_returns_none_when_missing(self) -> None:
         client = ConsultationClient(make_http(lambda r: httpx.Response(404, json={"detail": "x"})))
         self.assertIsNone(asyncio.run(client.get_conversation("c1")))

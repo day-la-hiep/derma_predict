@@ -30,6 +30,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import vn.derma.identity.client.ClinicalClient;
+import vn.derma.identity.client.KnowledgeClient;
 import vn.derma.identity.client.ConsultationClient;
 import vn.derma.identity.dto.PatientProfileDtos.ProfileFactOutput;
 
@@ -46,6 +47,8 @@ class IdentityApiTest {
     @MockitoBean
     ClinicalClient clinical;
     @MockitoBean
+    KnowledgeClient knowledge;
+    @MockitoBean
     ConsultationClient consultation;
 
     final Set<String> refreshKeys = new HashSet<>();
@@ -57,7 +60,7 @@ class IdentityApiTest {
         when(redis.opsForValue()).thenReturn(ops);
         org.mockito.Mockito.doAnswer(i -> refreshKeys.add(i.getArgument(0))).when(ops).set(anyString(), anyString(), org.mockito.ArgumentMatchers.any(Duration.class));
         when(redis.delete(anyString())).thenAnswer(i -> refreshKeys.remove((String) i.getArgument(0)));
-        when(clinical.getLongTermFacts(org.mockito.ArgumentMatchers.anyList())).thenReturn(Map.of());
+        when(knowledge.getLongTermFacts(org.mockito.ArgumentMatchers.anyList())).thenReturn(Map.of());
         when(clinical.hasPatientData(anyString())).thenReturn(false);
         when(consultation.hasPatientData(anyString())).thenReturn(false);
     }
@@ -161,7 +164,7 @@ class IdentityApiTest {
                 .andExpect(jsonPath("$.data.length()").value(1)).andReturn().getResponse().getContentAsString();
         String ownId = json.readTree(listed).get("data").get(0).get("id").asText();
 
-        when(clinical.replaceLongTermFacts(anyString(), org.mockito.ArgumentMatchers.anyList()))
+        when(knowledge.replaceLongTermFacts(anyString(), org.mockito.ArgumentMatchers.anyList()))
                 .thenReturn(List.of(new ProfileFactOutput("f1", "allergy", "Penicillin", "phát ban", null)));
         String created = send(post("/api/v1/patient-profiles"), token, Map.of("full_name", "Bé Na", "dob", "2020-01-01", "gender", "female",
                 "relationship", "child", "long_term_facts", List.of(Map.of("fact_type", "allergy", "label", "Penicillin", "detail", "phát ban"))))

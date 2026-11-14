@@ -21,10 +21,7 @@ public final class MessageDtos {
     public record SendMessageInput(@NotBlank String clientMessageId, @NotNull String content, String modelId, List<AttachedFile> attachedFiles) {
     }
 
-    public record AnswerInput(@NotBlank String optionId, @NotBlank String label, Boolean custom) {
-    }
-
-    /** `metadata` gộp `message_type`, `attached_files`, `video_call` và phần AI lưu (`reasoning`, `choice`) như `MessageMetadataDto` của core. */
+    /** `metadata` gộp `message_type`, `attached_files`, `video_call` và phần AI lưu (`reasoning`) như `MessageMetadataDto` của core. */
     public record MessageOutput(String id, String conversationId, String sender, String content, String status,
             Map<String, Object> metadata, String createdAt) {
     }
@@ -33,7 +30,7 @@ public final class MessageDtos {
     }
 
     /** Kết quả cuối của lượt do ai gửi về (`POST /internal/turns/{messageId}/result`). */
-    public record TurnResultInput(@NotBlank String status, String content, Map<String, Object> choice, List<Map<String, Object>> reasoning) {
+    public record TurnResultInput(@NotBlank String status, String content, List<Map<String, Object>> reasoning) {
     }
 
     public record HistoryItem(String sender, String content, String messageType) {

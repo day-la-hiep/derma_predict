@@ -21,7 +21,6 @@ import vn.derma.consultation.dto.ConversationDtos.ConversationOutput;
 import vn.derma.consultation.dto.ConversationDtos.CreateConversationInput;
 import vn.derma.consultation.dto.ConversationDtos.ModelOption;
 import vn.derma.consultation.dto.ConversationDtos.UpdateConversationModelInput;
-import vn.derma.consultation.dto.MessageDtos.AnswerInput;
 import vn.derma.consultation.dto.MessageDtos.MessageOutput;
 import vn.derma.consultation.dto.MessageDtos.SendMessageInput;
 import vn.derma.consultation.dto.MessageDtos.SendMessageResult;
@@ -71,13 +70,6 @@ public class ConversationController {
     ApiResponse<SendMessageResult> sendMessage(@CurrentUser AuthenticatedUser user, @PathVariable String conversationId,
             @Valid @RequestBody SendMessageInput body) {
         return new ApiResponse<>(messages.send(conversationId, user, body));
-    }
-
-    @PostMapping("/conversations/{conversationId}/questions/{questionId}/answer")
-    @ResponseStatus(HttpStatus.ACCEPTED)
-    ApiResponse<MessageOutput> answerQuestion(@CurrentUser AuthenticatedUser user, @PathVariable String conversationId,
-            @PathVariable String questionId, @Valid @RequestBody AnswerInput body) {
-        return new ApiResponse<>(messages.answerQuestion(conversationId, user.id(), questionId, body));
     }
 
     @PostMapping("/conversations/{conversationId}/cancel")

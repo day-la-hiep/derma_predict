@@ -26,6 +26,10 @@ from app.services.document_service import DocumentService
 from app.services.file_store_service import FileStoreService
 from app.services.graph_schema_service import GraphSchemaService
 from app.services.knowledge_graph_service import KnowledgeGraphService
+from app.services.patient_fact_graph_service import PatientFactGraphService
+from app.services.patient_fact_linker import PatientFactLinker
+from app.services.patient_graph_context_service import PatientGraphContextService
+from app.services.patient_fact_translator import choose_candidates, translate_labels
 from app.services.patient_journey_service import PatientJourneyService
 from app.services.retrieval_service import RetrievalService
 
@@ -88,6 +92,11 @@ def get_case_index_service() -> CaseIndexService:
 @cache
 def get_patient_journey_service() -> PatientJourneyService:
     return PatientJourneyService(get_neo4j_client())
+
+
+@cache
+def get_patient_fact_graph_service() -> PatientFactGraphService:
+    return PatientFactGraphService(get_neo4j_client(), PatientFactLinker(get_neo4j_client(), translate_labels, choose_candidates))
 
 
 @cache
@@ -172,3 +181,8 @@ def require_doctor_or_admin(request: Request) -> dict:
 def require_internal_key(x_internal_key: str | None = Header(default=None)) -> None:
     if x_internal_key != settings.INTERNAL_API_KEY:
         raise ForbiddenError("Thiếu hoặc sai X-Internal-Key.")
+
+
+@cache
+def get_patient_graph_context_service() -> PatientGraphContextService:
+    return PatientGraphContextService(get_patient_fact_graph_service(), get_knowledge_graph_service(), get_document_graph_service())

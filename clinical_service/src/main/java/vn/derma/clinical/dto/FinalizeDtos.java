@@ -16,7 +16,8 @@ public final class FinalizeDtos {
     private FinalizeDtos() {
     }
 
-    public record FactInput(String sourceFactId, @NotBlank String factType, @NotBlank @Size(max = 255) String label, String detail) {
+    /** `siteText`/`onsetText` tuỳ chọn: bác sĩ sửa dữ kiện nguồn thì giữ vị trí/khởi phát của nguồn khi để trống. */
+    public record FactInput(String sourceFactId, @NotBlank String factType, @NotBlank @Size(max = 255) String label, String detail, String siteText, String onsetText) {
         public FactInput {
             detail = detail == null ? "" : detail;
         }
@@ -54,7 +55,9 @@ public final class FinalizeDtos {
     public record SnapshotProvenance(SnapshotMessage message) {
     }
 
-    public record SnapshotFact(String factType, String label, String detail, String origin, List<SnapshotProvenance> provenances) {
+    /** Các trường sau `provenances` đều tuỳ chọn (snapshot cũ không có nên null); `present` false = người bệnh nói không có. */
+    public record SnapshotFact(String factType, String label, String detail, String origin, List<SnapshotProvenance> provenances,
+            String siteText, String onsetText, String onsetAt, String kgNodeId, Boolean present) {
     }
 
     public record SnapshotProfile(String fullName, String dob, String gender, String relationship, String phone, String allergies, String medicalHistory) {
@@ -85,7 +88,8 @@ public final class FinalizeDtos {
     public record PatientFinalizeReportOutput(String id, String diagnosis, String notes, String doctorName, String createdAt) {
     }
 
-    public record DraftFactOutput(String sourceFactId, String factType, String label, String detail, String origin, List<SnapshotProvenance> provenances) {
+    public record DraftFactOutput(String sourceFactId, String factType, String label, String detail, String origin, List<SnapshotProvenance> provenances,
+            String siteText, String onsetText, String onsetAt, boolean present) {
     }
 
     /** Gợi ý từ đồ thị tri thức, chỉ để bác sĩ tham khảo, không phải chẩn đoán. */

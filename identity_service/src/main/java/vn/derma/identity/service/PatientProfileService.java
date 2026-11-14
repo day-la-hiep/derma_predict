@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import vn.derma.identity.client.ClinicalClient;
+import vn.derma.identity.client.KnowledgeClient;
 import vn.derma.identity.client.ConsultationClient;
 import vn.derma.identity.common.AppException;
 import vn.derma.identity.dto.PatientProfileDtos.CreatePatientProfileInput;
@@ -28,12 +29,13 @@ public class PatientProfileService {
 
     private final PatientProfileRepository profiles;
     private final ClinicalClient clinical;
+    private final KnowledgeClient knowledge;
     private final ConsultationClient consultation;
     private final IdentityMapper mapper;
 
     public List<PatientProfileOutput> list(String userId) {
         List<PatientProfile> mine = profiles.findByUserIdOrderByCreatedAtAsc(userId);
-        Map<String, List<ProfileFactOutput>> facts = clinical.getLongTermFacts(mine.stream().map(p -> p.id).toList());
+        Map<String, List<ProfileFactOutput>> facts = knowledge.getLongTermFacts(mine.stream().map(p -> p.id).toList());
         return mine.stream().map(p -> mapper.toOutput(p, facts.getOrDefault(p.id, List.of()))).toList();
     }
 
@@ -49,7 +51,7 @@ public class PatientProfileService {
         profiles.save(profile);
         List<ProfileFactOutput> facts = input.longTermFacts() == null || input.longTermFacts().isEmpty()
                 ? List.of()
-                : clinical.replaceLongTermFacts(profile.id, input.longTermFacts());
+                : knowledge.replaceLongTermFacts(profile.id, input.longTermFacts());
         return mapper.toOutput(profile, facts);
     }
 
@@ -72,8 +74,8 @@ public class PatientProfileService {
             profile.phone = input.phone() == null ? null : checkPhone(input.phone());
         }
         List<ProfileFactOutput> facts = input.longTermFacts != null
-                ? clinical.replaceLongTermFacts(profileId, input.longTermFacts)
-                : clinical.getLongTermFacts(List.of(profileId)).getOrDefault(profileId, List.of());
+                ? knowledge.replaceLongTermFacts(profileId, input.longTermFacts)
+                : knowledge.getLongTermFacts(List.of(profileId)).getOrDefault(profileId, List.of());
         return mapper.toOutput(profile, facts);
     }
 

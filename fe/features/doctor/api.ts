@@ -100,6 +100,9 @@ function adaptSnapshot(raw: any): FinalizeReportSnapshot | null {
       detail: f.detail ?? "",
       origin: (f.origin ?? "doctor_observed") as FactOrigin,
       sources: adaptSources(f.provenances),
+      siteText: f.site_text ?? null,
+      onsetText: f.onset_text ?? null,
+      present: f.present ?? true,
     })),
   };
 }
@@ -154,6 +157,9 @@ export function adaptDraft(raw: any): FinalizeDraft {
         factType,
         label: f.label ?? "",
         detail: f.detail ?? "",
+        siteText: f.site_text ?? null,
+        onsetText: f.onset_text ?? null,
+        present: f.present ?? true,
         original: { label: f.label ?? "", detail: f.detail ?? "", factType, origin: f.origin as FactOrigin },
         sources: adaptSources(f.provenances),
       };

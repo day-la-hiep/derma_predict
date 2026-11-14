@@ -5,9 +5,6 @@ export const endpoints = {
   sendMessage: (conversationId: string) => `/conversations/${conversationId}/messages`,
   /** room của hội thoại: SSE dài hạn cho bệnh nhân, bác sĩ và agent */
   streamMessage: (conversationId: string) => `/conversations/${conversationId}/stream`,
-  /** trả lời 1 câu hỏi (`tool_ask`) agent đang chờ — KHÔNG dùng sendMessage cho việc này */
-  answerQuestion: (conversationId: string, questionId: string) =>
-    `/conversations/${conversationId}/questions/${questionId}/answer`,
   /** dừng turn agent đang chạy; phần đã trả lời được giữ lại */
   cancelTurn: (conversationId: string) => `/conversations/${conversationId}/cancel`,
   /** lưu văn bản soạn sẵn (canvas) của một tin nhắn */

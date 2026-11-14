@@ -28,7 +28,7 @@ public class Message {
     public String consultationSessionId;
     @Column(nullable = false)
     public String content = "";
-    /** pending | queued | streaming | done | question */
+    /** pending | queued | streaming | done */
     @Column(nullable = false)
     public String status;
     /** JSON dạng chuỗi (`reasoning`, `choice`...), không truy vấn bên trong. */

@@ -42,6 +42,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import vn.derma.clinical.client.ConsultationClient;
 import vn.derma.clinical.client.IdentityClient;
+import vn.derma.clinical.client.PatientFactClient;
 import vn.derma.clinical.service.AttachmentStore;
 
 @SpringBootTest
@@ -61,10 +62,13 @@ class AppointmentApiTest {
     IdentityClient identity;
     @MockitoBean
     AttachmentStore store;
+    @MockitoBean
+    PatientFactClient patientFacts;
 
     @BeforeEach
     void setUp() {
-        reset(consultation, identity, store);
+        reset(consultation, identity, store, patientFacts);
+        PatientFactFixtures.stub(patientFacts);
         when(consultation.getMessages(any())).thenAnswer(i -> {
             Map<String, ConsultationClient.MessageInfo> out = new HashMap<>();
             ((Collection<String>) i.getArgument(0)).forEach(id -> out.put(id, new ConsultationClient.MessageInfo(id, "c", "patient", "Ngứa về đêm", "2026-01-01T00:00:00Z", List.of())));
@@ -116,11 +120,12 @@ class AppointmentApiTest {
         body.put("conversation_id", "conv-" + user);
         body.put("message_id", "m1");
         body.put("patient_profile_id", "pp-" + user);
-        body.put("facts", List.of(Map.of("fact_type", "symptom", "template_label", "Ngứa", "detail", "về đêm", "body_site", "tay", "source_messages", List.of("m1")),
-                Map.of("fact_type", "allergy", "template_label", "Penicillin", "detail", "phát ban", "body_site", "", "source_messages", List.of())));
-        body.put("hypotheses", withHypothesis ? List.of(Map.of("disease", "Chàm", "code", "Eczema", "body_site", "tay", "confidence", "cao",
+        // agent không còn gửi fact cho clinical (fact ghi vào graph); nếu có gửi thì bị bỏ qua
+        body.put("facts", List.of(Map.of("fact_type", "symptom", "template_label", "Ngứa", "detail", "về đêm", "body_site", "tay", "source_messages", List.of("m1"))));
+        // đợt không giả thuyết chỉ còn tạo được khi giả thuyết bị loại (mã sai): fact không còn mở đợt
+        body.put("hypotheses", !withHypothesis ? List.of(Map.of("disease", "Sai mã", "code", "KhongCoMa", "body_site", "tay", "confidence", "cao")) : List.of(Map.of("disease", "Chàm", "code", "Eczema", "body_site", "tay", "confidence", "cao",
                 "evidence", List.of(Map.of("source", "chat", "text", "ngứa đêm", "ref", Map.of("document_id", "doc1", "chunk_id", "c1", "page_start", 12, "page_end", 13))),
-                "missing", List.of("tiền sử"))) : List.of());
+                "missing", List.of("tiền sử"))));
         body.put("image_predictions", List.of());
         mvc.perform(post("/internal/episodes/apply-turn").header("X-Internal-Key", KEY).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body)))
                 .andExpect(status().isOk());
@@ -164,6 +169,15 @@ class AppointmentApiTest {
     }
 
     @Test
+    void graphUnavailableFailsLoudlyInsteadOfShowingARecordWithoutAllergies() throws Exception {
+        String user = "ap-down", episode = seedEpisode(user, true);
+        String id = data(call(post("/api/v1/appointments"), token(user, "patient"), book(user, episode, 3600))).get("id").asText();
+        org.mockito.Mockito.doThrow(vn.derma.clinical.common.AppException.badGateway("Chưa kết nối được hệ thống tri thức")).when(patientFacts).getLongTerm(any());
+        call(get("/api/v1/doctor/appointments"), token("doc-down", "doctor"), null).andExpect(status().isBadGateway());
+        call(get("/api/v1/doctor/appointments/" + id), token("doc-down", "doctor"), null).andExpect(status().isBadGateway());
+    }
+
+    @Test
     void doctorConfirmsStartsEncounterAndLocksEpisode() throws Exception {
         String user = "ap-doc", episode = seedEpisode(user, true);
         String id = data(call(post("/api/v1/appointments"), token(user, "patient"), book(user, episode, 3600))).get("id").asText();
@@ -176,7 +190,13 @@ class AppointmentApiTest {
         assertEquals("Chàm", confirmed.get("top_hypothesis").asText());
         assertNotNull(confirmed.get("episode").get("summary").asText());
         assertEquals(1, confirmed.get("long_term_facts").size());
-        assertEquals("Ngứa về đêm", confirmed.get("episode").get("facts").get(0).get("source_messages").get(0).get("content").asText());
+        // dữ kiện theo tổn thương đọc từ graph (không phải bảng của clinical), kèm vị trí và tin nguồn theo `source_message_id`
+        JsonNode itch = confirmed.get("episode").get("facts").get(0);
+        assertEquals(1, confirmed.get("episode").get("facts").size());
+        assertEquals("Ngứa về đêm", itch.get("source_messages").get(0).get("content").asText());
+        assertEquals("khuỷu tay", itch.get("site_text").asText());
+        assertEquals(true, itch.get("present").asBoolean());
+        assertEquals(0, confirmed.get("long_term_facts").get(0).get("source_messages").size());
 
         // bác sĩ khác không đụng được lịch đã có người phụ trách
         call(post("/api/v1/doctor/appointments/" + id + "/no-show"), token("doc-2", "doctor"), null).andExpect(status().isForbidden());

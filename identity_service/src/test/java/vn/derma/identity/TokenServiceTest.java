@@ -18,7 +18,7 @@ class TokenServiceTest {
     private static final String SECRET = "derma-secret-key-change-in-production-datn-2026";
 
     private TokenService serviceWith(String secret, int accessMinutes) {
-        return new TokenService(new DermaProperties(new DermaProperties.Jwt(secret, accessMinutes, 30), "k", "", ""));
+        return new TokenService(new DermaProperties(new DermaProperties.Jwt(secret, accessMinutes, 30), "k", "", "", ""));
     }
 
     @Test

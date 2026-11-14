@@ -18,7 +18,7 @@ class Settings(SharedSettings):
     CLINICAL_URL: str = "http://localhost:3053"
     KNOWLEDGE_URL: str = "http://localhost:3054"
 
-    # DB riêng của ai: chỉ chứa schema `langgraph` (memory dài hạn + checkpoint hội thoại)
+    # DB riêng của ai: chỉ chứa schema `langgraph` (checkpoint hội thoại)
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ai"
 
     # Ảnh đính kèm tin nhắn nằm ở bucket này; agent chỉ đọc (phân loại ảnh, tạo URL ca bệnh)
@@ -36,10 +36,6 @@ class Settings(SharedSettings):
     AGENT_TRIAGE_ENABLED: bool = True
     AGENT_TRIAGE_MODEL: str = ""
     AGENT_FINALIZE_REPORT_SEARCH_ENABLED: bool = True
-    AGENT_MEMORY_BATCH_INTERVAL_MIN: int = 60
-    AGENT_MEMORY_BATCH_MAX_PENDING: int = 20
-    AGENT_MEMORY_CONSOLIDATE_AT: int = 15
-    AGENT_MEMORY_CONSOLIDATE_DAYS: int = 7
     AGENT_THINKING_LEVEL: str = "medium"
     OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
     OPENROUTER_API_KEY: str = ""

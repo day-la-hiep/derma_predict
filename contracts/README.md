@@ -33,31 +33,34 @@ Không qua gateway; mọi lời gọi kèm header `X-Internal-Key` (cấu hình 
 |---|---|---|
 | ai | `POST /internal/turns` (202) | nhận `TurnRequest` (chỉ id + nội dung + file; **không** mang context), chạy nền |
 | ai | `POST /internal/turns/{message_id}/cancel` | dừng lượt: `{cancelled: bool}` |
-| ai | `POST /internal/extract-facts-from-description` | clinical gọi lúc bác sĩ chốt kết luận: body `{description, body_site, known_facts:[{fact_type,label,detail}]}` → `data: {facts:[{fact_type,label,detail}]}` (chỉ dữ kiện bác sĩ mô tả mà `known_facts` chưa có hoặc đổi giá trị); lỗi LLM → 502 `detail` tiếng Việt, clinical không chốt |
+| ai | `POST /internal/extract-facts-from-description` | clinical gọi lúc bác sĩ chốt kết luận: body `{description, known_facts:[{fact_type,label,detail}]}` (`body_site` cũ bị bỏ qua) → `data: {facts:[{fact_type,label,detail,site_text,onset_text}]}` (`site_text`/`onset_text` chỉ có khi bác sĩ viết rõ, không thì rỗng; chỉ dữ kiện bác sĩ mô tả mà `known_facts` chưa có hoặc đổi giá trị); lỗi LLM → 502 `detail` tiếng Việt, clinical không chốt |
 | identity | `GET /internal/patient-profiles/resolve?user_id=&profile_id=` | consultation xác định hồ sơ của tài khoản (bỏ `profile_id` = hồ sơ đầu tiên): `data: {id, user_id, full_name}`; 404 nếu không có/không phải của tài khoản |
 | identity | `GET /internal/users/{id}` | tên và vai trò tài khoản: `data: {id, full_name, role}`; 404 nếu không có (consultation lấy tên bác sĩ cho kênh theo dõi) |
 | identity | `GET /internal/patient-profiles?ids=a,b` | thông tin nhiều hồ sơ cùng lúc: `data: [{id, user_id, full_name, dob, gender, relationship, phone}]` (id không tồn tại thì bỏ qua) |
 | consultation | `GET /internal/conversations/{id}` | agent lấy `{user_id, patient_profile_id, model}` của hội thoại (`model` là id ngắn như `gemma4-26b`); 404 khi không còn |
-| consultation | `POST /internal/turns/{message_id}/result` | agent trả kết quả cuối: `conversation_id`, `content`, `status` (`done`\|`question`), `choice`, `reasoning` |
+| consultation | `POST /internal/turns/{message_id}/result` | agent trả kết quả cuối: `conversation_id`, `content`, `status` (`done`), `reasoning` |
 | consultation | `GET /internal/conversations/{id}/history` | agent kéo lịch sử tin: `data: [{sender, content, message_type}]`, cũ trước |
-| clinical | `GET /internal/patients/{id}/context` | agent kéo `data: {facts: [{label, fact_type, detail, body_site}]}` (fact dài hạn + đợt đang hoạt động) |
-| clinical | `POST /internal/episodes/apply-turn` | agent ghi kết quả lâm sàng của lượt: `{conversation_id, message_id, patient_profile_id, facts, hypotheses, image_predictions}` (dạng phần tử như `AgentResponseMessage` cũ) |
+| clinical | `GET /internal/patients/{id}/context` | **agent không còn gọi** (fact đọc từ `GET knowledge /internal/patient-facts/{id}`); trước đây agent kéo `data: {facts: [{label, fact_type, detail, body_site}]}` (fact dài hạn + đợt đang hoạt động) |
+| clinical | `POST /internal/episodes/apply-turn` | agent ghi kết quả lâm sàng của lượt: `{conversation_id, message_id, patient_profile_id, hypotheses, image_predictions}` (agent **không còn gửi `facts`**: fact ghi vào graph theo dõi qua `POST knowledge /internal/patient-facts/apply`; clinical vẫn nhận `facts` nếu có) (dạng phần tử như `AgentResponseMessage` cũ) |
 | consultation | `POST /internal/encounters/{id}/followup-channel` | clinical mở kênh chat theo dõi khi bắt đầu khám: body `{patient_profile_id, doctor_id}` → `data: {conversation_id}`; idempotent theo lần khám |
 | consultation | `PUT /internal/encounters/{id}/followup-channel/until` | clinical đặt hạn kênh khi chốt kết luận: body `{followup_until}` (ISO, = chốt + `derma.followup-days`, mặc định 30 ngày) |
-| clinical | `GET /internal/patients/long-term-facts?profile_ids=a,b` | identity lấy fact dài hạn (dị ứng/tiền sử/thuốc) để ghép vào hồ sơ: `data: {profileId: [{id, fact_type, label, detail, verified_at}]}` |
-| clinical | `PUT /internal/patients/{id}/long-term-facts` | identity thay toàn bộ fact dài hạn: body `{facts: [{fact_type, label, detail}]}` → `data: [fact]` |
 | clinical, consultation | `GET /internal/patients/{id}/has-data` | identity hỏi hồ sơ đã có báo cáo/hội thoại chưa trước khi xoá: `data: {has_data: bool}` |
 | clinical | `GET /internal/finalize-reports?page=&page_size=` | knowledge đọc để reindex ca tham khảo; trả `data: [CaseInput]` |
 | knowledge | `POST /internal/cases` | clinical gửi báo cáo vừa chốt (`CaseInput`: `report_id`, `patient_profile_id`, `doctor_id`, `encounter_id`/`consultation_session_id`, `diagnosis`, `notes`, `is_reference_case`, `created_at`, `snapshot{patient_profile, assessment, clinical_facts}`, `images[{file_id, storage_key, ...}]`) → index Qdrant ca + đồng bộ Neo4j PJKG |
 | knowledge | `POST /internal/cases/reindex` | đọc `GET clinical /internal/finalize-reports?page=&page_size=50` (mỗi trang `data: [CaseInput]`), dựng lại Qdrant + đồ thị; trả `{indexed, failed[]}` |
 | knowledge | `GET /internal/patients/{id}/history-hints` | nhận định + lời khuyên các phiên trước (clinical dùng cho form chốt báo cáo) |
 | knowledge | `GET /internal/patients/{id}/journey-graph` | đồ thị hành trình bệnh nhân (clinical bọc thành route công khai cho FE) |
+| knowledge | `POST /internal/patient-facts/apply` | agent ghi fact đang theo dõi vào graph bệnh nhân (namespace `Pt*`/`PT_*`): body `{patient_id, facts:[{category 1-5 (1 triệu chứng, 2 tổn thương, 3 đặc điểm, 4 yếu tố tác động, 5 tiền sử/thuốc), label, name?, object_type?, kg_node_id?, link_method?, present?, resolved?, kind?, effect?, of?, lesion_id? \| lesion_key?, site_text?, scope? (`body` = thuộc người bệnh, không gắn tổn thương), onset_text?, source_message_id?, observed_at?}]}` → `data: {applied, skipped:[{index, reason}], lesions:[{key, id}]}`; fact sai bị bỏ kèm lý do (log), các fact khác vẫn ghi; `onset_at` do knowledge quy đổi từ `onset_text` |
+| knowledge | `GET /internal/patient-facts/long-term?profile_ids=a,b` | **identity** và clinical đọc fact dài hạn (loại `history`/`medication`/`allergy`, gồm cả yếu tố nguy cơ) của từng hồ sơ: `data: {profileId: [fact]}`; hồ sơ chưa có thì mảng rỗng |
+| knowledge | `PUT /internal/patient-facts/{patient_id}/profile` | **identity** thay toàn bộ fact dài hạn từ form hồ sơ: body `{facts: [{fact_type: allergy\|history\|medication, label, detail}]}` → `data: [fact]` đã lưu; mục không còn trong danh sách chuyển `resolved` (kể cả mục agent trích từ chat), nhãn khớp không phân biệt hoa thường; thuốc/dị ứng thành `PT_TAKES_DRUG`, tiền sử thành `PT_HAS_HISTORY` |
+| knowledge | `GET /internal/patient-facts/{patient_id}?include_history=false` | fact hiện hành (`status=current`; `include_history` thêm `resolved`/`superseded`): `data: {lesions:[{id, site_text, scope}], facts:[{id, fact_type, lesion_id, category, relation, label, object_type, kg_node_id, present, status, name, kind, effect, of, onset_text, onset_at, observed_at, last_confirmed_at, stale, source_message_id, link_method}]}`; `stale` = chưa được nhắc lại quá 14 ngày |
+| knowledge | `GET /internal/patient-facts/{patient_id}/context?top_k=5` | mở rộng từ fact `current` đã khớp nút (cả cạnh PrimeKG lẫn cạnh trích từ sách): `data: {matched, unmatched, candidates:[{name, score, why, absent}], questions:[{phenotype, present_in, absent_in}], drug_notes, book_evidence:[{disease, relation, object, evidence, pages, document_id}], notes}`; chỉ là gợi ý, không phải chẩn đoán (agent gọi qua tool `query_patient_graph`) |
 | knowledge | `POST /internal/search/semantic`, `/search/bm25` (`corpus` = `document` \| `finalize_report`), `/search/graph`, `/graph/document-query`, `/kg/intent`, `/kg/discriminating-questions` | retrieval cho agent; tìm ca tương tự = `/search/semantic` với `corpus=finalize_report` (không còn `/similar-cases`) |
 
 - Ghi vào chủ dữ liệu: kết quả lâm sàng agent gọi **clinical** trước, rồi trả câu trả lời cho **consultation**; lỗi gọi clinical chỉ `logger.warning`, không làm mất câu trả lời.
 - Hợp đồng cũ `agent_request_queue` / `agent_response_queue` / `finalize_report_finalized` **bỏ**. `AgentResponseMessage` cũ tách làm hai: phần cho consultation (nội dung, trạng thái, choice, reasoning) và phần cho clinical (facts, hypotheses, image_predictions, báo cáo). `messages.schema.json` sinh từ `archive/core/` vẫn là bản cũ, dùng để đối chiếu; schema mới định nghĩa trong từng service.
 - RabbitMQ chỉ còn `document_ingest_queue`, nội bộ `knowledge` (Python ⇄ Python).
-- "Hội thoại đang có lượt chạy" = tồn tại tin assistant `queued`/`question` trong DB (consultation trả 409 khi gửi thêm); không còn khoá Redis `active_turn`.
+- "Hội thoại đang có lượt chạy" = tồn tại tin assistant `queued`/`streaming` trong DB (consultation trả 409 khi gửi thêm); không còn khoá Redis `active_turn`.
 - Tên hiển thị (`doctor_name`, `patient_name`) lưu sẵn lúc ghi `Appointment`, `FinalizeReport`; không gọi identity mỗi lần liệt kê.
 
 ## 4. Redis (đã duyệt, đề xuất B)
@@ -82,7 +85,6 @@ Agent `XADD` vào Stream (kèm `conversation_id`, `message_id`):
 | `message.thinking` | `content` |
 | `message.tool_start` | `step_id`, `tool`, `input` |
 | `message.tool_result` | `step_id`, `tool`, `input`, `content` |
-| `message.question` | `choice` (`MessageChoice`) |
 | `message.done` | `content` |
 
 Consultation (`XADD` Stream cho `message.*`; Pub/Sub cho loại call):

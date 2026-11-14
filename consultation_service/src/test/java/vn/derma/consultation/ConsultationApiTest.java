@@ -208,22 +208,6 @@ class ConsultationApiTest {
     }
 
     @Test
-    void askUserQuestionBlocksNewMessagesAndAnswerResumesTheSameTurn() throws Exception {
-        String[] ids = createConversation("u-ask", "Xin chào");
-        internal(post("/internal/turns/" + ids[1] + "/result"), Map.of("status", "question", "content", "",
-                "choice", Map.of("question_id", "q1", "question", "Ngứa mấy ngày?", "options", List.of(Map.of("id", "opt-0", "label", "1 ngày"))))).andExpect(status().isOk());
-        call(post("/api/v1/conversations/" + ids[0] + "/messages"), token("u-ask"), Map.of("client_message_id", "c", "content", "x")).andExpect(status().isConflict());
-        call(post("/api/v1/conversations/" + ids[0] + "/questions/sai/answer"), token("u-ask"), Map.of("option_id", "opt-0", "label", "1 ngày")).andExpect(status().isNotFound());
-
-        reset(ai);
-        call(post("/api/v1/conversations/" + ids[0] + "/questions/q1/answer"), token("u-ask"), Map.of("option_id", "opt-0", "label", "1 ngày"))
-                .andExpect(status().isAccepted()).andExpect(jsonPath("$.data.id").value(ids[1]));
-        ArgumentCaptor<AiClient.TurnRequest> sent = ArgumentCaptor.forClass(AiClient.TurnRequest.class);
-        verify(ai).startTurn(sent.capture());
-        assertEquals(List.of("resume", ids[1], "1 ngày"), List.of(sent.getValue().type(), sent.getValue().messageId(), sent.getValue().answer()));
-    }
-
-    @Test
     void cancelClosesTheMessageOnlyWhenAiDoesNotHoldTheTurn() throws Exception {
         String[] ids = createConversation("u-cancel", "Xin chào");
         when(ai.cancelTurn(ids[1])).thenReturn(true);

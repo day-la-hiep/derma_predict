@@ -10,7 +10,7 @@ from app.graph import skin_image_nodes as image
 from app.tools.skin_image import analysis as image_tools
 from langchain.messages import AIMessage, HumanMessage
 
-from app.graph.pre_diagnosis_graph import _after_choose, _after_memory, build_pre_diagnosis_graph
+from app.graph.pre_diagnosis_graph import _after_choose, _after_prepare, build_pre_diagnosis_graph
 
 
 class _Store:
@@ -138,8 +138,8 @@ class IsolationTest(unittest.TestCase):
 
 class GraphTest(unittest.TestCase):
     def test_routing(self) -> None:
-        self.assertEqual(_after_memory(cast(Any, {}), _rt([])), ["text_flow"])
-        self.assertEqual(_after_memory(cast(Any, {}), _rt(["a"])), ["text_flow", "image_flow"])
+        self.assertEqual(_after_prepare(cast(Any, {}), _rt([])), ["text_flow"])
+        self.assertEqual(_after_prepare(cast(Any, {}), _rt(["a"])), ["text_flow", "image_flow"])
         call = AIMessage(content="", tool_calls=[{"name": "t", "args": {}, "id": "1"}])
         self.assertEqual(_after_choose(cast(Any, {"messages": [call]})), "tools")
         self.assertEqual(_after_choose(cast(Any, {"messages": [HumanMessage(content="x")]})), "label_evidence")
@@ -147,9 +147,9 @@ class GraphTest(unittest.TestCase):
     def test_two_independent_lanes(self) -> None:
         root = build_pre_diagnosis_graph().get_graph()
         edges = {(e.source, e.target) for e in root.edges}
-        # hai làn cùng rẽ từ load_memory và chỉ gặp nhau ở END của graph cha (không có cạnh chéo giữa hai làn)
-        self.assertIn(("load_memory", "text_flow"), edges)
-        self.assertIn(("load_memory", "image_flow"), edges)
+        # hai làn cùng rẽ từ prepare_turn và chỉ gặp nhau ở END của graph cha (không có cạnh chéo giữa hai làn)
+        self.assertIn(("prepare_turn", "text_flow"), edges)
+        self.assertIn(("prepare_turn", "image_flow"), edges)
         self.assertIn(("text_flow", "__end__"), edges)
         self.assertIn(("image_flow", "__end__"), edges)
         self.assertFalse({e for e in edges if "text_flow" in e and "image_flow" in e})

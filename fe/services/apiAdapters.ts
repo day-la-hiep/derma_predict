@@ -8,7 +8,6 @@ import type {
   ChatStreamEvent,
   Conversation,
   FileAttachment,
-  MessageChoice,
   MessageStatus,
   ReasoningStep,
   ReasoningStepStatus,
@@ -51,25 +50,6 @@ export function toFileAttachment(f: ApiFileAttachment): FileAttachment {
   };
 }
 
-/** Khớp `MessageChoiceDto` (`core/app/dto/response/message.py`). */
-export interface ApiMessageChoice {
-  question_id: string;
-  question: string;
-  options: { id: string; label: string }[];
-  answered?: { option_id: string; label: string; custom?: boolean } | null;
-}
-
-export function toMessageChoice(c: ApiMessageChoice): MessageChoice {
-  return {
-    questionId: c.question_id,
-    question: c.question,
-    options: c.options,
-    answered: c.answered
-      ? { optionId: c.answered.option_id, label: c.answered.label, custom: c.answered.custom }
-      : undefined,
-  };
-}
-
 export interface ApiReasoningStep {
   id?: string | null;
   title?: string;
@@ -77,7 +57,6 @@ export interface ApiReasoningStep {
   input?: unknown;
   status?: string;
   type?: string;
-  choice?: ApiMessageChoice | null;
 }
 
 /** Khớp `MessageMetadataDto` (`core/app/dto/response/message.py`) — 1 shape dùng chung cho cả
@@ -85,8 +64,6 @@ export interface ApiReasoningStep {
 export interface ApiMessageMetadata {
   reasoning?: ApiReasoningStep[] | null;
   attached_files?: ApiFileAttachment[] | null;
-  choice?: ApiMessageChoice | null;
-  is_option_response?: boolean | null;
   message_type?: string | null;
 }
 
@@ -143,7 +120,6 @@ export function toChatMessage(a: ApiChatMessage): ChatMessage {
         input: s.input,
         status: (s.status as ReasoningStepStatus) ?? "done",
         type: (s.type as ReasoningStepType) ?? "default",
-        choice: s.choice ? toMessageChoice(s.choice) : undefined,
       }))
     : undefined;
 
@@ -153,12 +129,10 @@ export function toChatMessage(a: ApiChatMessage): ChatMessage {
     role,
     content: a.content ?? "",
     createdAt: a.created_at,
-    // Giữ nguyên status thật từ backend ("question"/"pending"/"queued"...) — KHÔNG
+    // Giữ nguyên status thật từ backend ("pending"/"queued"...) — KHÔNG
     // hard-code "done", để UI khôi phục đúng trạng thái khi F5 giữa chừng 1 turn.
     status: a.status,
     reasoning,
-    choice: meta?.choice ? toMessageChoice(meta.choice) : undefined,
-    isOptionResponse: meta?.is_option_response ?? undefined,
     messageType: meta?.message_type ?? undefined,
     attachments:
       role === "user" && meta?.attached_files ? meta.attached_files.map(toFileAttachment) : undefined,
@@ -201,9 +175,6 @@ const STREAM_EVENT_KEYS: Record<string, string> = {
 /** Event SSE từ Core (snake_case, `agent/turn.py`, `agent/middleware/*.py`) -> `ChatStreamEvent` của UI. */
 export function toStreamEvent(raw: Record<string, unknown>): ChatStreamEvent {
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(raw)) {
-    if (k === "choice" && v && typeof v === "object") out.choice = toMessageChoice(v as ApiMessageChoice);
-    else out[STREAM_EVENT_KEYS[k] ?? k] = v;
-  }
+  for (const [k, v] of Object.entries(raw)) out[STREAM_EVENT_KEYS[k] ?? k] = v;
   return out as unknown as ChatStreamEvent;
 }

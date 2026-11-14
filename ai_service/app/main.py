@@ -20,11 +20,10 @@ logger = logging.getLogger("ai")
 async def lifespan(_: FastAPI):
     log_startup_infra()
     logger.info("model: %s", settings.AGENT_MODEL)
-    # Memory dài hạn và checkpoint hội thoại nằm ở Postgres (schema `langgraph`); graph biên dịch sẵn lúc import với bản RAM nên thay ở đây, trước khi nhận turn nào.
-    async with postgres_persistence() as (store, checkpointer):
-        chat_graph.store = store
+    # Checkpoint hội thoại nằm ở Postgres (schema `langgraph`); graph biên dịch sẵn lúc import với bản RAM nên thay ở đây, trước khi nhận turn nào.
+    async with postgres_persistence() as checkpointer:
         chat_graph.checkpointer = checkpointer
-        logger.info("memory dài hạn và checkpoint hội thoại: Postgres, schema langgraph")
+        logger.info("checkpoint hội thoại: Postgres, schema langgraph")
         yield
     await close_clients()
 

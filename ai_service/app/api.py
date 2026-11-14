@@ -86,12 +86,11 @@ class KnownFact(BaseModel):
 
 class DescriptionFactsRequest(BaseModel):
     description: str
-    body_site: str = ""
     known_facts: list[KnownFact] = []
 
 
 @router.post("/extract-facts-from-description")
 async def extract_facts_from_doctor_description(body: DescriptionFactsRequest) -> dict[str, dict[str, list[dict[str, str]]]]:
-    """Clinical gọi lúc bác sĩ chốt kết luận: mô tả của bác sĩ → dữ kiện (lỗi LLM thì 502 để không chốt thiếu dữ kiện)."""
+    """Clinical gọi lúc bác sĩ chốt kết luận: mô tả của bác sĩ → dữ kiện kèm vị trí/khởi phát nếu bác sĩ viết rõ (lỗi LLM thì 502 để không chốt thiếu dữ kiện)."""
     known = [{"fact_type": k.fact_type, "template_label": k.label, "detail": k.detail} for k in body.known_facts]
     return {"data": {"facts": await extract_facts_from_description(body.description, known)}}

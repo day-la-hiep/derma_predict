@@ -1,9 +1,7 @@
   import type {
-  AnswerQuestionInput,
   ChatMessage,
   ChatService,
   ChatStreamEvent,
-  ChoiceOption,
   Conversation,
   ReasoningStep,
   SendMessageInput,
@@ -167,83 +165,6 @@ function replyFor(content: string): string {
     return "Điều trị nám má cần kiên trì và luôn đi kèm chống nắng:\n\n1. **Bắt buộc**: kem chống nắng phổ rộng SPF ≥ 50, PA++++, thoa lại mỗi 2–3 giờ + che chắn vật lý.\n2. **Thuốc bôi**: hydroquinone 2–4% từng đợt 8–12 tuần dưới theo dõi của bác sĩ; hoặc azelaic acid, tranexamic acid, vitamin C, retinoid nồng độ thấp.\n3. **Sau sinh / cho con bú**: ưu tiên chống nắng, azelaic acid, vitamin C; trì hoãn hydroquinone và laser.\n\nBạn nên khám bác sĩ da liễu để xác định loại nám (thượng bì / trung bì) trước khi chọn phác đồ.";
   }
   return "Cảm ơn câu hỏi của bạn. Dựa trên nội dung bạn đưa ra, tôi đang tra cứu các hướng dẫn chuyên môn da liễu liên quan.\n\n**Lưu ý đây là giao diện demo** — hiện dữ liệu đang được mock. Khi hệ thống kết nối backend, bạn sẽ nhận được câu trả lời phân tích từ mô hình AI thật.\n\nBạn có thể mô tả rõ hơn triệu chứng (vị trí, thời gian, hình thái tổn thương, đã dùng thuốc gì) để tôi tư vấn chính xác hơn. Các vấn đề thường gặp: **mụn trứng cá, viêm da cơ địa, nấm da, nám và rối loạn sắc tố**.";
-}
-
-/** Câu hỏi làm rõ agent đưa ra theo chủ đề */
-function _questionFor(content: string): { text: string; options: ChoiceOption[] } {
-  const text = content.toLowerCase();
-  if (text.includes("mụn") || text.includes("trứng cá")) {
-    return {
-      text: "Để tư vấn chính xác hơn, bạn muốn tìm hiểu khía cạnh nào của mụn trứng cá?",
-      options: [
-        { id: "qk1", label: "Chọn thuốc bôi theo mức độ mụn" },
-        { id: "qk2", label: "Khi nào cần dùng thuốc uống" },
-        { id: "qk3", label: "Chăm sóc da và chọn mỹ phẩm" },
-        { id: "qk4", label: "Xử lý thâm và sẹo sau mụn" },
-      ],
-    };
-  }
-  if (
-    text.includes("viêm da") ||
-    text.includes("chàm") ||
-    text.includes("cơ địa") ||
-    text.includes("eczema")
-  ) {
-    return {
-      text: "Bạn muốn tôi tư vấn khía cạnh nào của viêm da cơ địa?",
-      options: [
-        { id: "qh1", label: "Dưỡng ẩm và chăm sóc hàng rào da" },
-        { id: "qh2", label: "Dùng corticoid bôi an toàn" },
-        { id: "qh3", label: "Kiểm soát ngứa và đợt bùng phát" },
-        { id: "qh4", label: "Viêm da cơ địa ở trẻ em" },
-      ],
-    };
-  }
-  if (
-    text.includes("nấm") ||
-    text.includes("hắc lào") ||
-    text.includes("lang ben")
-  ) {
-    return {
-      text: "Bạn đang quan tâm đến vấn đề nào khi điều trị nấm da?",
-      options: [
-        { id: "qt1", label: "Chọn thuốc chống nấm bôi" },
-        { id: "qt2", label: "Khi nào cần thuốc chống nấm uống" },
-        { id: "qt3", label: "Phòng tái phát và vệ sinh" },
-        { id: "qt4", label: "Nấm móng đi kèm" },
-      ],
-    };
-  }
-  if (
-    text.includes("nám") ||
-    text.includes("tàn nhang") ||
-    text.includes("sạm da")
-  ) {
-    return {
-      text: "Bạn muốn tư vấn vấn đề nào về nám và sắc tố?",
-      options: [
-        { id: "ql1", label: "Chống nắng đúng cách" },
-        { id: "ql2", label: "Thuốc bôi làm sáng da" },
-        { id: "ql3", label: "Nám sau sinh, đang cho con bú" },
-        { id: "ql4", label: "Laser và các thủ thuật" },
-      ],
-    };
-  }
-  return {
-    text: "Bạn muốn tôi hỗ trợ theo hướng nào?",
-    options: [
-      { id: "qd1", label: "Tư vấn chăm sóc da cơ bản" },
-      { id: "qd2", label: "Soạn hướng dẫn điều trị, dùng thuốc" },
-      { id: "qd3", label: "Hướng dẫn quy trình chăm sóc tại nhà" },
-      { id: "qd4", label: "Phân tích triệu chứng cụ thể" },
-    ],
-  };
-}
-
-/** Câu trả lời cuối sau khi người dùng chọn lựa */
-function finalReplyFor(answerLabel: string, content: string): string {
-  const base = replyFor(content);
-  return `**Theo lựa chọn "${answerLabel}" của bạn, tôi xin tư vấn như sau:**\n\n${base}`;
 }
 
 const DRAFTING_KEYWORDS = [
@@ -572,71 +493,6 @@ export const mockChatService: ChatService = {
           content: reply,
         },
       });
-
-      emit({
-        type: "message.done",
-        messageId,
-        conversationId,
-        reasoning: reasoningSteps,
-      });
-    })();
-  },
-
-  /** Mô phỏng `POST /questions/{questionId}/answer` — resume ĐÚNG message assistant đang
-   * chờ (không tạo message mới), giống hành vi thật của backend. */
-  answerQuestion(input: AnswerQuestionInput) {
-    if (!connected) return;
-    const { conversationId, questionId, optionId, label, custom } = input;
-
-    const target = cache.messages.find(
-      (m) => m.conversationId === conversationId && m.choice?.questionId === questionId
-    );
-    if (!target) return;
-
-    const answeredObj = { optionId, label, custom };
-    saveMessages(
-      cache.messages.map((m) =>
-        m.id === target.id
-          ? {
-              ...m,
-              choice: m.choice ? { ...m.choice, answered: answeredObj } : m.choice,
-              reasoning: (m.reasoning ?? []).map((rs) =>
-                rs.choice ? { ...rs, choice: { ...rs.choice, answered: answeredObj } } : rs
-              ),
-            }
-          : m
-      )
-    );
-
-    const messageId = target.id;
-    const originalContent = target.content || target.choice?.question || "";
-
-    void (async () => {
-      const reasoning = reasoningFor(originalContent);
-      const reply = finalReplyFor(label, originalContent);
-
-      await delay(PACING.preResponseDelay);
-      await streamSteps(messageId, conversationId, reasoning);
-
-      for (const chunk of chunkText(reply, 34)) {
-        emit({ type: "message.delta", messageId, conversationId, delta: chunk });
-        await delay(PACING.messageChunkDelay);
-      }
-
-      const reasoningSteps = toDoneSteps(reasoning, messageId);
-      saveMessages(
-        cache.messages.map((m) =>
-          m.id === messageId
-            ? {
-                ...m,
-                content: `${m.content}${reply}`,
-                reasoning: [...(m.reasoning ?? []), ...reasoningSteps],
-                status: "done",
-              }
-            : m
-        )
-      );
-      bumpConversation(conversationId, originalContent);
 
       emit({
         type: "message.done",

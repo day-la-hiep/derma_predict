@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -41,15 +42,12 @@ import vn.derma.clinical.dto.AppointmentDtos.SourceMessageOutput;
 import vn.derma.clinical.entity.AiHypothesis;
 import vn.derma.clinical.entity.Appointment;
 import vn.derma.clinical.entity.ClinicalEpisode;
-import vn.derma.clinical.entity.ClinicalFact;
-import vn.derma.clinical.entity.ClinicalProvenance;
+import vn.derma.clinical.model.PatientFact;
 import vn.derma.clinical.entity.Encounter;
 import vn.derma.clinical.mapper.AppointmentMapper;
 import vn.derma.clinical.repository.AiHypothesisRepository;
 import vn.derma.clinical.repository.AppointmentRepository;
 import vn.derma.clinical.repository.ClinicalEpisodeRepository;
-import vn.derma.clinical.repository.ClinicalFactRepository;
-import vn.derma.clinical.repository.ClinicalProvenanceRepository;
 import vn.derma.clinical.repository.EncounterRepository;
 
 /** Đặt lịch khám cho một đợt bệnh đã đủ thông tin, và bác sĩ bắt đầu khám từ lịch hẹn. */
@@ -69,8 +67,7 @@ public class AppointmentService {
     private final EncounterRepository encounters;
     private final ClinicalEpisodeRepository episodes;
     private final AiHypothesisRepository hypotheses;
-    private final ClinicalFactRepository facts;
-    private final ClinicalProvenanceRepository provenances;
+    private final PatientFactService patientFacts;
     private final ClinicalRecordService records;
     private final IdentityClient identity;
     private final ConsultationClient consultation;
@@ -133,7 +130,7 @@ public class AppointmentService {
         Map<String, ClinicalEpisode> episodeById = episodesById(found.stream().map(a -> a.episodeId).toList());
         Map<String, List<AiHypothesis>> hypothesesByEpisode = hypothesesOf(episodeById.keySet());
         Map<String, IdentityClient.ProfileDetail> profiles = identity.getProfiles(found.stream().map(a -> a.patientProfileId).collect(Collectors.toSet()));
-        Map<String, List<ClinicalFact>> longTerm = longTermOf(profiles.keySet());
+        Map<String, List<PatientFact>> longTerm = longTermOf(profiles.keySet());
         Map<String, Encounter> encounterByAppointment = encountersOf(found);
         return found.stream().map(a -> item(a, episodeById.get(a.episodeId), encounterByAppointment.get(a.id), profiles.get(a.patientProfileId),
                 longTerm.getOrDefault(a.patientProfileId, List.of()), hypothesesByEpisode.getOrDefault(a.episodeId, List.of()))).toList();
@@ -236,7 +233,7 @@ public class AppointmentService {
         return hypotheses.findByEpisodeIdOrderByRankAsc(episodeId).stream().map(this::hypothesisOutput).toList();
     }
 
-    public DoctorEpisodeOutput doctorEpisode(ClinicalEpisode episode, List<ClinicalFact> episodeFacts) {
+    public DoctorEpisodeOutput doctorEpisode(ClinicalEpisode episode, List<PatientFact> episodeFacts) {
         return mapper.toDoctorEpisode(episode, readStrings(episode.redFlags), hypothesisOutputs(episode.id), factOutputs(episodeFacts), imagePredictions(episode));
     }
 
@@ -270,26 +267,20 @@ public class AppointmentService {
         return new FileDto(name, storageKey, type, null, null, store.presignedUrl(storageKey));
     }
 
-    /** Fact kèm tin nguồn: nội dung tin lấy từ consultation, không lấy được thì dùng đoạn trích đã chép lúc ghi. */
-    public List<ClinicalFactOutput> factOutputs(List<ClinicalFact> list) {
+    /** Fact kèm tin nguồn: nội dung tin lấy từ consultation theo `sourceMessageId` ghi trên cạnh graph; không lấy được tin thì không có nguồn. */
+    public List<ClinicalFactOutput> factOutputs(List<PatientFact> list) {
         if (list.isEmpty()) {
             return List.of();
         }
-        Map<String, List<ClinicalProvenance>> byFact = provenances.findByFactIdInOrderByCreatedAtAsc(list.stream().map(f -> f.id).toList()).stream()
-                .filter(p -> p.messageId != null).collect(Collectors.groupingBy(p -> p.factId, LinkedHashMap::new, Collectors.toList()));
-        Map<String, ConsultationClient.MessageInfo> messages = consultation.getMessages(byFact.values().stream().flatMap(Collection::stream).map(p -> p.messageId)
+        Map<String, ConsultationClient.MessageInfo> messages = consultation.getMessages(list.stream().map(f -> f.sourceMessageId).filter(Objects::nonNull)
                 .collect(Collectors.toCollection(LinkedHashSet::new)));
         return list.stream().map(f -> {
-            Map<String, SourceMessageOutput> sources = new LinkedHashMap<>();
-            for (ClinicalProvenance p : byFact.getOrDefault(f.id, List.of())) {
-                ConsultationClient.MessageInfo m = messages.get(p.messageId);
-                sources.putIfAbsent(p.messageId, m != null ? mapper.toSourceMessage(m) : mapper.toSourceMessage(p));
-            }
-            return mapper.toFact(f, List.copyOf(sources.keySet()), List.copyOf(sources.values()));
+            ConsultationClient.MessageInfo m = f.sourceMessageId == null ? null : messages.get(f.sourceMessageId);
+            return m == null ? mapper.toFact(f, List.of(), List.of()) : mapper.toFact(f, List.of(m.id()), List.of(mapper.toSourceMessage(m)));
         }).toList();
     }
 
-    public PatientProfileDto patientDto(String profileId, IdentityClient.ProfileDetail profile, List<ClinicalFact> longTerm) {
+    public PatientProfileDto patientDto(String profileId, IdentityClient.ProfileDetail profile, List<PatientFact> longTerm) {
         String allergies = ClinicalRecordService.longTermText(longTerm, "allergy"), history = ClinicalRecordService.longTermText(longTerm, "history");
         if (profile == null) {
             return new PatientProfileDto(profileId, "Bệnh nhân", "", "male", "self", null, allergies, history);
@@ -297,12 +288,8 @@ public class AppointmentService {
         return mapper.toPatient(profile, allergies, history);
     }
 
-    public Map<String, List<ClinicalFact>> longTermOf(Collection<String> profileIds) {
-        Map<String, List<ClinicalFact>> out = new HashMap<>();
-        if (!profileIds.isEmpty()) {
-            facts.findLongTerm(profileIds).forEach(f -> out.computeIfAbsent(f.patientProfileId, k -> new ArrayList<>()).add(f));
-        }
-        return out;
+    public Map<String, List<PatientFact>> longTermOf(Collection<String> profileIds) {
+        return patientFacts.longTermOf(profileIds);
     }
 
     public String siteLabel(String site) {
@@ -362,19 +349,18 @@ public class AppointmentService {
         if (!force && episode.summaryAt != null && !episode.summaryAt.isBefore(episode.updatedAt)) {
             return;
         }
-        List<ClinicalFact> episodeFacts = facts.findByEpisodeIdInOrderByCreatedAtAsc(List.of(episode.id));
-        List<ClinicalFact> longTerm = longTermOf(List.of(episode.patientProfileId)).getOrDefault(episode.patientProfileId, List.of());
-        episode.summary = ClinicalRecordService.buildEpisodeSummary(episode, episodeFacts, longTerm, hypotheses.findByEpisodeIdOrderByRankAsc(episode.id), readStrings(episode.redFlags));
+        List<PatientFact> lesionFacts = patientFacts.lesionFacts(episode.patientProfileId);
+        List<PatientFact> longTerm = longTermOf(List.of(episode.patientProfileId)).getOrDefault(episode.patientProfileId, List.of());
+        episode.summary = ClinicalRecordService.buildEpisodeSummary(episode, lesionFacts, longTerm, hypotheses.findByEpisodeIdOrderByRankAsc(episode.id), readStrings(episode.redFlags));
         episode.summaryAt = Instant.now();
         episodes.save(episode);
     }
 
     private List<PatientEpisodeOutput> patientEpisodes(List<ClinicalEpisode> list) {
         List<String> ids = list.stream().map(e -> e.id).toList();
-        Map<String, List<ClinicalFact>> episodeFacts = new HashMap<>();
-        if (!ids.isEmpty()) {
-            facts.findByEpisodeIdInOrderByCreatedAtAsc(ids).forEach(f -> episodeFacts.computeIfAbsent(f.episodeId, k -> new ArrayList<>()).add(f));
-        }
+        // graph không tách fact theo đợt-vùng: mọi đợt của một hồ sơ hiển thị cùng bộ dữ kiện theo tổn thương của hồ sơ đó
+        Map<String, List<PatientFact>> lesionFactsByProfile = new HashMap<>();
+        list.stream().map(e -> e.patientProfileId).distinct().forEach(id -> lesionFactsByProfile.put(id, patientFacts.lesionFacts(id)));
         Map<String, Appointment> active = new HashMap<>();
         if (!ids.isEmpty()) {
             appointments.findByEpisodeIdInAndStatusIn(ids, ACTIVE).forEach(a -> active.put(a.episodeId, a));
@@ -383,7 +369,7 @@ public class AppointmentService {
         return list.stream().map(e -> {
             String reason = notBookableReason(e);
             Appointment appointment = active.get(e.id);
-            return mapper.toPatientEpisode(e, episodeFacts.getOrDefault(e.id, List.of()).stream().map(f -> f.detail.isEmpty() ? f.label : f.label + ": " + f.detail).toList(),
+            return mapper.toPatientEpisode(e, lesionFactsByProfile.getOrDefault(e.patientProfileId, List.of()).stream().map(f -> (f.present ? "" : "Không có ") + (f.detail.isEmpty() ? f.label : f.label + ": " + f.detail)).toList(),
                     reason == null, reason, appointment == null ? null : output(appointment, e, encounterByAppointment.get(appointment.id)));
         }).toList();
     }
@@ -393,7 +379,7 @@ public class AppointmentService {
     }
 
     private DoctorAppointmentItemOutput item(Appointment a, ClinicalEpisode episode, Encounter encounter, IdentityClient.ProfileDetail profile,
-            List<ClinicalFact> longTerm, List<AiHypothesis> hypothesisList) {
+            List<PatientFact> longTerm, List<AiHypothesis> hypothesisList) {
         return mapper.toItem(output(a, episode, encounter), patientDto(a.patientProfileId, profile, longTerm), hypothesisList.isEmpty() ? null : hypothesisList.get(0).disease);
     }
 
@@ -401,11 +387,11 @@ public class AppointmentService {
         ClinicalEpisode episode = episode(a.episodeId);
         refreshSummary(episode, false);
         IdentityClient.ProfileDetail profile = identity.getProfiles(List.of(a.patientProfileId)).get(a.patientProfileId);
-        List<ClinicalFact> longTerm = longTermOf(List.of(a.patientProfileId)).getOrDefault(a.patientProfileId, List.of());
+        List<PatientFact> longTerm = longTermOf(List.of(a.patientProfileId)).getOrDefault(a.patientProfileId, List.of());
         List<AiHypothesis> hypothesisList = hypotheses.findByEpisodeIdOrderByRankAsc(episode.id);
         DoctorAppointmentItemOutput item = item(a, episode, encounters.findByAppointmentId(a.id).orElse(null), profile, longTerm, hypothesisList);
         List<ClinicalEpisode> others = episodes.findActiveOfProfile(a.patientProfileId).stream().filter(e -> !e.id.equals(episode.id)).toList();
-        return mapper.toDetail(item, doctorEpisode(episode, facts.findByEpisodeIdInOrderByCreatedAtAsc(List.of(episode.id))), factOutputs(longTerm), patientEpisodes(others));
+        return mapper.toDetail(item, doctorEpisode(episode, patientFacts.lesionFacts(a.patientProfileId)), factOutputs(longTerm), patientEpisodes(others));
     }
 
     private HypothesisOutput hypothesisOutput(AiHypothesis h) {

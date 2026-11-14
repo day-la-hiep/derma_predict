@@ -1,15 +1,18 @@
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from derma_shared.errors import AppError
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
 from app.common.llm import get_model
-from app.reasoning.patient_fact_extractor import DETAIL_MAX_CHARS, MAX_FACTS, ExtractedFacts, facts_text
+from app.reasoning.patient_fact_extractor import DETAIL_MAX_CHARS, MAX_FACTS
 
 logger = logging.getLogger(__name__)
 
 _MAX_ATTEMPTS = 2
+
+FactType = Literal["symptom", "lesion", "history", "medication", "allergy", "other"]
 
 DESCRIPTION_SYSTEM = """Bạn là bộ phận chuyển MÔ TẢ CỦA BÁC SĨ thành DỮ KIỆN LÂM SÀNG nội bộ của hệ thống da liễu. Người dùng không đọc đầu ra này: chỉ gọi hàm, KHÔNG chào hỏi, KHÔNG viết văn bản.
 
@@ -17,9 +20,27 @@ DESCRIPTION_SYSTEM = """Bạn là bộ phận chuyển MÔ TẢ CỦA BÁC SĨ t
 * Chỉ ghi điều bác sĩ khám thấy hoặc hỏi được: tổn thương (vị trí, hình thái, kích thước, màu, phân bố) là lesion; triệu chứng cơ năng là symptom; tiền sử / bệnh nền / yếu tố tiếp xúc là history; thuốc đang dùng là medication; dị ứng là allergy.
 * Tuyệt đối KHÔNG suy diễn chẩn đoán, KHÔNG thêm dữ kiện, mức độ hay con số mà bác sĩ không viết. Kết luận bệnh KHÔNG phải là dữ kiện.
 * Nhãn ngắn (tối đa 8 từ). `detail` giữ đúng lời bác sĩ, không diễn giải thêm.
+* `site_text` và `onset_text` CHỈ điền khi bác sĩ viết rõ vị trí / thời điểm khởi phát của dữ kiện đó; không suy ra, không tự tính ngày; không viết thì để trống.
 * Dữ kiện đã biết mà mô tả không đổi thì KHÔNG nhắc lại. Cùng ý với một dữ kiện đã biết nhưng mô tả có chi tiết khác thì dùng lại ĐÚNG NGUYÊN VĂN nhãn đã biết và `detail` là giá trị đầy đủ mới.
-* `body_site` luôn để trống (vùng đã gắn theo lần khám). `source_messages` luôn để rỗng.
 * Mô tả không có dữ kiện lâm sàng nào thì trả danh sách rỗng."""
+
+
+class DescribedFact(BaseModel):
+    template_label: str = Field(description="Tên chuẩn ngắn của dữ kiện (tối đa 8 từ)")
+    fact_type: FactType
+    detail: str = Field(description="Đúng lời bác sĩ về dữ kiện này (tối đa 25 từ)")
+    site_text: str = Field(default="", description="Vị trí trên cơ thể đúng lời bác sĩ; để trống nếu bác sĩ không nêu vị trí cho dữ kiện này")
+    onset_text: str = Field(default="", description="Cụm thời gian khởi phát đúng lời bác sĩ; để trống nếu bác sĩ không nêu")
+
+
+class DescribedFacts(BaseModel):
+    """Bản ghi NỘI BỘ của hệ thống, người dùng không đọc: chỉ điền các trường, không chào hỏi."""
+
+    facts: list[DescribedFact] = Field(default_factory=list)
+
+
+def _facts_text(facts: list[dict[str, Any]]) -> str:
+    return "\n".join(f"- [{f['fact_type']}] {f['template_label']}: {f['detail']}" for f in facts) or "(chưa có)"
 
 
 class DescriptionExtractionError(AppError):
@@ -33,23 +54,23 @@ def _key(fact_type: str, label: str) -> tuple[str, str]:
 
 
 async def extract_facts_from_description(description: str, known: list[dict[str, Any]], model: str | None = None) -> list[dict[str, str]]:
-    """Trả [{fact_type, label, detail}] bác sĩ mô tả mà `known` (dict có `fact_type`, `template_label`, `detail`) chưa có; lỗi LLM thì ném `DescriptionExtractionError`."""
+    """Trả [{fact_type, label, detail, site_text, onset_text}] bác sĩ mô tả mà `known` (dict có `fact_type`, `template_label`, `detail`) chưa có; lỗi LLM thì ném `DescriptionExtractionError`."""
     text = description.strip()
     if not text:
         return []
     messages = [
         SystemMessage(content=DESCRIPTION_SYSTEM),
-        HumanMessage(content=f"Dữ kiện đã biết:\n{facts_text(known)}\n\nMô tả của bác sĩ:\n{text}\n\nGọi hàm ExtractedFacts."),
+        HumanMessage(content=f"Dữ kiện đã biết:\n{_facts_text(known)}\n\nMô tả của bác sĩ:\n{text}\n\nGọi hàm DescribedFacts."),
     ]
-    structured = get_model(model).with_structured_output(ExtractedFacts, method="function_calling")
+    structured = get_model(model).with_structured_output(DescribedFacts, method="function_calling")
     for attempt in range(_MAX_ATTEMPTS):
         try:
             result = await structured.ainvoke(messages)
         except Exception as exc:  # noqa: BLE001  # sai schema / lỗi mạng: thử lại rồi báo lỗi
             logger.warning("lần %d/%d: không trích được dữ kiện từ mô tả của bác sĩ: %s", attempt + 1, _MAX_ATTEMPTS, exc)
             continue
-        if not isinstance(result, ExtractedFacts):
-            logger.warning("lần %d/%d: model không trả ExtractedFacts (nhận %s)", attempt + 1, _MAX_ATTEMPTS, type(result).__name__)
+        if not isinstance(result, DescribedFacts):
+            logger.warning("lần %d/%d: model không trả DescribedFacts (nhận %s)", attempt + 1, _MAX_ATTEMPTS, type(result).__name__)
             continue
         known_by_key = {_key(str(f.get("fact_type", "")), str(f.get("template_label", ""))): str(f.get("detail", "")).strip() for f in known}
         out: dict[tuple[str, str], dict[str, str]] = {}
@@ -58,7 +79,7 @@ async def extract_facts_from_description(description: str, known: list[dict[str,
             key = _key(f.fact_type, label)
             if not label or known_by_key.get(key) == detail:  # trùng hệt dữ kiện đã biết thì bỏ
                 continue
-            out[key] = {"fact_type": f.fact_type, "label": label, "detail": detail}
+            out[key] = {"fact_type": f.fact_type, "label": label, "detail": detail, "site_text": f.site_text.strip(), "onset_text": f.onset_text.strip()}
         return list(out.values())[:MAX_FACTS]
     logger.error("không chuyển được mô tả của bác sĩ thành dữ kiện sau %d lần thử", _MAX_ATTEMPTS)
     raise DescriptionExtractionError("Chưa chuyển được mô tả thành dữ kiện, vui lòng thử lại.")

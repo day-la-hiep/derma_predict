@@ -13,6 +13,7 @@ from app.api.exception_handler import register_exception_handlers
 from app.api.graph_schema_api import router as graph_schema_router
 from app.api.internal_api import router as internal_router
 from app.api.internal_case_api import router as internal_case_router
+from app.api.internal_patient_fact_api import router as internal_patient_fact_router
 from app.config.settings import log_startup_infra, settings
 
 
@@ -37,6 +38,7 @@ app.include_router(citation_router, prefix=settings.API_V1_PREFIX)
 app.include_router(graph_schema_router, prefix=settings.API_V1_PREFIX)
 app.include_router(internal_router)
 app.include_router(internal_case_router)
+app.include_router(internal_patient_fact_router)
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=settings.PORT, reload=False)

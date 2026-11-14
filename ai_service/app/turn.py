@@ -13,17 +13,14 @@ from app.graph.chat_graph import chat_graph
 from app.middleware.tool_step_events import emit
 from app.context.agent_context import AgentContext
 from app.context.turn_context_builder import build_context
-from app.tools.patient_memory import after_turn
 from app.deps import get_clinical_client, get_consultation_client, get_redis_client
+from app.reasoning.patient_fact_store import save_turn_facts
 
 logger = logging.getLogger(__name__)
 
 # Node của chat graph có thể tạo câu trả lời cuối của turn: bước lọc intent trả lời luôn (`triage`) hoặc graph tiền chẩn đoán
 # (`pre_diagnosis`; update của nó gồm mọi tin mới trong vòng lặp nên câu trả lời là AIMessage cuối cùng).
 _ANSWER_NODES = ("triage", "pre_diagnosis")
-
-# Giữ tham chiếu tới tác vụ nền: asyncio chỉ giữ tham chiếu yếu nên tác vụ không ai giữ có thể bị thu dọn giữa chừng.
-_background: set["asyncio.Task[None]"] = set()
 
 _ERROR_TEXT = (
     "Xin lỗi, hệ thống gặp sự cố khi xử lý câu hỏi này (có thể do quá tải "
@@ -147,18 +144,7 @@ async def _drive(req: TurnRequest, input_: object) -> None:
         reasoning=context.reasoning_steps,
         context=context,
     )
-    _schedule_memory_update(req, context)
 
-
-def _schedule_memory_update(req: TurnRequest, context: AgentContext) -> None:
-    """Cập nhật memory chạy nền, tách khỏi luồng trả lời: câu trả lời đã gửi xong, lượt không phải chờ bước này."""
-    text = req.content
-    store = chat_graph.store
-    if not text or store is None or not context.patient_profile_id:
-        return
-    task = asyncio.create_task(after_turn(store, context.patient_profile_id, req.conversation_id, text, context.model or None))
-    _background.add(task)
-    task.add_done_callback(_background.discard)
 
 
 async def handle_turn(req: TurnRequest) -> None:
@@ -177,18 +163,19 @@ async def finish_turn(
     reasoning: list[dict[str, Any]] | None = None,
     context: AgentContext | None = None,
 ) -> None:
-    """Kết thúc/tạm dừng turn: báo FE qua Redis Stream, ghi kết quả lâm sàng vào clinical rồi trả câu trả lời cho consultation."""
+    """Kết thúc/tạm dừng turn: báo FE qua Redis Stream, ghi fact vào graph theo dõi và giả thuyết/ảnh vào clinical, rồi trả câu trả lời cho consultation."""
     await emit(req.conversation_id, event)
     await get_redis_client().add_stream_event(
         CONVERSATION_EVENTS_STREAM.format(conversation_id=req.conversation_id), STREAM_DONE_SENTINEL
     )
-    if context is not None and (context.turn_facts or context.turn_hypotheses or context.turn_images):
-        await _save_clinical_result(req, context)
+    if context is not None:
+        await save_turn_facts(context)
+        if context.turn_hypotheses or context.turn_images:
+            await _save_clinical_result(req, context)
     result = {
         "conversation_id": req.conversation_id,
         "content": content,
         "status": "done",
-        "choice": None,
         "reasoning": reasoning or None,
     }
     try:
@@ -206,7 +193,6 @@ async def _save_clinical_result(req: TurnRequest, context: AgentContext) -> None
                 "conversation_id": req.conversation_id,
                 "message_id": req.message_id,
                 "patient_profile_id": context.patient_profile_id,
-                "facts": context.turn_facts,
                 "hypotheses": context.turn_hypotheses,
                 "image_predictions": context.turn_images,
             }

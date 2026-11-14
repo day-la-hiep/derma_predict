@@ -18,7 +18,6 @@ import vn.derma.consultation.client.AiClient;
 import vn.derma.consultation.common.AppException;
 import vn.derma.consultation.common.AuthenticatedUser;
 import vn.derma.consultation.config.DermaProperties;
-import vn.derma.consultation.dto.MessageDtos.AnswerInput;
 import vn.derma.consultation.dto.MessageDtos.AttachedFile;
 import vn.derma.consultation.dto.MessageDtos.FileDto;
 import vn.derma.consultation.dto.MessageDtos.HistoryItem;
@@ -46,8 +45,8 @@ public class MessageService {
     private record Turn(Message user, Message assistant, List<StoredFile> files) {
     }
 
-    /** Lượt AI đang chạy hoặc đang chờ người dùng trả lời `ask_user`. */
-    private static final Set<String> ACTIVE_TURN = Set.of("queued", "streaming", "question");
+    /** Lượt AI đang chạy. */
+    private static final Set<String> ACTIVE_TURN = Set.of("queued", "streaming");
     private static final String ERROR_TEXT = "Xin lỗi, hệ thống gặp sự cố khi xử lý câu hỏi này (có thể do quá tải tạm thời). Vui lòng thử lại sau ít phút.";
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
@@ -93,7 +92,7 @@ public class MessageService {
         Turn turn = openTurn(conversationId, input.content(), attachments);
         announce(turn.user(), attachments);
         dispatch(new AiClient.TurnRequest("turn", conversationId, turn.assistant().id, turn.user().id, input.clientMessageId(), input.content(),
-                null, imagesForAi(attachments)));
+                imagesForAi(attachments)));
         return new SendMessageResult(toOutput(turn.user(), attachments), toOutput(messages.findById(turn.assistant().id).orElse(turn.assistant())));
     }
 
@@ -116,16 +115,7 @@ public class MessageService {
     public void startFirstTurn(Conversation conversation, String content) {
         Turn turn = openTurn(conversation.id, content, List.of());
         announce(turn.user(), List.of());
-        dispatch(new AiClient.TurnRequest("turn", conversation.id, turn.assistant().id, turn.user().id, null, content, null, null));
-    }
-
-    public MessageOutput answerQuestion(String conversationId, String userId, String questionId, AnswerInput input) {
-        getOwned(conversationId, userId);
-        Message pending = messages.findFirstByConversationIdAndSenderAndStatusOrderByCreatedAtDesc(conversationId, "ai", "question")
-                .filter(m -> questionId.equals(readMetadata(m).getOrDefault("choice", Map.of()) instanceof Map<?, ?> c ? c.get("question_id") : null))
-                .orElseThrow(() -> AppException.notFound("câu hỏi đang chờ trả lời"));
-        dispatch(new AiClient.TurnRequest("resume", conversationId, pending.id, null, null, null, input.label(), null));
-        return toOutput(pending);
+        dispatch(new AiClient.TurnRequest("turn", conversation.id, turn.assistant().id, turn.user().id, null, content, null));
     }
 
     public void cancel(String conversationId, String userId) {
@@ -147,15 +137,12 @@ public class MessageService {
         }
     }
 
-    /** ai gửi kết quả cuối của lượt: thay toàn bộ `metadata` (reasoning/choice) bằng bản mới nhất. */
+    /** ai gửi kết quả cuối của lượt: thay toàn bộ `metadata` (reasoning) bằng bản mới nhất. */
     public void applyTurnResult(String messageId, TurnResultInput input) {
         Message message = messages.findById(messageId).orElseThrow(() -> AppException.notFound("tin nhắn " + messageId));
         Map<String, Object> metadata = new HashMap<>();
         if (input.reasoning() != null && !input.reasoning().isEmpty()) {
             metadata.put("reasoning", input.reasoning());
-        }
-        if (input.choice() != null) {
-            metadata.put("choice", input.choice());
         }
         message.content = input.content() == null ? "" : input.content();
         message.status = input.status();

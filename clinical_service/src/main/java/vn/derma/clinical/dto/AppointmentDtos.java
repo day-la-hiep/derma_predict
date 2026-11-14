@@ -67,10 +67,12 @@ public final class AppointmentDtos {
   public record SourceMessageOutput(String id, String sender, String content, String createdAt) {
   }
 
+  /** `present` false = người bệnh nói không có; vị trí và khởi phát lấy từ tổn thương/cạnh trong graph theo dõi (null khi không có). */
   public record ClinicalFactOutput(String id, String templateLabel, String factType, String detail,
                                    String verifiedAt, String createdAt, String updatedAt,
                                    List<String> sourceMessageIds,
-                                   List<SourceMessageOutput> sourceMessages) {
+                                   List<SourceMessageOutput> sourceMessages,
+                                   boolean present, String siteText, String onsetText, String onsetAt, String lesionId) {
   }
 
   public record PatientProfileDto(String id, String fullName, String dob, String gender,

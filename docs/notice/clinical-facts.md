@@ -1,3 +1,5 @@
+> **Đã thay thế (2026-11-12):** dữ kiện lâm sàng không còn nằm trong database clinical. Nguồn duy nhất là graph theo dõi (Neo4j, `Pt*`) do knowledge giữ, xem `docs/notice/patient-fact-graph.md`. Clinical chỉ chụp snapshot fact vào `finalize_reports.snapshot` lúc bác sĩ chốt. Bảng `clinical_facts` / `clinical_provenances` và các mục bên dưới chỉ mô tả dữ liệu cũ; entity, repository và đường ghi đã bỏ khỏi code, bảng vẫn còn trong DB (chưa drop).
+
 # Dữ kiện lâm sàng: bảng hiện trạng + nhật ký nguồn + đợt bệnh
 
 Từ migration `07a23a2f124b` (fact hiện trạng), `9d9ebfce7f5b` (đợt bệnh) và `5b2e8c41d7a9` (bỏ cột dị ứng / tiền sử), 2026-11-03. Thiết kế đầy đủ: `tmp/plan/2026-11-03-de-xuat-schema.html`.
@@ -13,10 +15,8 @@ Từ migration `07a23a2f124b` (fact hiện trạng), `9d9ebfce7f5b` (đợt bệ
 - `PatientProfileDto.allergies` / `medical_history` (thẻ bệnh nhân của bác sĩ) và `SnapshotPatientProfile.allergies` / `medical_history` vẫn là chuỗi nhưng được **ghép từ fact** (`long_term_text`; snapshot ghép từ fact bác sĩ gửi lúc chốt). Payload Qdrant ca bệnh đọc từ snapshot.
 - `message_id` của nhật ký là `ON DELETE SET NULL`: xoá hội thoại không làm fact mất bằng chứng (đọc `quote`).
 
-## Memory (LangGraph store) ≠ fact
-- Memory theo hồ sơ chỉ còn thông tin **giao tiếp** (ai nhắn hộ, xưng hô, mức chi tiết, ưu tiên). Prompt `BATCH_SYSTEM` / `CONSOLIDATE_SYSTEM` cấm lưu lâm sàng; phơi nhiễm (nghề nghiệp, mỹ phẩm, thú nuôi), mang thai / cho con bú → bộ trích fact ghi `history`.
-- Trong prompt agent, memory nằm ở khối "Về người dùng" (không phải căn cứ y khoa), fact ở khối "Hồ sơ lâm sàng" (plan / reflect / answer).
-- Memory cũ (câu tự do lâm sàng) xoá bằng `scripts/clear_profile_memories.py --apply` (mặc định chạy thử); giữ `memories_archive`.
+## Memory (LangGraph store)
+- Đã bỏ hẳn ngày 2026-11-14, xem `docs/notice/agent-graph-versions.md`.
 
 ## Điểm dễ nhầm
 - **Mục chưa rõ vùng** (fact theo đợt, giả thuyết, ảnh không có `body_site` hợp lệ) gắn vào: đợt duy nhất lượt này đã chạm → nếu không, đợt `open` duy nhất của hội thoại → nếu vẫn không xác định được thì **bỏ (log)**. Fact bị bỏ vẫn nằm trong state của agent và được gửi lại ở lượt sau. Ảnh khi lượt chạm nhiều vùng: gắn vào đợt có giả thuyết trùng nhãn top-1 của CNN.

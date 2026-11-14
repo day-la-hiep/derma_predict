@@ -4,24 +4,11 @@ export type MessageStatus =
   | "pending"
   | "streaming"
   | "done"
-  | "queued"
-  | "question";
+  | "queued";
 
 export type ReasoningStepStatus = "processing" | "done";
 
 export type ReasoningStepType = "default" | "tool" | "thinking";
-
-export interface ChoiceOption {
-  id: string;
-  label: string;
-}
-
-export interface MessageChoice {
-  questionId: string;
-  question: string;
-  options: ChoiceOption[];
-  answered?: { optionId: string; label: string; custom?: boolean };
-}
 
 /** Một bước trong chuỗi suy luận của AI */
 export interface ReasoningStep {
@@ -35,7 +22,6 @@ export interface ReasoningStep {
   status: ReasoningStepStatus;
   /** Loại bước suy luận: default (thông thường), tool hoặc thinking */
   type?: ReasoningStepType;
-  choice?: MessageChoice;
 }
 
 /** `id` là id tạm phía client, sau `POST /uploads` được thay bằng object key MinIO thật. */
@@ -72,8 +58,6 @@ export interface ChatMessage {
   attachments?: FileAttachment[];
   createdAt: string;
   status: MessageStatus;
-  choice?: MessageChoice;
-  isOptionResponse?: boolean;
   /** `consultation_*` = tin mốc đầu/cuối phiên bác sĩ, hiện thành đường chia thay vì bubble */
   messageType?: string;
 }
@@ -112,7 +96,6 @@ export interface ReasoningMetadata {
   toolMetadata?: ToolMetadata;
   stepId?: string;
   stepType?: "default" | "tool_call";
-  choice?: MessageChoice;
 }
 
 export interface ConversationStreamEvent {
@@ -136,9 +119,8 @@ export type FlatStreamEvent =
       conversationId: string;
       stepId: string;
       title: string;
-      stepType?: "default" | "tool_call" | "tool_ask";
-      choice?: MessageChoice;
-    }
+      stepType?: "default" | "tool_call";
+        }
   | {
       type: "reasoning.step_delta";
       messageId: string;
@@ -152,8 +134,7 @@ export type FlatStreamEvent =
       conversationId: string;
       stepId: string;
       stepType?: "default" | "tool_call";
-      choice?: MessageChoice;
-    }
+        }
   | {
       type: "message.delta";
       messageId: string;
@@ -169,15 +150,6 @@ export type FlatStreamEvent =
        * tích luỹ qua `message.delta` + `reasoning` bên dưới thay vào đó. */
       content?: string;
       reasoning?: ReasoningStep[];
-    }
-  /** Turn tạm dừng ở tool `ask_user` (`core/app/agent/tools.py`) — backend thật CHỈ gửi
-   * event này (không qua `reasoning.step_*`), khác mock vẫn dùng
-   * `reasoning.step_completed` kèm `choice` cho luồng hỏi-đáp mô phỏng. */
-  | {
-      type: "message.question";
-      messageId: string;
-      conversationId: string;
-      choice: MessageChoice;
     }
   /** Tin của bệnh nhân/bác sĩ đã ghi DB (room). `message` là `ApiChatMessage` snake_case, chuyển bằng `toChatMessage`. */
   | {
@@ -240,14 +212,6 @@ export type FlatStreamEvent =
  */
 export type ChatStreamEvent = ConversationStreamEvent | FlatStreamEvent;
 
-/** Câu trả lời cho câu hỏi agent đã đưa ra */
-export interface MessageAnswer {
-  questionId: string;
-  optionId: string;
-  label: string;
-  custom?: boolean;
-}
-
 export interface CreateConversationInput {
   userId: string;
   /** tin nhắn đầu tiên — cùng tên `Message.content` ở base */
@@ -267,10 +231,6 @@ export interface SendMessageInput {
   attachments?: FileAttachment[];
 }
 
-/** Input trả lời 1 câu hỏi agent đang chờ — đi qua endpoint riêng
- * `POST /conversations/{id}/questions/{questionId}/answer`, KHÔNG qua sendMessage. */
-export type AnswerQuestionInput = MessageAnswer & { conversationId: string };
-
 /** Kết quả `POST /conversations/{id}/messages` — Core trả về CẢ user message vừa lưu
  * lẫn row assistant tạo sẵn (`status="queued"`). FE gắn `assistantMessage.id` vào bubble
  * assistant rồi lắng nghe SSE theo id đó (không cần chờ `message.started`). */
@@ -287,7 +247,6 @@ export interface ChatService {
   getMessages(conversationId: string): Promise<ChatMessage[]>;
   createConversation(input?: Partial<CreateConversationInput> | string): Promise<Conversation>;
   sendMessage(input: SendMessageInput): Promise<SendMessageResult | void> | void;
-  answerQuestion(input: AnswerQuestionInput): Promise<void> | void;
   /** Dừng turn đang chạy; kết quả về qua `message.done`. Bản mock không có. */
   cancelTurn?(conversationId: string): Promise<void>;
   updateDocument(input: {

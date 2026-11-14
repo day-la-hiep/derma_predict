@@ -28,40 +28,8 @@ INSERT INTO ai_hypotheses (id, episode_id, rank, diagnosis_code, disease, confid
     ('seed-hyp-parent-face-1', 'seed-ep-parent-face', 1, 'Eczema', 'Viêm da tiết bã', 'vừa', '[{"source":"Hướng dẫn chẩn đoán và điều trị Da liễu, Viêm da tiết bã","text":"Ban đỏ, vảy mỏng ở nếp mũi má, đỏ rát kéo dài."}]', '["Vảy dầu ở da đầu"]'),
     ('seed-hyp-parent-face-2', 'seed-ep-parent-face', 2, 'Rosacea', 'Trứng cá đỏ (rosacea)', 'thấp', '[{"source":"Hướng dẫn chẩn đoán và điều trị Da liễu, Trứng cá đỏ","text":"Đỏ rát vùng giữa mặt, giãn mạch."}]', '["Giãn mạch hay mụn mủ"]');
 
--- ---------------------------------------------------------------- dữ kiện lâm sàng
--- dài hạn (episode_id NULL): dị ứng, tiền sử, thuốc
-INSERT INTO clinical_facts (id, patient_profile_id, episode_id, fact_type, label, detail, verified_at, verified_by_id, created_at, updated_at) VALUES
-    ('seed-fact-self-allergy', 'pp-user-1-self', NULL, 'allergy', 'Penicillin', 'Dị ứng thuốc Penicillin', now() - interval '20 days', 'doctor-1', now() - interval '22 days', now() - interval '20 days'),
-    ('seed-fact-self-history', 'pp-user-1-self', NULL, 'history', 'Viêm da cơ địa', 'Viêm da cơ địa mạn tính từ nhỏ', now() - interval '20 days', 'doctor-1', now() - interval '22 days', now() - interval '20 days'),
-    ('seed-fact-parent-med', 'pp-user-1-parent', NULL, 'medication', 'Thuốc hạ huyết áp', 'Đang dùng thuốc hạ huyết áp mỗi sáng', NULL, NULL, now() - interval '4 days', now() - interval '4 days'),
-    -- theo đợt
-    ('seed-fact-face-1', 'pp-user-1-self', 'seed-ep-self-face', 'lesion', 'Da đỏ hai bên má', 'Ban đỏ lan hai bên má, tăng khi gặp nắng', now() - interval '45 days', 'doctor-1', now() - interval '47 days', now() - interval '45 days'),
-    ('seed-fact-face-2', 'pp-user-1-self', 'seed-ep-self-face', 'symptom', 'Nóng rát', 'Nóng rát nhẹ khoảng 3 tuần, tăng khi ăn đồ cay', now() - interval '45 days', 'doctor-1', now() - interval '47 days', now() - interval '45 days'),
-    ('seed-fact-tay-1', 'pp-user-1-self', 'seed-ep-self-tay', 'lesion', 'Mảng da khô ở khuỷu tay', 'Mảng da khô, bong vảy ở nếp gấp khuỷu', now() - interval '20 days', 'doctor-1', now() - interval '22 days', now() - interval '20 days'),
-    ('seed-fact-tay-2', 'pp-user-1-self', 'seed-ep-self-tay', 'symptom', 'Ngứa', 'Ngứa nhiều về đêm, khoảng hai tuần', now() - interval '20 days', 'doctor-1', now() - interval '22 days', now() - interval '20 days'),
-    ('seed-fact-chan-1', 'pp-user-1-self', 'seed-ep-self-chan', 'symptom', 'Ngứa rát', 'Ngứa rát ở cẳng chân 4 ngày', NULL, NULL, now() - interval '2 days', now() - interval '2 days'),
-    ('seed-fact-chan-2', 'pp-user-1-self', 'seed-ep-self-chan', 'lesion', 'Mảng đỏ ở cẳng chân', 'Vài mảng đỏ, mới đổi sữa tắm tuần trước', NULL, NULL, now() - interval '2 days', now() - interval '2 days'),
-    ('seed-fact-mat-1', 'pp-user-1-spouse', 'seed-ep-spouse-mat', 'lesion', 'Mụn viêm ở cằm và má', 'Nhiều mụn viêm, có mụn đầu đen, đau khi chạm', now() - interval '10 days', 'doctor-1', now() - interval '12 days', now() - interval '10 days'),
-    ('seed-fact-mat-2', 'pp-user-1-spouse', 'seed-ep-spouse-mat', 'symptom', 'Nặng hơn trước kỳ kinh', 'Kéo dài khoảng 2 tháng, nặng lên trước kỳ kinh', now() - interval '10 days', 'doctor-1', now() - interval '12 days', now() - interval '10 days'),
-    ('seed-fact-spchan-1', 'pp-user-1-spouse', 'seed-ep-spouse-chan', 'symptom', 'Ngứa sau khi tắm', 'Da cẳng chân ngứa tăng sau khi tắm', NULL, NULL, now() - interval '1 day', now() - interval '1 day'),
-    ('seed-fact-spchan-2', 'pp-user-1-spouse', 'seed-ep-spouse-chan', 'lesion', 'Da khô nứt', 'Da cẳng chân khô, nứt nẻ', NULL, NULL, now() - interval '1 day', now() - interval '1 day'),
-    ('seed-fact-child-1', 'pp-user-1-child', 'seed-ep-child-tay', 'lesion', 'Mẩn đỏ ở cánh tay', 'Mẩn đỏ ở mặt gập cánh tay, trẻ gãi nhiều', NULL, NULL, now() - interval '3 days', now() - interval '3 days'),
-    ('seed-fact-child-2', 'pp-user-1-child', 'seed-ep-child-tay', 'symptom', 'Ngứa', 'Khởi phát khoảng 5 ngày trước', NULL, NULL, now() - interval '3 days', now() - interval '3 days'),
-    ('seed-fact-parent-1', 'pp-user-1-parent', 'seed-ep-parent-face', 'lesion', 'Đỏ ở nếp mũi má', 'Ban đỏ kèm vảy mỏng hai bên mũi', NULL, NULL, now() - interval '4 days', now() - interval '4 days'),
-    ('seed-fact-parent-2', 'pp-user-1-parent', 'seed-ep-parent-face', 'symptom', 'Đỏ rát', 'Đỏ rát kéo dài hơn một tháng', NULL, NULL, now() - interval '4 days', now() - interval '4 days');
-
--- nguồn của dữ kiện: trích tin nhắn trong hội thoại AI (consultation.sql)
-INSERT INTO clinical_provenances (id, fact_id, kind, message_id, quote, doctor_id, encounter_id, detail, created_at) VALUES
-    ('seed-prov-face-1', 'seed-fact-face-1', 'chat', 'seed-msg-face-1', 'hai bên má tôi hay đỏ, nhất là khi ra nắng', NULL, NULL, '', now() - interval '47 days'),
-    ('seed-prov-face-2', 'seed-fact-face-2', 'chat', 'seed-msg-face-3', 'cảm giác nóng rát nhẹ, khoảng 3 tuần rồi', NULL, NULL, '', now() - interval '47 days'),
-    ('seed-prov-tay-1', 'seed-fact-tay-1', 'chat', 'seed-msg-tay-1', 'Khuỷu tay tôi nổi mảng da khô', NULL, NULL, '', now() - interval '22 days'),
-    ('seed-prov-tay-2', 'seed-fact-tay-2', 'chat', 'seed-msg-tay-1', 'ngứa nhiều về đêm, đã khoảng hai tuần', NULL, NULL, '', now() - interval '22 days'),
-    ('seed-prov-allergy', 'seed-fact-self-allergy', 'chat', 'seed-msg-tay-3', 'dị ứng Penicillin', NULL, NULL, '', now() - interval '22 days'),
-    ('seed-prov-history', 'seed-fact-self-history', 'chat', 'seed-msg-tay-3', 'Tôi bị viêm da cơ địa từ nhỏ', NULL, NULL, '', now() - interval '22 days'),
-    ('seed-prov-chan-1', 'seed-fact-chan-1', 'chat', 'seed-msg-chan-1', 'Cẳng chân tôi ngứa rát', NULL, NULL, '', now() - interval '2 days'),
-    ('seed-prov-chan-2', 'seed-fact-chan-2', 'chat', 'seed-msg-chan-3', 'Tuần trước tôi có đổi sữa tắm mới', NULL, NULL, '', now() - interval '2 days'),
-    ('seed-prov-mat-1', 'seed-fact-mat-1', 'chat', 'seed-msg-mat-1', 'nổi nhiều mụn viêm, có mụn đầu đen', NULL, NULL, '', now() - interval '12 days'),
-    ('seed-prov-mat-2', 'seed-fact-mat-2', 'chat', 'seed-msg-mat-3', 'nặng hơn trước kỳ kinh', NULL, NULL, '', now() - interval '12 days');
+-- dữ kiện lâm sàng (dị ứng, tiền sử, thuốc, triệu chứng, tổn thương) KHÔNG nằm trong database clinical: chúng ở graph theo dõi (Neo4j) do knowledge giữ;
+-- dữ liệu mẫu ở scripts/seed/patient_facts.json, nạp bởi scripts/reseed-user-data.sh qua POST /internal/patient-facts/apply. Bảng clinical_facts / clinical_provenances chỉ còn là dữ liệu cũ.
 
 -- ---------------------------------------------------------------- lịch hẹn (requested | confirmed | in_progress | done | cancelled | no_show)
 INSERT INTO appointments (id, patient_profile_id, episode_id, doctor_id, doctor_name, scheduled_at, status, reason, cancel_reason, created_at) VALUES

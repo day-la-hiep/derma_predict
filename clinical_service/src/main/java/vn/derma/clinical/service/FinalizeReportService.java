@@ -52,16 +52,13 @@ import vn.derma.clinical.dto.FinalizeDtos.SnapshotProfile;
 import vn.derma.clinical.dto.FinalizeDtos.SnapshotProvenance;
 import vn.derma.clinical.entity.Appointment;
 import vn.derma.clinical.entity.ClinicalEpisode;
-import vn.derma.clinical.entity.ClinicalFact;
-import vn.derma.clinical.entity.ClinicalProvenance;
 import vn.derma.clinical.entity.Encounter;
+import vn.derma.clinical.model.PatientFact;
 import vn.derma.clinical.entity.FinalizeReport;
 import vn.derma.clinical.entity.PatientImage;
 import vn.derma.clinical.mapper.FinalizeMapper;
 import vn.derma.clinical.repository.AppointmentRepository;
 import vn.derma.clinical.repository.ClinicalEpisodeRepository;
-import vn.derma.clinical.repository.ClinicalFactRepository;
-import vn.derma.clinical.repository.ClinicalProvenanceRepository;
 import vn.derma.clinical.repository.EncounterRepository;
 import vn.derma.clinical.repository.FinalizeReportRepository;
 import vn.derma.clinical.repository.PatientImageRepository;
@@ -75,8 +72,7 @@ public class FinalizeReportService {
 
     private final FinalizeReportRepository reports;
     private final PatientImageRepository images;
-    private final ClinicalFactRepository facts;
-    private final ClinicalProvenanceRepository provenances;
+    private final PatientFactService patientFacts;
     private final ClinicalEpisodeRepository episodes;
     private final AppointmentRepository appointments;
     private final EncounterRepository encounters;
@@ -95,7 +91,7 @@ public class FinalizeReportService {
     public List<FinalizeReportItemOutput> listMine(String doctorId, String q) {
         List<FinalizeReport> mine = reports.findByDoctorIdOrderByCreatedAtDesc(doctorId);
         Map<String, IdentityClient.ProfileDetail> profiles = identity.getProfiles(mine.stream().map(r -> r.patientProfileId).collect(Collectors.toSet()));
-        Map<String, List<ClinicalFact>> longTerm = appointmentService.longTermOf(profiles.keySet());
+        Map<String, List<PatientFact>> longTerm = appointmentService.longTermOf(profiles.keySet());
         Map<String, List<PatientImage>> imagesByReport = imagesOf(mine);
         String needle = q == null ? "" : q.trim().toLowerCase();
         List<FinalizeReportItemOutput> out = new ArrayList<>();
@@ -129,7 +125,7 @@ public class FinalizeReportService {
         Encounter encounter = ownedEncounter(encounterId, doctorId);
         Appointment appointment = appointments.findById(encounter.appointmentId).orElseThrow(() -> AppException.notFound("lịch hẹn của lần khám"));
         var detail = appointmentService.detail(doctorId, appointment.id);
-        List<ClinicalFact> rows = facts.findForExam(appointment.patientProfileId, appointment.episodeId);
+        List<PatientFact> rows = patientFacts.current(appointment.patientProfileId);
         List<DiagnosisOptionOutput> options = ClinicalCodes.DIAGNOSIS_CODE_LABELS.entrySet().stream().sorted(Map.Entry.comparingByKey())
                 .map(e -> new DiagnosisOptionOutput(e.getKey(), e.getValue())).toList();
         return new EncounterDraftOutput(detail.patient(), draftFacts(rows), suggestions(appointment.patientProfileId, rows), encounterId, appointment.id,
@@ -147,16 +143,15 @@ public class FinalizeReportService {
         Encounter encounter = ownedEncounter(encounterId, doctorId);
         Appointment appointment = appointments.findById(encounter.appointmentId).orElseThrow(() -> AppException.notFound("lịch hẹn của lần khám"));
         IdentityClient.ProfileDetail profile = profileOf(appointment.patientProfileId);
-        // nội dung tin nguồn lấy từ consultation trước transaction để không giữ kết nối DB trong lúc gọi mạng
-        List<ClinicalFact> before = facts.findForExam(profile.id(), appointment.episodeId);
+        // fact hiện hành đọc từ graph và nội dung tin nguồn lấy từ consultation trước transaction để không giữ kết nối DB trong lúc gọi mạng;
+        // graph không đọc được thì ném 502 và không chốt gì (không lưu snapshot thiếu dữ kiện)
+        List<PatientFact> before = patientFacts.current(profile.id());
         Map<String, List<SnapshotProvenance>> sources = provenancesOf(before);
-        // mô tả của bác sĩ → dữ kiện: gọi ai trước transaction (không giữ kết nối DB lúc gọi mạng); ai lỗi thì ném 502 và không chốt gì
-        String bodySite = episodes.findById(appointment.episodeId).map(e -> ClinicalCodes.BODY_SITE_LABELS.getOrDefault(e.bodySite, e.bodySite)).orElse("");
-        List<AiClient.DescribedFact> known = body.facts().stream().map(f -> new AiClient.DescribedFact(f.factType(), f.label().trim(), f.detail().trim())).toList();
-        List<AiClient.DescribedFact> described = ai.extractFactsFromDescription(body.description().trim(), bodySite, known);
-        Set<String> fromDescription = new HashSet<>();
-        FinalizeInput effective = withDescribedFacts(body, described, fromDescription);
-        FinalizeReport report = tx.execute(status -> closeEncounter(encounter.id, appointment.id, profile, doctorId, doctorName, effective, sources, fromDescription));
+        // mô tả của bác sĩ → dữ kiện: gọi ai trước transaction; ai lỗi thì ném 502 và không chốt gì
+        List<AiClient.DescribedFact> known = body.facts().stream().map(f -> new AiClient.DescribedFact(f.factType(), f.label().trim(), f.detail().trim(), f.siteText(), f.onsetText())).toList();
+        List<AiClient.DescribedFact> described = ai.extractFactsFromDescription(body.description().trim(), known);
+        FinalizeInput effective = withDescribedFacts(body, described);
+        FinalizeReport report = tx.execute(status -> closeEncounter(encounter.id, appointment.id, profile, doctorId, doctorName, effective, sources, before));
         publish(report);
         consultation.openFollowupUntil(encounterId, profile.id(), doctorId, Instant.now().plus(Duration.ofDays(properties.followupDays())));
         return output(report, imagesOf(List.of(report)).getOrDefault(report.id, List.of()));
@@ -168,9 +163,9 @@ public class FinalizeReportService {
 
     /**
      * Gộp dữ kiện từ mô tả vào danh sách bác sĩ giữ lại: trùng khoá (loại + nhãn) với một dữ kiện đã giữ thì thay `detail` bằng lời bác sĩ
-     * (origin thành doctor_corrected), chưa có thì thêm mới (doctor_observed). Khoá của dữ kiện đến từ mô tả được ghi vào `fromDescription`.
+     * (origin thành doctor_corrected), chưa có thì thêm mới (doctor_observed); vị trí và khởi phát chỉ ghi khi bác sĩ viết rõ.
      */
-    private FinalizeInput withDescribedFacts(FinalizeInput body, List<AiClient.DescribedFact> described, Set<String> fromDescription) {
+    private FinalizeInput withDescribedFacts(FinalizeInput body, List<AiClient.DescribedFact> described) {
         List<FactInput> merged = new ArrayList<>(body.facts());
         for (AiClient.DescribedFact d : described) {
             if (d.label() == null || d.label().isBlank() || !ClinicalCodes.FACT_TYPES.contains(d.factType())) {
@@ -187,18 +182,26 @@ public class FinalizeReportService {
             }
             if (at >= 0) {
                 FactInput old = merged.get(at);
-                merged.set(at, new FactInput(old.sourceFactId(), old.factType(), old.label(), detail));
+                merged.set(at, new FactInput(old.sourceFactId(), old.factType(), old.label(), detail, firstText(d.siteText(), old.siteText()), firstText(d.onsetText(), old.onsetText())));
             } else {
-                merged.add(new FactInput(null, d.factType(), normalize(d.label()), detail));
+                merged.add(new FactInput(null, d.factType(), normalize(d.label()), detail, blankToNull(d.siteText()), blankToNull(d.onsetText())));
             }
-            fromDescription.add(key);
         }
         return new FinalizeInput(body.diagnosis(), body.notes(), body.isReferenceCase(), body.reasoning(), body.urgency(), body.instructions(), merged, body.images(),
                 body.diagnosisCode(), body.description());
     }
 
+    private static String blankToNull(String text) {
+        return text == null || text.isBlank() ? null : text.trim();
+    }
+
+    private static String firstText(String preferred, String fallback) {
+        String first = blankToNull(preferred);
+        return first != null ? first : blankToNull(fallback);
+    }
+
     private FinalizeReport closeEncounter(String encounterId, String appointmentId, IdentityClient.ProfileDetail profile, String doctorId, String doctorName,
-            FinalizeInput body, Map<String, List<SnapshotProvenance>> sources, Set<String> fromDescription) {
+            FinalizeInput body, Map<String, List<SnapshotProvenance>> sources, List<PatientFact> rows) {
         Encounter encounter = encounters.findById(encounterId).orElseThrow(() -> AppException.notFound("lần khám"));
         Appointment appointment = appointments.findById(appointmentId).orElseThrow(() -> AppException.notFound("lịch hẹn của lần khám"));
         ClinicalEpisode episode = episodes.findById(appointment.episodeId).orElseThrow(() -> AppException.notFound("đợt bệnh của lần khám"));
@@ -208,65 +211,30 @@ public class FinalizeReportService {
         if (reports.existsByEncounterId(encounterId)) {
             throw AppException.conflict("Lần khám này đã có kết luận.");
         }
-        List<ClinicalFact> rows = facts.findForExam(profile.id(), episode.id);
-        Map<String, ClinicalFact> byId = rows.stream().collect(Collectors.toMap(f -> f.id, Function.identity()));
+        Map<String, PatientFact> byId = rows.stream().collect(Collectors.toMap(f -> f.id, Function.identity()));
         Set<String> keys = new HashSet<>();
         for (FactInput f : body.facts()) {
             if (!keys.add(f.factType() + "|" + normalize(f.label()).toLowerCase())) {
                 throw AppException.invalid("Có hai dữ kiện trùng loại và nhãn, hãy gộp lại thành một.");
             }
-            ClinicalFact source = f.sourceFactId() == null ? null : byId.get(f.sourceFactId());
+            PatientFact source = f.sourceFactId() == null ? null : byId.get(f.sourceFactId());
             if (f.sourceFactId() != null && source == null) {
                 throw AppException.invalid("Dữ kiện nguồn không còn hiệu lực hoặc không thuộc lần khám này, hãy tải lại form.");
             }
-            if (source != null && (source.episodeId == null) != ClinicalCodes.LONG_TERM_FACT_TYPES.contains(f.factType())) {
+            if (source != null && source.isLongTerm() != ClinicalCodes.LONG_TERM_FACT_TYPES.contains(f.factType())) {
                 throw AppException.invalid("Không đổi dữ kiện giữa nhóm dài hạn (dị ứng, tiền sử, thuốc) và nhóm theo đợt.");
             }
         }
         Set<String> kept = body.facts().stream().map(FactInput::sourceFactId).filter(java.util.Objects::nonNull).collect(Collectors.toSet());
-        List<ClinicalFact> removed = rows.stream().filter(f -> !kept.contains(f.id)).toList();
+        List<PatientFact> removed = rows.stream().filter(f -> !kept.contains(f.id)).toList();
 
         // snapshot dựng từ trạng thái TRƯỚC khi sửa để so ra fact bác sĩ đã đổi
         Snapshot snapshot = buildSnapshot(profile, body, byId, sources, removed.stream().map(f -> removedFact(f, sources)).toList());
         Set<String> allowedImages = allowedImageKeys(profile.id(), sources);
         allowedImages.addAll(appointmentService.imagePredictions(episode).stream().map(ImagePredictionOutput::fileId).toList());
 
+        // chốt không ghi ngược vào graph: fact bị bỏ, fact từ mô tả và dấu xác nhận của bác sĩ chỉ nằm trong snapshot (graph chỉ phản ánh điều người bệnh nói)
         Instant now = Instant.now();
-        facts.deleteAll(removed);
-        facts.flush(); // Hibernate chèn trước khi xoá: xoá xong mới thêm dữ kiện cùng khoá (mô tả nhắc lại dữ kiện bác sĩ vừa bỏ) để không vi phạm chỉ mục duy nhất
-        List<ClinicalProvenance> logs = new ArrayList<>();
-        for (FactInput f : body.facts()) {
-            String label = normalize(f.label()), detail = f.detail().trim();
-            ClinicalFact fact = f.sourceFactId() == null ? null : byId.get(f.sourceFactId());
-            if (fact != null) {
-                fact.factType = f.factType();
-                fact.label = label;
-                fact.detail = detail;
-            } else {
-                fact = new ClinicalFact();
-                fact.patientProfileId = profile.id();
-                fact.episodeId = ClinicalCodes.LONG_TERM_FACT_TYPES.contains(f.factType()) ? null : episode.id;
-                fact.factType = f.factType();
-                fact.label = label;
-                fact.detail = detail;
-                fact.createdAt = now;
-            }
-            fact.updatedAt = now;
-            fact.verifiedAt = now;
-            fact.verifiedById = doctorId;
-            facts.save(fact);
-            ClinicalProvenance log = new ClinicalProvenance();
-            log.factId = fact.id;
-            log.kind = "doctor";
-            log.doctorId = doctorId;
-            log.encounterId = encounterId;
-            // dữ kiện từ mô tả thì dẫn nguồn là chính mô tả (rút gọn theo giới hạn của cột), còn lại giữ nhãn như trước
-            log.quote = fromDescription.contains(factKey(f.factType(), label)) ? excerpt(body.description()) : label;
-            log.detail = detail;
-            log.createdAt = now;
-            logs.add(log);
-        }
-        provenances.saveAll(logs);
 
         FinalizeReport report = store(profile.id(), doctorId, doctorName, body, snapshot, encounterId, body.diagnosisCode(), allowedImages);
         encounter.status = "closed";
@@ -334,23 +302,30 @@ public class FinalizeReportService {
 
     // ---------------------------------------------------------------- snapshot
 
-    private Snapshot buildSnapshot(IdentityClient.ProfileDetail profile, FinalizeInput body, Map<String, ClinicalFact> sourceFacts,
+    private Snapshot buildSnapshot(IdentityClient.ProfileDetail profile, FinalizeInput body, Map<String, PatientFact> sourceFacts,
             Map<String, List<SnapshotProvenance>> sources, List<SnapshotFact> removed) {
         List<SnapshotFact> out = new ArrayList<>();
         for (FactInput f : body.facts()) {
-            ClinicalFact source = f.sourceFactId() == null ? null : sourceFacts.get(f.sourceFactId());
+            PatientFact source = f.sourceFactId() == null ? null : sourceFacts.get(f.sourceFactId());
             if (f.sourceFactId() != null && source == null) {
                 throw AppException.invalid("Dữ kiện nguồn không còn hiệu lực hoặc không thuộc bệnh nhân này, hãy tải lại form.");
             }
             String label = f.label().trim(), detail = f.detail().trim();
             String origin = "doctor_observed";
             List<SnapshotProvenance> provenanceList = List.of();
+            String siteText = blankToNull(f.siteText()), onsetText = blankToNull(f.onsetText()), onsetAt = null, kgNodeId = null;
+            boolean present = true;
             if (source != null) {
                 boolean unchanged = label.equals(source.label) && detail.equals(source.detail) && f.factType().equals(source.factType);
                 origin = unchanged ? defaultOrigin(source.factType) : "doctor_corrected";
                 provenanceList = sources.getOrDefault(source.id, List.of());
+                siteText = firstText(siteText, source.siteText);
+                onsetText = firstText(onsetText, source.onsetText);
+                onsetAt = source.onsetAt;
+                kgNodeId = source.kgNodeId;
+                present = source.present;
             }
-            out.add(new SnapshotFact(f.factType(), label, detail, origin, provenanceList));
+            out.add(new SnapshotFact(f.factType(), label, detail, origin, provenanceList, siteText, onsetText, onsetAt, kgNodeId, present));
         }
         SnapshotProfile snapshotProfile = mapper.toSnapshotProfile(profile, joinLines(out, "allergy"), joinLines(out, "history"));
         Assessment assessment = new Assessment(body.reasoning().trim(), body.urgency(), body.instructions().stream().map(String::trim).filter(i -> !i.isEmpty()).toList(),
@@ -358,7 +333,7 @@ public class FinalizeReportService {
         return new Snapshot(snapshotProfile, assessment, out, removed);
     }
 
-    private SnapshotFact removedFact(ClinicalFact f, Map<String, List<SnapshotProvenance>> sources) {
+    private SnapshotFact removedFact(PatientFact f, Map<String, List<SnapshotProvenance>> sources) {
         return mapper.toSnapshotFact(f, defaultOrigin(f.factType), sources.getOrDefault(f.id, List.of()));
     }
 
@@ -371,31 +346,24 @@ public class FinalizeReportService {
         return "image_finding".equals(factType) ? "ai_inferred" : "patient_reported";
     }
 
-    private static String excerpt(String text) {
-        String t = normalize(text);
-        return t.length() <= 500 ? t : t.substring(0, 500);
-    }
-
     private static String normalize(String text) {
         return String.join(" ", text.trim().split("\\s+"));
     }
 
-    /** Bằng chứng của từng fact: tin gốc chép nguyên lúc chốt; không lấy được tin thì dùng đoạn trích đã lưu cùng fact. */
-    private Map<String, List<SnapshotProvenance>> provenancesOf(List<ClinicalFact> list) {
-        if (list.isEmpty()) {
+    /** Bằng chứng của từng fact: tin gốc (theo `sourceMessageId` trên cạnh graph) chép nguyên lúc chốt; không lấy được tin thì fact không có bằng chứng. */
+    private Map<String, List<SnapshotProvenance>> provenancesOf(List<PatientFact> list) {
+        Set<String> messageIds = list.stream().map(f -> f.sourceMessageId).filter(java.util.Objects::nonNull).collect(Collectors.toCollection(LinkedHashSet::new));
+        if (messageIds.isEmpty()) {
             return Map.of();
         }
-        List<ClinicalProvenance> rows = provenances.findByFactIdInOrderByCreatedAtAsc(list.stream().map(f -> f.id).toList()).stream().filter(p -> p.messageId != null)
-                .toList();
-        Map<String, ConsultationClient.MessageInfo> messages = consultation.getMessages(rows.stream().map(p -> p.messageId).collect(Collectors.toCollection(LinkedHashSet::new)));
-        Map<String, Map<String, SnapshotProvenance>> byFact = new LinkedHashMap<>();
-        for (ClinicalProvenance p : rows) {
-            ConsultationClient.MessageInfo m = messages.get(p.messageId);
-            SnapshotMessage message = m != null ? mapper.toSnapshotMessage(m) : mapper.toSnapshotMessage(p);
-            byFact.computeIfAbsent(p.factId, k -> new LinkedHashMap<>()).putIfAbsent(p.messageId, new SnapshotProvenance(message));
-        }
+        Map<String, ConsultationClient.MessageInfo> messages = consultation.getMessages(messageIds);
         Map<String, List<SnapshotProvenance>> out = new HashMap<>();
-        byFact.forEach((factId, map) -> out.put(factId, List.copyOf(map.values())));
+        for (PatientFact f : list) {
+            ConsultationClient.MessageInfo m = f.sourceMessageId == null ? null : messages.get(f.sourceMessageId);
+            if (m != null) {
+                out.put(f.id, List.of(new SnapshotProvenance(mapper.toSnapshotMessage(m))));
+            }
+        }
         return out;
     }
 
@@ -436,7 +404,7 @@ public class FinalizeReportService {
         return profile;
     }
 
-    private List<DraftFactOutput> draftFacts(List<ClinicalFact> list) {
+    private List<DraftFactOutput> draftFacts(List<PatientFact> list) {
         Map<String, List<SnapshotProvenance>> sources = provenancesOf(list);
         return list.stream().map(f -> mapper.toDraftFact(f, defaultOrigin(f.factType), presign(sources.getOrDefault(f.id, List.of())))).toList();
     }
@@ -447,7 +415,7 @@ public class FinalizeReportService {
     }
 
     /** Lỗi knowledge chỉ làm mất gợi ý, không chặn đóng ca. */
-    private GraphSuggestionOutput suggestions(String profileId, List<ClinicalFact> list) {
+    private GraphSuggestionOutput suggestions(String profileId, List<PatientFact> list) {
         List<String> previousConditions = new ArrayList<>(), previousAdvice = new ArrayList<>(), candidates = new ArrayList<>(), redFlags = new ArrayList<>(),
                 notes = new ArrayList<>();
         try {
@@ -458,7 +426,9 @@ public class FinalizeReportService {
             log.warn("Không đọc được lịch sử từ đồ thị bệnh nhân {}", profileId, e);
             notes.add("Không đọc được lịch sử từ đồ thị bệnh nhân.");
         }
-        List<String> symptoms = list.stream().filter(f -> f.factType.equals("symptom") || f.factType.equals("lesion")).map(f -> f.label).toList();
+        // chỉ triệu chứng và hình thái (nhóm 1, 2) còn hiện diện; ưu tiên tên chuẩn tiếng Anh của nút đã khớp vì `translate=false` ở đây
+        List<String> symptoms = list.stream().filter(f -> f.present && f.category != null && Set.of(1, 2).contains(f.category))
+                .map(f -> f.kgName != null ? f.kgName : f.label).distinct().toList();
         if (!symptoms.isEmpty()) {
             try {
                 KnowledgeClient.IntentResult found = knowledge.runIntent("diseases_with_symptom", symptoms, 5);
@@ -502,6 +472,7 @@ public class FinalizeReportService {
         if (list == null) {
             return List.of();
         }
-        return list.stream().map(f -> new SnapshotFact(f.factType(), f.label(), f.detail(), f.origin(), presign(f.provenances() == null ? List.of() : f.provenances()))).toList();
+        return list.stream().map(f -> new SnapshotFact(f.factType(), f.label(), f.detail(), f.origin(), presign(f.provenances() == null ? List.of() : f.provenances()),
+                f.siteText(), f.onsetText(), f.onsetAt(), f.kgNodeId(), f.present())).toList();
     }
 }

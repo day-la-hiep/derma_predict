@@ -223,17 +223,6 @@ export const seedConversations: SeedConversation[] = [
             status: "done",
           },
         ],
-        choice: {
-          questionId: "q-namda-demo",
-          question: "Bạn muốn tôi tư vấn khía cạnh nào khi điều trị nấm da chân?",
-          options: [
-            { id: "qt1", label: "Chọn thuốc chống nấm bôi" },
-            { id: "qt2", label: "Khi nào cần thuốc chống nấm uống" },
-            { id: "qt3", label: "Phòng tái phát và vệ sinh" },
-            { id: "qt4", label: "Nấm móng đi kèm" },
-          ],
-          answered: { optionId: "qt3", label: "Phòng tái phát và vệ sinh" },
-        },
         createdAt: "2026-08-16T14:02:00.000Z",
         status: "done",
       },
