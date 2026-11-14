@@ -1,0 +1,184 @@
+[
+ {
+  "patient_id": "pp-user-1-self",
+  "facts": [
+   {
+    "category": 5,
+    "label": "Penicillin",
+    "detail": "Dị ứng thuốc Penicillin",
+    "source_message_id": "seed-msg-tay-3",
+    "object_type": "drug",
+    "kind": "allergy"
+   },
+   {
+    "category": 5,
+    "label": "Viêm da cơ địa",
+    "detail": "Viêm da cơ địa mạn tính từ nhỏ",
+    "source_message_id": "seed-msg-tay-3",
+    "object_type": "disease",
+    "of": "self"
+   },
+   {
+    "category": 2,
+    "label": "Da đỏ hai bên má",
+    "detail": "Ban đỏ lan hai bên má, tăng khi gặp nắng",
+    "object_type": "effect/phenotype",
+    "lesion_id": "seed-lesion-self-face",
+    "site_text": "hai bên má",
+    "source_message_id": "seed-msg-face-1"
+   },
+   {
+    "category": 4,
+    "label": "nắng",
+    "detail": "",
+    "lesion_id": "seed-lesion-self-face",
+    "site_text": "",
+    "source_message_id": "seed-msg-face-1",
+    "effect": "aggravate"
+   },
+   {
+    "category": 1,
+    "label": "Nóng rát",
+    "detail": "Nóng rát nhẹ, tăng khi ăn đồ cay",
+    "object_type": "effect/phenotype",
+    "lesion_id": "seed-lesion-self-face",
+    "site_text": "",
+    "onset_text": "khoảng 3 tuần",
+    "source_message_id": "seed-msg-face-3"
+   },
+   {
+    "category": 2,
+    "label": "Mảng da khô",
+    "detail": "Mảng da khô, bong vảy ở nếp gấp khuỷu",
+    "object_type": "effect/phenotype",
+    "lesion_id": "seed-lesion-self-tay",
+    "site_text": "khuỷu tay",
+    "source_message_id": "seed-msg-tay-1"
+   },
+   {
+    "category": 1,
+    "label": "Ngứa",
+    "detail": "Ngứa nhiều về đêm",
+    "object_type": "effect/phenotype",
+    "lesion_id": "seed-lesion-self-tay",
+    "site_text": "",
+    "onset_text": "khoảng hai tuần",
+    "source_message_id": "seed-msg-tay-1"
+   },
+   {
+    "category": 1,
+    "label": "Ngứa rát",
+    "detail": "Ngứa rát ở cẳng chân",
+    "object_type": "effect/phenotype",
+    "lesion_id": "seed-lesion-self-chan",
+    "site_text": "cẳng chân",
+    "onset_text": "4 ngày"
+   },
+   {
+    "category": 2,
+    "label": "Mảng đỏ",
+    "detail": "Vài mảng đỏ, mới đổi sữa tắm tuần trước",
+    "object_type": "effect/phenotype",
+    "lesion_id": "seed-lesion-self-chan",
+    "site_text": ""
+   }
+  ]
+ },
+ {
+  "patient_id": "pp-user-1-spouse",
+  "facts": [
+   {
+    "category": 2,
+    "label": "Mụn viêm",
+    "detail": "Nhiều mụn viêm, có mụn đầu đen, đau khi chạm",
+    "object_type": "effect/phenotype",
+    "lesion_id": "seed-lesion-spouse-mat",
+    "site_text": "cằm và má"
+   },
+   {
+    "category": 1,
+    "label": "Đau",
+    "detail": "Đau khi chạm vào mụn",
+    "object_type": "effect/phenotype",
+    "lesion_id": "seed-lesion-spouse-mat",
+    "site_text": ""
+   },
+   {
+    "category": 3,
+    "label": "nặng hơn trước kỳ kinh",
+    "detail": "Kéo dài khoảng 2 tháng, nặng lên trước kỳ kinh",
+    "lesion_id": "seed-lesion-spouse-mat",
+    "site_text": "",
+    "onset_text": "khoảng 2 tháng",
+    "name": "course"
+   },
+   {
+    "category": 1,
+    "label": "Ngứa",
+    "detail": "Da cẳng chân ngứa tăng sau khi tắm",
+    "object_type": "effect/phenotype",
+    "lesion_id": "seed-lesion-spouse-chan",
+    "site_text": "cẳng chân"
+   },
+   {
+    "category": 2,
+    "label": "Da khô nứt",
+    "detail": "Da cẳng chân khô, nứt nẻ",
+    "object_type": "effect/phenotype",
+    "lesion_id": "seed-lesion-spouse-chan",
+    "site_text": ""
+   }
+  ]
+ },
+ {
+  "patient_id": "pp-user-1-child",
+  "facts": [
+   {
+    "category": 2,
+    "label": "Mẩn đỏ",
+    "detail": "Mẩn đỏ ở mặt gập cánh tay, trẻ gãi nhiều",
+    "object_type": "effect/phenotype",
+    "lesion_id": "seed-lesion-child-tay",
+    "site_text": "mặt gập cánh tay"
+   },
+   {
+    "category": 1,
+    "label": "Ngứa",
+    "detail": "Trẻ gãi nhiều",
+    "object_type": "effect/phenotype",
+    "lesion_id": "seed-lesion-child-tay",
+    "site_text": "",
+    "onset_text": "khoảng 5 ngày trước"
+   }
+  ]
+ },
+ {
+  "patient_id": "pp-user-1-parent",
+  "facts": [
+   {
+    "category": 5,
+    "label": "Thuốc hạ huyết áp",
+    "detail": "Đang dùng thuốc hạ huyết áp mỗi sáng",
+    "object_type": "drug",
+    "kind": "taking"
+   },
+   {
+    "category": 2,
+    "label": "Ban đỏ kèm vảy mỏng",
+    "detail": "Ban đỏ kèm vảy mỏng hai bên mũi",
+    "object_type": "effect/phenotype",
+    "lesion_id": "seed-lesion-parent-face",
+    "site_text": "nếp mũi má"
+   },
+   {
+    "category": 1,
+    "label": "Đỏ rát",
+    "detail": "Đỏ rát kéo dài",
+    "object_type": "effect/phenotype",
+    "lesion_id": "seed-lesion-parent-face",
+    "site_text": "",
+    "onset_text": "hơn một tháng"
+   }
+  ]
+ }
+]
