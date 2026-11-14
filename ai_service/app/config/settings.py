@@ -39,6 +39,9 @@ class Settings(SharedSettings):
     AGENT_PRE_DIAGNOSIS_VERSION: Literal["v2", "v3"] = "v3"
     # Rỗng = không ghi; có giá trị thì ghi kết quả từng node ra `<dir>/<conversation_id>.jsonl` (chứa dữ liệu y tế, để trong /tmp của repo).
     AGENT_STEP_LOG_DIR: str = ""
+    # Trường payload Qdrant để lọc guideline theo bệnh (v3 khối 2). `primary_disease_ids` (theo tiêu đề) chỉ phủ 2.2% chunk vì mục lục sách
+    # chỉ tới mức chương, nên mặc định lọc theo bệnh được nhắc trong chunk (`make tag-chunk-diseases`).
+    AGENT_GUIDELINE_FILTER_FIELD: Literal["primary_disease_ids", "mentioned_disease_ids"] = "mentioned_disease_ids"
     AGENT_TRIAGE_MODEL: str = ""
     AGENT_FINALIZE_REPORT_SEARCH_ENABLED: bool = True
     AGENT_THINKING_LEVEL: str = "medium"

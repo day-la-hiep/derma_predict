@@ -1,0 +1,26 @@
+{
+  "_note": "Luật red flag viết tay, CHƯA có bác sĩ duyệt. id lấy từ Neo4j (PrimeKG). Nhóm triệu chứng khớp khi có fact present trùng ids hoặc chữ (text/text_en) chứa một keyword.",
+  "urgent_diseases": [
+    {"id": "disease:18229", "name": "Stevens-Johnson syndrome"},
+    {"id": "disease:19810", "name": "toxic epidermal necrolysis"},
+    {"id": "disease:15340", "name": "DRESS"},
+    {"id": "disease:18181", "name": "staphylococcal scalded skin syndrome"},
+    {"id": "disease:4835", "name": "necrotizing fasciitis"},
+    {"id": "disease:42972", "name": "meningococcemia"},
+    {"id": "disease:5105_5012", "name": "melanoma"},
+    {"id": "disease:5230", "name": "cellulitis"}
+  ],
+  "symptom_groups": {
+    "fever": {"ids": ["effect/phenotype:1945"], "keywords": ["sốt", "fever"]},
+    "mucosal": {"ids": ["effect/phenotype:155", "effect/phenotype:10280"], "keywords": ["loét miệng", "niêm mạc", "mắt đỏ", "viêm kết mạc", "oral ulcer", "mucosal"]},
+    "blistering": {"ids": ["effect/phenotype:200037"], "keywords": ["bọng nước", "phỏng nước", "bong tróc", "blister", "bulla"]},
+    "rapid_spread": {"ids": [], "keywords": ["lan nhanh", "sưng nóng đỏ", "rapidly spreading"]},
+    "purpura": {"ids": [], "keywords": ["xuất huyết", "chấm tím", "ban xuất huyết", "purpura"]}
+  },
+  "combos": [
+    {"name": "nghi phản ứng thuốc nặng (SJS/TEN)", "all": ["recent_drug", "fever", "mucosal"], "urgency": "urgent"},
+    {"name": "bọng nước kèm tổn thương niêm mạc", "all": ["blistering", "mucosal"], "urgency": "urgent"},
+    {"name": "nghi nhiễm trùng mô mềm lan nhanh", "all": ["fever", "rapid_spread"], "urgency": "urgent"},
+    {"name": "sốt kèm ban xuất huyết", "all": ["fever", "purpura"], "urgency": "urgent"}
+  ]
+}

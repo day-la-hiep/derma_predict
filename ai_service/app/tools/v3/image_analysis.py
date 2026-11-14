@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from app.common.llm import get_model
 from app.config.settings import settings
 from app.deps import get_attachment_store
-from app.prompt.v3.pre_diagnosis_prompts import DESCRIBE_IMAGE
+from app.prompt.v3.pre_diagnosis_prompts import DESCRIBE_IMAGE, VLM_VERIFY
 from app.tools.skin_image.analysis import predict_skin_image_labels
 from app.tools.skin_image.vision import _to_data_uri  # pyright: ignore[reportPrivateUsage]
 from app.tools.v3.extract_slots import Slot, Slots
@@ -91,3 +91,17 @@ async def describe_image(key: str, index: int) -> tuple[list[Slot], str | None]:
     if quality == "poor":
         return [], "model ảnh báo ảnh không nhận định được"
     return [s.model_copy(update={"source": "image", "ref": index}) for s in slots], None
+
+
+async def vlm_verify(key: str, phenotype: str) -> str:
+    """Câu hỏi đóng trên ảnh: yes / no / unclear (unclear cả khi không có model ảnh, ảnh hỏng hay trả lời lạ)."""
+    if not settings.AGENT_VISION_MODEL:
+        return "unclear"
+    data = await get_attachment_store().get_object_bytes(key)
+    if data is None or await asyncio.to_thread(check_image_quality, data):
+        return "unclear"
+    uri = await asyncio.to_thread(_to_data_uri, data)
+    messages = [SystemMessage(VLM_VERIFY), HumanMessage(content=[{"type": "image_url", "image_url": {"url": uri}}, {"type": "text", "text": f"Ảnh có dấu hiệu: {phenotype}?"}])]
+    reply = await asyncio.wait_for(get_model(settings.AGENT_VISION_MODEL).ainvoke(messages), timeout=settings.AGENT_VISION_TIMEOUT)
+    word = reply.text.strip().lower().split()[0].strip(".,!\"'") if reply.text.strip() else ""
+    return word if word in ("yes", "no") else "unclear"

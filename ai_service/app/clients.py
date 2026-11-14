@@ -70,6 +70,23 @@ class KnowledgeClient:
         """Mỗi mention `{text, text_en, object_type}` → `{exact: {id, name} | None, candidates: [{id, name}]}`, cùng thứ tự."""
         return await self._post("/internal/kg/link-candidates", {"mentions": mentions, "limit": limit})
 
+    async def rank_diseases(self, present: list[dict[str, str]], absent: list[dict[str, str]], top_k: int = 12) -> list[dict[str, Any]]:
+        """Nút `{type, id}` → `[{id, name, score, why, absent}]` (id bệnh PrimeKG, chưa có tiền tố)."""
+        return await self._post("/internal/kg/rank-diseases", {"present": present, "absent": absent, "top_k": top_k})
+
+    async def get_disease_ids(self, names: list[str]) -> dict[str, list[str]]:
+        return await self._post("/internal/kg/disease-ids", {"names": names})
+
+    async def get_disease_profiles(self, disease_ids: list[str]) -> dict[str, dict[str, list[dict[str, Any]]]]:
+        """id bệnh (không tiền tố) → `{positive: [{id, name, weight}], negative: [...]}`."""
+        return await self._post("/internal/kg/disease-profile", {"disease_ids": disease_ids})
+
+    async def get_drug_notes(self, drugs: list[dict[str, str]], symptoms: list[dict[str, str]], disease_names: list[str]) -> list[str]:
+        return await self._post("/internal/kg/drug-notes", {"drugs": drugs, "symptoms": symptoms, "disease_names": disease_names})
+
+    async def get_discriminating_questions_by_ids(self, disease_ids: list[str], known_phenotype_ids: list[str], top_k: int = 3) -> dict[str, Any]:
+        return await self._post("/internal/kg/discriminating-questions", {"disease_ids": disease_ids, "known_phenotype_ids": known_phenotype_ids, "top_k": top_k})
+
     async def apply_patient_facts(self, patient_id: str, facts: list[dict[str, Any]]) -> dict[str, Any]:
         """Ghi fact vào graph theo dõi; trả `{applied, skipped: [{index, reason}], lesions}`."""
         return await self._post("/internal/patient-facts/apply", {"patient_id": patient_id, "facts": facts})

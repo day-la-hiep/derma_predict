@@ -15,6 +15,7 @@ class GuidelineNote(BaseModel):
     fact: str
     stance: Literal["support", "refute", "irrelevant"]
     chunk_id: str
+    quote: str = ""
 
 
 class EvidenceRow(BaseModel):
@@ -24,6 +25,9 @@ class EvidenceRow(BaseModel):
     contradicted: list[str] = []
     unexplained: list[str] = []
     guideline: list[GuidelineNote] = []
+    score: float = 0.0
+    # matched / missing / contradicted là node_id; tên để hiển thị và đưa vào prompt
+    names: dict[str, str] = {}
 
 
 class Claim(BaseModel):

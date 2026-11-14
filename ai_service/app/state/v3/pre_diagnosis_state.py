@@ -17,6 +17,10 @@ class PreDiagnosisState(TypedDict):
     # Ảnh của lượt này không dùng được (mờ, quá nhỏ): khối hỏi thêm nhắc gửi lại; không giữ sang lượt sau
     image_issues: NotRequired[list[str]]
     hypotheses: NotRequired[list[dict[str, Any]]]
+    # Khối 2–3 cache theo disease_id để lượt sau không gọi lại khi giả thuyết không đổi; `annotated` = chunk_id đã cho LLM đánh giá
+    profiles: NotRequired[dict[str, Any]]
+    chunks: NotRequired[dict[str, list[dict[str, Any]]]]
+    annotated: NotRequired[list[str]]
     evidence: NotRequired[list[dict[str, Any]]]
     # node_id đã hỏi bệnh nhân, không hỏi lại
     asked: NotRequired[list[str]]
@@ -30,4 +34,4 @@ class PreDiagnosisState(TypedDict):
 
 
 # Phần state giữ lại giữa các lượt (`ChatState.diag`).
-DIAG_KEYS = ("facts", "facts_upto", "cnn_scores", "history_diseases", "recent_drugs", "ambiguous", "hypotheses", "evidence", "asked", "rounds", "ranking", "urgency", "claims")
+DIAG_KEYS = ("facts", "facts_upto", "cnn_scores", "history_diseases", "recent_drugs", "ambiguous", "hypotheses", "profiles", "chunks", "annotated", "evidence", "asked", "rounds", "ranking", "urgency", "claims")
