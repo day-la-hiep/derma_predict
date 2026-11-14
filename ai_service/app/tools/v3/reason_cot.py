@@ -37,6 +37,7 @@ def build_reason_input(facts: list[Fact], hypotheses: list[Hypothesis], evidence
     return "\n".join(["Dữ kiện:", *fact_lines, "", "Bảng bằng chứng:", *rows, "", f"CNN: {cnn_line}"])
 
 
-async def reason_cot(ctx: AgentContext, facts: list[Fact], hypotheses: list[Hypothesis], evidence: list[EvidenceRow], cnn: list[dict[str, Any]]) -> Reasoning:
-    system = REASON_COT.format(body_sites=BODY_SITE_CHOICES)
+async def reason_cot(ctx: AgentContext, facts: list[Fact], hypotheses: list[Hypothesis], evidence: list[EvidenceRow], cnn: list[dict[str, Any]],
+                     retry_hint: str = "") -> Reasoning:
+    system = REASON_COT.format(body_sites=BODY_SITE_CHOICES) + (f"\n\n{retry_hint}" if retry_hint else "")
     return await invoke_structured_with_retry(ctx, Reasoning, [SystemMessage(content=system), HumanMessage(content=build_reason_input(facts, hypotheses, evidence, cnn))])

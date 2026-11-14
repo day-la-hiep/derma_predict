@@ -67,6 +67,16 @@ class ReasonNodeTest(unittest.TestCase):
             out = asyncio.run(conclude_module.reason(state, FakeRuntime(c)))  # type: ignore[arg-type]
         self.assertEqual((out["ranking"], c.turn_hypotheses), ([], []))
 
+    def test_reason_retries_once_when_all_cites_invalid(self):
+        state: dict[str, Any] = {"messages": [], "hypotheses": [h.model_dump() for h in HYPS], "evidence": [ROW.model_dump()]}
+        bad = Reasoning(per_disease=[DiseaseReasoning(disease_id=PSO, summary="x", cites=["E1"])])
+        good = Reasoning(per_disease=[DiseaseReasoning(disease_id=PSO, summary="x", cites=["c1"])])
+        llm = AsyncMock(side_effect=[bad, good])
+        with patch.object(conclude_module, "reason_cot", llm):
+            out = asyncio.run(conclude_module.reason(state, FakeRuntime(ctx())))  # type: ignore[arg-type]
+        self.assertEqual((llm.await_count, out["ranking"][0]["disease_id"]), (2, PSO))
+        self.assertIn("CHỈ chép", llm.call_args.kwargs["retry_hint"])
+
     def test_answer_context_has_red_flags_and_no_disease_names(self):
         state: dict[str, Any] = {"messages": [], "urgency": "urgent", "red_flags": ["nghi SJS/TEN: recent_drug + fever + mucosal"],
                                  "ranking": [{"disease_id": PSO, "name": "psoriasis"}], "facts": []}

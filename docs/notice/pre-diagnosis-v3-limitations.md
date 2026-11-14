@@ -64,8 +64,8 @@ Ký hiệu: ⚠ ảnh hưởng chất lượng kết quả · ⏳ chưa làm / c
 
 | # | Hạn chế | Giải pháp tạm đang dùng | Hướng sửa |
 |---|---|---|---|
-| 4.1 | ⚠ **Kết luận sớm sai bệnh** khi KG đẩy bệnh hiếm lên: ca vảy nến, sau 1 câu hỏi `check` dừng vì pityriasis rubra pilaris hơn psoriasis 0.26 điểm (≥ `DELTA` 0.15) | Bác sĩ vẫn thấy cả danh sách xếp hạng; người bệnh chỉ nhận lời dặn đi khám, không nhận tên bệnh | ⏳ Chốt trọng số (3.1); dừng chỉ khi top-1 có ít nhất N dấu hiệu khớp |
-| 4.2 | ⚠ `verify_claims` loại hết bệnh khi LLM trích sai mã (đo: 1/3 lượt kết luận ra danh sách rỗng, lượt sau cùng ca lại đúng) | Phần cho bác sĩ rỗng nhưng câu trả lời người bệnh vẫn có ("cần bác sĩ khám trực tiếp"); lý do ghi ở bước lập luận | Gọi lại `reason_cot` một lần khi mọi bệnh bị loại; cho LLM chọn mã từ danh sách đóng |
+| 4.1 | ⚠ **Kết luận sớm sai bệnh** khi KG đẩy bệnh hiếm lên: ca vảy nến, sau 1 câu hỏi `check` dừng vì pityriasis rubra pilaris hơn psoriasis 0.26 điểm (≥ `DELTA` 0.15) | Đã thêm: chỉ dừng theo khoảng cách điểm khi bệnh đầu khớp ≥ 3 dấu hiệu (`MIN_MATCHED_TO_STOP`). **Chưa đủ**: chạy lại, PRP khớp đúng 3 (thêm Nail pits) nên vẫn dừng sai. Bác sĩ vẫn thấy cả danh sách; người bệnh chỉ nhận lời dặn đi khám | ⏳ Chốt trọng số (3.1) — gốc vấn đề |
+| 4.2 | ⚠ `verify_claims` loại hết bệnh khi LLM trích sai mã (đo: 1/3 lượt kết luận ra danh sách rỗng) | **Đã sửa**: mọi bệnh bị loại thì gọi lại `reason_cot` một lần kèm nhắc chỉ chép mã trong ngoặc vuông (chạy lại: lần gọi lại cho danh sách đúng). Vẫn lỗi thì phần cho bác sĩ rỗng, người bệnh vẫn có câu trả lời | Cho LLM chọn mã từ danh sách đóng (enum) |
 | 4.3 | ⚠ Kiểm được "ý có trích mã hợp lệ", **không kiểm được** mã đó thật sự ủng hộ ý (đo: LLM trích "Fever" làm căn cứ cho cả SJS lẫn DRESS) | — | Bác sĩ duyệt mẫu; chấm bằng LLM khác |
 | 4.4 | 🔧 Tách `reason_cot` (cho bác sĩ) và câu trả lời người bệnh thành 2 lượt LLM (dễ chấm, chậm hơn gộp ~1 lượt); `reason` 7–30 s | Node `reason` riêng trước `answer`, chỉ `answer` stream token | Gộp nếu cần nhanh hơn |
 | 4.5 | ⚠ Người bệnh **không** được nghe tên bệnh nào (theo doc); có thể thấy "vô ích" | Tên bệnh không đưa vào ngữ cảnh của `answer`; giả thuyết chỉ gửi tab bác sĩ qua `turn_hypotheses` | Quyết định sản phẩm |
@@ -73,7 +73,9 @@ Ký hiệu: ⚠ ảnh hưởng chất lượng kết quả · ⏳ chưa làm / c
 | 4.7 | 🔧 Giả thuyết không có `body_site` hợp lệ và hội thoại chưa có đợt bệnh nào thì clinical bỏ qua (giống v2) | LLM chọn `body_site` theo danh sách mã | — |
 | 4.8 | ⚠ `code` (22 lớp CNN) suy từ tên bệnh qua bảng tên tay của v2 (`canon`); bệnh ngoài 22 lớp ra `OTHER` | Dùng lại `normalize_code` | Map theo `cnn_to_disease.json` ngược lại |
 | 4.9 | ⚠ `vlm_verify` gọi cho mọi câu hỏi "discriminate/missing" khi lượt có ảnh, không biết trước phenotype có nhìn thấy được không | Prompt yêu cầu `unclear` khi không thấy được; tối đa 1 lần/lượt; chỉ ảnh của lượt hiện tại | Danh sách phenotype nhìn thấy được |
-| 4.10 | 🔧 Chưa chạy qua worker + RabbitMQ + FE, chưa có ca có ảnh thật (cần ảnh trong MinIO) | Chạy graph trực tiếp với model + Neo4j + Qdrant thật, knowledge tạm ở cổng khác | ⏳ Chạy trên FE |
+| 4.10 | 🔧 Chưa chạy qua worker + RabbitMQ + FE. **Chưa thử ca có ảnh**: bucket MinIO đính kèm và `ml/data/SkinCaRe` đều trống, model ảnh `local:medgemma:4b` (Ollama :11434) không chạy | Chạy graph trực tiếp với model + Neo4j + Qdrant thật, knowledge tạm ở cổng khác; nhánh ảnh chỉ có unit test | ⏳ Bật Ollama + có ảnh mẫu, chạy trên FE |
+| 4.12 | ⚠ Câu hỏi phân biệt vẫn lạc đề sau khi mở rộng `is_askable` (lần chạy sau hỏi "Short stature"): lọc từ khoá chỉ chữa từng trường hợp | — | Như 3.8: danh sách phenotype hỏi được; hoặc chỉ lấy phenotype da / niêm mạc / móng / tóc |
+| 4.13 | ⚠ So với v2 cùng mô tả vảy nến: v2 (LLM dẫn dắt) nhận định vảy nến là khả năng cao nhất và nói với người bệnh; v3 xếp vảy nến hạng 2 (sau PRP) và không nêu tên bệnh | v2 vẫn chạy được (`AGENT_PRE_DIAGNOSIS_VERSION=v2`, chạy thật 42 s) để đối chiếu | Đánh giá có nhãn trước khi kết luận bản nào tốt hơn (xem pending) |
 | 4.11 | 🔧 StepRecorder ghi 2 dòng `pre_diagnosis` mỗi lượt (node chat graph và subgraph cùng tên) | Bỏ qua khi đọc | Lọc theo namespace |
 
 **Số đo chạy thật (2026-11-14, Gemma 4 26B qua OpenRouter, chưa có ảnh):**

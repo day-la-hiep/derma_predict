@@ -18,6 +18,7 @@ from app.tools.v3.write_report import build_ranking, build_turn_hypotheses
 
 logger = logging.getLogger(__name__)
 
+RETRY_HINT = "Lần trước các mã trong `cites` không có trong bảng. CHỈ chép nguyên văn mã nằm trong ngoặc vuông của chính bệnh đó (vd effect/phenotype:989 hoặc mã đoạn sách)."
 _URGENCY_TEXT = {"urgent": "KHẨN CẤP — cần đi khám / cấp cứu ngay", "soon": "nên đi khám sớm trong vài ngày", "routine": "có thể đặt lịch khám da liễu"}
 
 
@@ -46,6 +47,14 @@ async def reason(state: PreDiagnosisState, runtime: Runtime[AgentContext]) -> di
         logger.warning("reason: không lập luận được, bỏ phần cho bác sĩ: %s", exc)
         reasoning = Reasoning()
     ranked, claims = verify_claims(reasoning, rows)
+    if reasoning.per_disease and not ranked:
+        # đo thật: ~1/3 lượt LLM trích mã không có trong bảng; thử lại một lần, nhắc chỉ chép mã trong ngoặc vuông
+        logger.warning("reason: mọi bệnh bị loại vì trích dẫn sai, gọi lại một lần")
+        try:
+            reasoning = await reason_cot(ctx, facts, hyps, rows, state.get("cnn_scores", []), retry_hint=RETRY_HINT)
+            ranked, claims = verify_claims(reasoning, rows)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("reason: lần gọi lại lỗi: %s", exc)
     ctx.turn_hypotheses = build_turn_hypotheses(ranked, hyps, rows)
     ranking = build_ranking(ranked, hyps)
     claim_dicts = [c.model_dump() for c in claims]

@@ -85,7 +85,8 @@ class RedFlagTest(unittest.TestCase):
 class StopTest(unittest.TestCase):
     def test_conditions(self):
         two = [hyp("a", 0.8), hyp("b", 0.5)]
-        self.assertTrue(should_stop(two, [], 0, True)[0])
+        self.assertFalse(should_stop(two, [EvidenceRow(disease_id="a", matched=["x", "y"])], 0, True)[0])  # khớp ít: hỏi tiếp
+        self.assertTrue(should_stop(two, [EvidenceRow(disease_id="a", matched=["x", "y", "z"])], 0, True)[0])
         close = [hyp("a", 0.6), hyp("b", 0.5)]
         self.assertEqual(should_stop(close, [], 0, True), (False, "chưa đủ chắc, cần hỏi thêm"))
         self.assertTrue(should_stop(close, [], MAX_ROUNDS, True)[0])
