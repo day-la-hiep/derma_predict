@@ -434,19 +434,107 @@ Dịch vụ giữ checkpoint của đồ thị lập luận và bộ nhớ dài 
 
 \subsection{Đăng nhập và đăng ký}
 
-\subsubsection{Mô tả luồng}
-Người dùng gửi thông tin đăng ký hoặc đăng nhập thông qua API Gateway. Dịch vụ \dbname{identity\_service} tiến hành xác thực mật khẩu (được mã hóa bằng bcrypt), phát hành cặp token (Access Token và Refresh Token) và trả về cho Client.
+\subsubsection{Biểu đồ lớp chi tiết}
+
+\textbf{Đăng nhập}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/chi_tiet_client_dang_nhap.png}
+  \caption{Biểu đồ lớp chi tiết chức năng đăng nhập (client)}
+  \label{fig:class_login_client}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/chi_tiet_identity_service.jpg}
+  \caption{Biểu đồ lớp chi tiết chức năng đăng nhập (\dbname{identity\_service})}
+  \label{fig:class_login_identity}
+\end{figure}
+
+\textbf{Đăng ký}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/chi_tiet_client_dang_ki.png}
+  \caption{Biểu đồ lớp chi tiết chức năng đăng ký (client)}
+  \label{fig:class_register_client}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/chi_tiet_identity_service_dang_ki.jpg}
+  \caption{Biểu đồ lớp chi tiết chức năng đăng ký (\dbname{identity\_service})}
+  \label{fig:class_register_identity}
+\end{figure}
 
 \subsubsection{Biểu đồ tuần tự}
-Tiến trình tương tác giữa Client, API Gateway và \dbname{identity\_service} trong quá trình xác thực và cấp phát mã định danh được mô hình hóa nhằm đảm bảo an toàn truy cập trên toàn hệ thống.
+
+\textbf{Đăng nhập}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/tt_client_dang_nhap.jpg}
+  \caption{Biểu đồ tuần tự chức năng đăng nhập (client)}
+  \label{fig:seq_login_client}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/tt_identity_dang_nhap.jpg}
+  \caption{Biểu đồ tuần tự chức năng đăng nhập (\dbname{identity\_service})}
+  \label{fig:seq_login_identity}
+\end{figure}
+
+\textbf{Đăng ký}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/tt_client_dang_ki.jpg}
+  \caption{Biểu đồ tuần tự chức năng đăng ký (client)}
+  \label{fig:seq_register_client}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/tt_identity_dang_ki.jpg}
+  \caption{Biểu đồ tuần tự chức năng đăng ký (\dbname{identity\_service})}
+  \label{fig:seq_register_identity}
+\end{figure}
 
 \subsection{Hỏi đáp với chatbot tiền chẩn đoán}
 
-\subsubsection{Mô tả luồng}
-Bệnh nhân gửi tin nhắn kèm hình ảnh tổn thương da. \dbname{consultation\_service} lưu trữ tin nhắn và gửi yêu cầu lượt chạy sang \dbname{ai\_service}. Tác nhân AI gọi mô hình CNN để dự đoán nhãn tổn thương, gọi \dbname{knowledge\_service} để tra cứu tài liệu và stream câu trả lời về cho bệnh nhân qua Redis Stream và SSE. Kết thúc lượt, AI tự động ghi nhận các dữ kiện lâm sàng sang \dbname{clinical\_service}.
+\subsubsection{Biểu đồ lớp chi tiết}
+
+Thiết kế biểu đồ lớp chi tiết cho client (module chat):
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/chi_tiet_client_hoi_dap_chatbot.jpg}
+  \caption{Biểu đồ lớp chi tiết module hỏi đáp với chatbot (client)}
+  \label{fig:uml_class_chatbot_client}
+\end{figure}
+
+Thiết kế biểu đồ lớp chi tiết cho \dbname{consultation\_service}:
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/chi_tiet_consultation_service_hoi_dap_chatbot.jpg}
+  \caption{Biểu đồ lớp chi tiết module hỏi đáp với chatbot (\dbname{consultation\_service})}
+  \label{fig:uml_class_chatbot_service}
+\end{figure}
 
 \subsubsection{Biểu đồ tuần tự}
-Biểu đồ tuần tự minh họa luồng trao đổi bất đồng bộ giữa Client, Gateway, Consultation Service, AI Service, Knowledge Service và Clinical Service trong một lượt tư vấn hoàn chỉnh.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/tt_client_hoi_dap_chatbot.jpg}
+  \caption{Biểu đồ tuần tự module hỏi đáp với chatbot (client)}
+  \label{fig:seq_chatbot_client}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/tt_consultation_service_hoi_dap_chatbot.jpg}
+  \caption{Biểu đồ tuần tự module hỏi đáp với chatbot (\dbname{consultation\_service})}
+  \label{fig:seq_chatbot_service}
+\end{figure}
 
 \subsection{Đặt lịch hẹn và tiếp nhận lần khám}
 
