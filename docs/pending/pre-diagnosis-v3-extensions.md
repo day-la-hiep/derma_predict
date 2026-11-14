@@ -1,6 +1,6 @@
 # [Pending] Mở rộng tiền chẩn đoán v3
 
-Những phần của doc thiết kế ("Thiết kế pipeline tiền chẩn đoán da liễu") cố ý chưa làm ở bản v3 hiện tại, hoặc phát sinh khi chạy thật. Hạn chế chi tiết từng giai đoạn: `docs/notice/pre-diagnosis-v3-limitations.md`.
+Những phần của doc thiết kế ("Thiết kế pipeline tiền chẩn đoán da liễu") cố ý chưa làm ở bản v3 hiện tại, hoặc phát sinh khi chạy thật. Hạn chế chi tiết từng giai đoạn: `tmp/plan/tien-chan-doan-v3/05-han-che-va-giai-phap-tam.md` (bản nháp, không theo dõi git).
 
 ## Vấn đề
 Bản v3 chạy thông khối 0–6 nhưng chất lượng xếp hạng phụ thuộc KG (PrimeKG + cạnh trích từ sách) đang thưa và lệch về bệnh hiếm; nhiều bước dùng ngưỡng / trọng số chọn tay.
