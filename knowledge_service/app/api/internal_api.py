@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import (
     get_document_graph_service,
     get_knowledge_graph_service,
+    get_patient_fact_linker,
     get_retrieval_service,
     require_internal_key,
 )
@@ -13,6 +14,7 @@ from app.dto.api import ApiResponse
 from app.services.document_graph_service import DocumentGraphService
 from app.services.kg_intent_service import INTENTS, run_intent
 from app.services.knowledge_graph_service import KnowledgeGraphService
+from app.services.patient_fact_linker import PatientFactLinker
 from app.services.retrieval_corpus import CORPORA, DOCUMENT_CORPUS
 from app.services.retrieval_service import RetrievalFilter, RetrievalService
 
@@ -21,6 +23,7 @@ router = APIRouter(prefix="/internal", tags=["internal"], dependencies=[Depends(
 Retrieval = Annotated[RetrievalService, Depends(get_retrieval_service)]
 DocGraph = Annotated[DocumentGraphService, Depends(get_document_graph_service)]
 KnowledgeGraph = Annotated[KnowledgeGraphService, Depends(get_knowledge_graph_service)]
+Linker = Annotated[PatientFactLinker, Depends(get_patient_fact_linker)]
 
 
 class SearchInput(BaseModel):
@@ -52,6 +55,17 @@ class KgIntentOutput(BaseModel):
     facts: list[dict[str, str]]
     notes: list[str]
     resolved: dict[str, Any]
+
+
+class LinkMention(BaseModel):
+    text: str
+    text_en: str = ""
+    object_type: Literal["effect/phenotype", "disease", "drug", "exposure", "dermo"]  # = LINKABLE_TYPES
+
+
+class LinkCandidatesInput(BaseModel):
+    mentions: list[LinkMention] = Field(max_length=50)
+    limit: int = Field(default=6, ge=1, le=20)
 
 
 class DiscriminatingQuestionsInput(BaseModel):
@@ -100,3 +114,8 @@ async def list_kg_intents() -> ApiResponse[list[str]]:
 @router.post("/kg/discriminating-questions", response_model=ApiResponse[dict[str, Any]])
 async def get_discriminating_questions(body: DiscriminatingQuestionsInput, kg: KnowledgeGraph) -> ApiResponse[dict[str, Any]]:
     return ApiResponse(data=await kg.discriminating_questions(body.diseases, body.known_phenotype_ids, body.top_k))
+
+
+@router.post("/kg/link-candidates", response_model=ApiResponse[list[dict[str, Any]]])
+async def get_link_candidates(body: LinkCandidatesInput, linker: Linker) -> ApiResponse[list[dict[str, Any]]]:
+    return ApiResponse(data=[await linker.find_link_candidates(m.text, m.text_en, m.object_type, body.limit) for m in body.mentions])

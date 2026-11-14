@@ -66,6 +66,10 @@ class KnowledgeClient:
         data = await self._post("/internal/kg/intent", {"intent": intent, "entities": entities, "limit": limit, "translate": translate})
         return data["facts"], data["notes"], data["resolved"]
 
+    async def get_link_candidates(self, mentions: list[dict[str, str]], limit: int = 6) -> list[dict[str, Any]]:
+        """Mỗi mention `{text, text_en, object_type}` → `{exact: {id, name} | None, candidates: [{id, name}]}`, cùng thứ tự."""
+        return await self._post("/internal/kg/link-candidates", {"mentions": mentions, "limit": limit})
+
     async def apply_patient_facts(self, patient_id: str, facts: list[dict[str, Any]]) -> dict[str, Any]:
         """Ghi fact vào graph theo dõi; trả `{applied, skipped: [{index, reason}], lesions}`."""
         return await self._post("/internal/patient-facts/apply", {"patient_id": patient_id, "facts": facts})

@@ -1,7 +1,9 @@
 import logging
+import re
 from collections.abc import Awaitable, Callable
+from difflib import SequenceMatcher
 from functools import cache
-from typing import LiteralString, cast
+from typing import Any, LiteralString, cast
 
 from app.dto.patient_fact import PatientFactInput
 from app.infra.neo4j_client import Neo4jClient
@@ -19,6 +21,15 @@ Translator = Callable[[list[tuple[str, str]]], Awaitable[dict[str, str]]]
 # (nhãn, loại nút, tên các nút ứng viên) → {vị trí mục (từ 0): số ứng viên được chọn}; mục không có ứng viên đúng nghĩa thì vắng mặt
 Chooser = Callable[[list[tuple[str, str, list[str]]]], Awaitable[dict[int, int]]]
 _CANDIDATE_LIMIT = 6
+# Khớp chứa chuỗi chỉ là gợi ý nên trần 0.6; độ giống tên (difflib, thư viện chuẩn thay rapidfuzz chưa cài) để xếp và so top-1/top-2.
+_LOOSE_MAX_SCORE = 0.6
+_HPO_XREF = re.compile(r"^HP:(\d+)")
+_DERMO_XREFS: LiteralString = "MATCH (n:DermoTerm {id: $id}) RETURN n.xrefs AS xrefs"
+_PHENOTYPE_BY_IDS: LiteralString = "MATCH (p:Entity {type: 'effect/phenotype'}) WHERE p.id IN $ids RETURN p.id AS id, p.name AS name ORDER BY p.id LIMIT 1"
+
+
+def get_loose_score(query: str, name: str) -> float:
+    return round(_LOOSE_MAX_SCORE * SequenceMatcher(None, query.lower(), name.lower()).ratio(), 3)
 
 
 @cache
@@ -68,6 +79,30 @@ class PatientFactLinker:
             return None
         rows = await self._neo4j.run(build_exact_query(object_type), names=names)
         return rows[0]["id"] if rows else None
+
+    async def find_link_candidates(self, text: str, text_en: str, object_type: str, limit: int = _CANDIDATE_LIMIT) -> dict[str, Any]:
+        """Ứng viên nút cho một mention, không ghi gì. Điểm: khớp chính xác 1.0; chứa chuỗi tối đa 0.6, xếp theo độ giống tên."""
+        for name in (text_en, text):
+            names = sorted({v.strip().lower() for v in name_variants(name) if v.strip()}) if name else []
+            if names:
+                rows = await self._neo4j.run(build_exact_query(object_type), names=names)
+                if rows:
+                    exact = {"id": rows[0]["id"], "name": rows[0]["name"], "score": 1.0}
+                    xref = await self._find_hpo_xref(rows[0]["id"]) if object_type == "dermo" else None
+                    return {"exact": exact, "candidates": [exact], "xref": xref}
+        query = (text_en or text).strip().lower()
+        rows = await self._neo4j.run(build_loose_query(object_type), name=query, limit=limit) if query else []
+        candidates = [{"id": r["id"], "name": r["name"], "score": get_loose_score(query, r["name"])} for r in rows]
+        return {"exact": None, "candidates": sorted(candidates, key=lambda c: c["score"], reverse=True), "xref": None}
+
+    async def _find_hpo_xref(self, dermo_id: str) -> dict[str, str] | None:
+        """Term DermO có xref HPO mà PrimeKG có node phenotype tương ứng (id PrimeKG = số HPO bỏ số 0 đầu)."""
+        rows = await self._neo4j.run(_DERMO_XREFS, id=dermo_id)
+        hpo = [str(int(m.group(1))) for x in (rows[0]["xrefs"] if rows else None) or [] if (m := _HPO_XREF.match(str(x)))]
+        if not hpo:
+            return None
+        found = await self._neo4j.run(_PHENOTYPE_BY_IDS, ids=hpo)
+        return {"type": "effect/phenotype", "id": found[0]["id"], "name": found[0]["name"]} if found else None
 
     async def link_facts(self, facts: list[PatientFactInput]) -> int:
         """Điền `kg_node_id` cho fact khớp được; trả số fact vừa khớp. Chỉ khớp chính xác tên (trực tiếp, hoặc sau khi LLM dịch sang tên chuẩn): không khớp thì để trống, không đoán."""

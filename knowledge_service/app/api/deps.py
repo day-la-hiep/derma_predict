@@ -95,6 +95,11 @@ def get_patient_journey_service() -> PatientJourneyService:
 
 
 @cache
+def get_patient_fact_linker() -> PatientFactLinker:
+    return PatientFactLinker(get_neo4j_client())
+
+
+@cache
 def get_patient_fact_graph_service() -> PatientFactGraphService:
     return PatientFactGraphService(get_neo4j_client(), PatientFactLinker(get_neo4j_client(), translate_labels, choose_candidates))
 

@@ -10,6 +10,9 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.messages.utils import count_tokens_approximately
 from langchain_core.outputs import ChatGeneration, LLMResult
 
+from app.common.step_recorder import StepRecorder
+from app.config.settings import settings
+
 logger = logging.getLogger("agent.trace")
 
 _PREVIEW = 160
@@ -116,7 +119,10 @@ trace_callback = TraceCallback()
 
 def build_run_config(conversation_id: str) -> RunnableConfig:
     """`thread_id` = `conversation_id`"""
+    callbacks: list[Any] = [trace_callback]
+    if settings.AGENT_STEP_LOG_DIR:
+        callbacks.append(StepRecorder(settings.AGENT_STEP_LOG_DIR, conversation_id))
     return {
         "configurable": {"thread_id": conversation_id},
-        "callbacks": [trace_callback],
+        "callbacks": callbacks,
     }

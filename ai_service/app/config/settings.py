@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from typing import Literal
 
 from derma_shared.settings import SharedSettings
 
@@ -34,6 +35,10 @@ class Settings(SharedSettings):
     }
     AGENT_DEFAULT_MODEL_ID: str = "gemma4-26b"
     AGENT_TRIAGE_ENABLED: bool = True
+    # Phiên bản graph tiền chẩn đoán; v2 giữ lại để đối chiếu (`app/graph/registry.py`).
+    AGENT_PRE_DIAGNOSIS_VERSION: Literal["v2", "v3"] = "v3"
+    # Rỗng = không ghi; có giá trị thì ghi kết quả từng node ra `<dir>/<conversation_id>.jsonl` (chứa dữ liệu y tế, để trong /tmp của repo).
+    AGENT_STEP_LOG_DIR: str = ""
     AGENT_TRIAGE_MODEL: str = ""
     AGENT_FINALIZE_REPORT_SEARCH_ENABLED: bool = True
     AGENT_THINKING_LEVEL: str = "medium"

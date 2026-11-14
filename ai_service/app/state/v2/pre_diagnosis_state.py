@@ -37,3 +37,7 @@ class SkinImageState(TypedDict):
     image_cnn: NotRequired[list[dict[str, Any]]]
     image_cases: NotRequired[dict[str, Any]]
     image_vision: NotRequired[list[dict[str, Any]]]
+
+
+# Phần state giữ lại giữa các lượt (`ChatState.diag`).
+DIAG_KEYS = ("facts", "facts_upto", "plan", "unsupported", "evidence", "evidence_status", "done_calls", "call_results")

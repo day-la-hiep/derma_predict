@@ -226,7 +226,7 @@ class DiagPersistTest(unittest.TestCase):
 
         async def scenario() -> list[Any]:
             with patch.object(settings, "AGENT_TRIAGE_ENABLED", False):
-                graph = build_chat_graph(pre_diagnosis=cast(Any, fake.compile()))
+                graph = build_chat_graph(pre_diagnosis=cast(Any, fake.compile()), version="v2")
             cfg = build_run_config("thread-1")
             await graph.ainvoke({"messages": [HumanMessage(content="tôi ngứa")]}, config=cfg, context=ctx)
             await graph.ainvoke({"messages": [HumanMessage(content="ngứa về đêm")]}, config=cfg, context=ctx)
@@ -251,7 +251,7 @@ class CheckpointerSwapTest(unittest.TestCase):
         fake.add_edge(START, "step")
         fake.add_edge("step", END)
         with patch.object(settings, "AGENT_TRIAGE_ENABLED", False):
-            graph = build_chat_graph(pre_diagnosis=cast(Any, fake.compile()))
+            graph = build_chat_graph(pre_diagnosis=cast(Any, fake.compile()), version="v2")
         default_saver, swapped = graph.checkpointer, InMemorySaver()
         graph.checkpointer = swapped  # cách worker thay checkpoint RAM bằng Postgres sau khi graph đã biên dịch
         ctx = AgentContext(user_id="u", conversation_id="c")
