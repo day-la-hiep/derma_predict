@@ -19,9 +19,9 @@ async def _load_image(key: str) -> bytes | None:
     return data
 
 
-async def _predict(data: bytes) -> list[dict[str, Any]]:
+async def _predict(data: bytes, model_id: str | None = None) -> list[dict[str, Any]]:
     # torch inference (CPU) đồng bộ: chạy thread riêng để không chặn event loop của worker.
-    return await asyncio.to_thread(get_predictor().predict, data, 5)
+    return await asyncio.to_thread(get_predictor(model_id).predict, data, 5)
 
 
 async def _describe_image(data: bytes) -> str:
@@ -45,16 +45,16 @@ _LOAD, _PREDICT, _DESCRIBE, _CASES = (
 )
 
 
-async def predict_skin_image_labels(key: str) -> dict[str, Any] | None:
+async def predict_skin_image_labels(key: str, model_id: str | None = None) -> dict[str, Any] | None:
     data = await _LOAD.ainvoke({"key": key})
     if data is None:
         return None
     try:
-        top = await _PREDICT.ainvoke({"data": data})
+        top = await _PREDICT.ainvoke({"data": data, "model_id": model_id})
     except Exception as exc:  # noqa: BLE001  # CNN lỗi (thiếu checkpoint, ảnh hỏng) không làm hỏng lượt chat
         logger.warning("CNN phân loại ảnh %s lỗi: %s", key, exc)
         return None
-    return {"key": key, "top": top}
+    return {"key": key, "top": top, "model": model_id}
 
 
 async def describe_skin_image_with_vision(key: str) -> dict[str, Any] | None:

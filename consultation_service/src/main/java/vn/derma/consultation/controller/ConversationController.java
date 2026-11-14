@@ -20,6 +20,7 @@ import vn.derma.consultation.common.CurrentUser;
 import vn.derma.consultation.dto.ConversationDtos.ConversationOutput;
 import vn.derma.consultation.dto.ConversationDtos.CreateConversationInput;
 import vn.derma.consultation.dto.ConversationDtos.ModelOption;
+import vn.derma.consultation.dto.ConversationDtos.UpdateConversationImageModelInput;
 import vn.derma.consultation.dto.ConversationDtos.UpdateConversationModelInput;
 import vn.derma.consultation.dto.MessageDtos.AnswerInput;
 import vn.derma.consultation.dto.MessageDtos.MessageOutput;
@@ -43,6 +44,11 @@ public class ConversationController {
         return new ApiResponse<>(conversations.listModels());
     }
 
+    @GetMapping("/image-models")
+    ApiResponse<List<ModelOption>> listImageModels() {
+        return new ApiResponse<>(conversations.listImageModels());
+    }
+
     @GetMapping("/conversations")
     ApiResponse<List<ConversationOutput>> list(@CurrentUser AuthenticatedUser user) {
         return new ApiResponse<>(conversations.list(user.id()));
@@ -58,6 +64,12 @@ public class ConversationController {
     ApiResponse<ConversationOutput> updateModel(@CurrentUser AuthenticatedUser user, @PathVariable String conversationId,
             @Valid @RequestBody UpdateConversationModelInput body) {
         return new ApiResponse<>(conversations.updateModel(conversationId, user.id(), body.model()));
+    }
+
+    @PatchMapping("/conversations/{conversationId}/image-model")
+    ApiResponse<ConversationOutput> updateImageModel(@CurrentUser AuthenticatedUser user, @PathVariable String conversationId,
+            @Valid @RequestBody UpdateConversationImageModelInput body) {
+        return new ApiResponse<>(conversations.updateImageModel(conversationId, user.id(), body.imageModel()));
     }
 
     @GetMapping("/conversations/{conversationId}/messages")

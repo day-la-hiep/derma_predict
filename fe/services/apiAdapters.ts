@@ -25,6 +25,8 @@ export interface ApiConversation {
   id: string;
   patient_profile_id?: string;
   title: string;
+  model?: string;
+  image_model?: string;
   created_at: string;
   updated_at: string;
 }
@@ -115,6 +117,7 @@ export interface ApiSendMessageBody {
   client_message_id: string;
   content: string;
   model_id?: string;
+  image_model_id?: string;
   attached_files?: ApiFileAttachment[];
 }
 
@@ -125,6 +128,7 @@ export function toConversation(a: ApiConversation): Conversation {
     id: a.id,
     patientProfileId: a.patient_profile_id,
     title: a.title ?? "",
+    imageModel: a.image_model,
     createdAt: a.created_at,
     updatedAt: a.updated_at ?? a.created_at,
   };
@@ -183,6 +187,7 @@ export function toSendMessageBody(input: SendMessageInput): ApiSendMessageBody {
     client_message_id: input.clientMessageId ?? input.corrId,
     content: input.content,
     model_id: input.modelId,
+    image_model_id: input.imageModelId,
     attached_files: attachedFiles,
   };
 }

@@ -9,13 +9,16 @@ public final class ConversationDtos {
     }
 
     /** `userId` không còn trong body: chủ hội thoại luôn là tài khoản trong JWT. */
-    public record CreateConversationInput(@NotNull String content, String patientProfileId, String title, String model) {
+    public record CreateConversationInput(@NotNull String content, String patientProfileId, String title, String model, String imageModel) {
     }
 
     public record UpdateConversationModelInput(@NotBlank String model) {
     }
 
-    public record ConversationOutput(String id, String patientProfileId, String title, String model, String createdAt, String updatedAt) {
+    public record UpdateConversationImageModelInput(@NotBlank String imageModel) {
+    }
+
+    public record ConversationOutput(String id, String patientProfileId, String title, String model, String imageModel, String createdAt, String updatedAt) {
     }
 
     public record ModelOption(String id) {

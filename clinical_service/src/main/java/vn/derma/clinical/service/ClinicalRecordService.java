@@ -291,7 +291,13 @@ public class ClinicalRecordService {
             ClinicalEpisode episode = turn.episode(site);
             Map<String, Map<String, Object>> byKey = new LinkedHashMap<>();
             readList(episode.imagePredictions).forEach(p -> byKey.put(String.valueOf(p.get("storage_key")), p));
-            byKey.put(storageKey, Map.of("storage_key", storageKey, "top_k", topK));
+            Map<String, Object> pred = new LinkedHashMap<>();
+            pred.put("storage_key", storageKey);
+            pred.put("top_k", topK);
+            if (image.get("model") != null) {
+                pred.put("model", image.get("model"));
+            }
+            byKey.put(storageKey, pred);
             episode.imagePredictions = json.writeValueAsString(new ArrayList<>(byKey.values()));
             episodes.save(episode);
         }

@@ -25,7 +25,8 @@ public class Conversation {
     public String title = "";
     @Column(nullable = false)
     public String model;
-    /** ai_chat | doctor_followup */
+    @Column(name = "image_model", nullable = false)
+    public String imageModel = "efficientnet-b0";    /** ai_chat | doctor_followup */
     @Column(nullable = false)
     public String kind = "ai_chat";
     @Column(name = "encounter_id")

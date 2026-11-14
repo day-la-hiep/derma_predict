@@ -34,5 +34,6 @@ async def build_context(req: TurnRequest) -> AgentContext:
         message_id=req.message_id,
         image_keys=[a.storage_key for a in (req.attached_files or []) if a.content_type.startswith("image/")],
         model=settings.AGENT_MODEL_CHOICES.get(conversation.get("model") or "", ""),
+        image_model=conversation.get("image_model") or settings.SKIN_CNN_DEFAULT_MODEL,
         known_facts=await _get_known_facts(profile_id),
     )

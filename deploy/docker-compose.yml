@@ -63,8 +63,8 @@ services:
     container_name: derma-rabbitmq
     restart: unless-stopped
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_USER: derma
+      RABBITMQ_DEFAULT_PASS: derma
     ports:
       - "5672:5672"     # AMQP
       - "15672:15672"  # Management UI (guest/guest)
