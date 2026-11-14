@@ -1,18 +1,16 @@
 import asyncio
 import unittest
 from datetime import datetime, timezone
-from io import BytesIO
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 from langchain_core.messages import AIMessage, HumanMessage
-from PIL import Image, ImageDraw
 
 from app.context.agent_context import AgentContext
 from app.graph.v3 import intake as module
 from app.state.v3.facts import Fact
 from app.tools.v3.extract_slots import Slot
-from app.tools.v3.image_analysis import check_image_quality, merge_cnn_predictions, parse_image_slots
+from app.tools.v3.image_analysis import merge_cnn_predictions, parse_image_slots
 from app.tools.v3.link_entities import Link
 from app.tools.v3.load_history import load_history
 
@@ -74,8 +72,8 @@ class IntakeTest(unittest.TestCase):
         self.assertNotIn("cnn_scores", out)
 
     def test_poor_image_reported(self):
-        out, _ = run_intake({"messages": [HumanMessage(content="ngứa", id="m1")]}, CTX_IMG, [], [], image=([], "ảnh mờ (độ nét 3)"))
-        self.assertEqual(out["image_issues"], ["ảnh 1: ảnh mờ (độ nét 3)"])
+        out, _ = run_intake({"messages": [HumanMessage(content="ngứa", id="m1")]}, CTX_IMG, [], [], image=([], "model ảnh báo ảnh không nhận định được"))
+        self.assertEqual(out["image_issues"], ["ảnh 1: model ảnh báo ảnh không nhận định được"])
 
     def test_conflict_opposite_assertion(self):
         slots = [Slot(slot="scale", text="vảy", assertion="absent"), Slot(slot="scale", text="vảy", source="image", ref=1)]
@@ -96,28 +94,12 @@ class IntakeTest(unittest.TestCase):
         self.assertEqual(out["ambiguous"][0]["node_id"], "effect/phenotype:3")
 
 
-def png(size: int, sharp: bool) -> bytes:
-    img = Image.new("RGB", (size, size), (200, 150, 140))
-    if sharp:
-        draw = ImageDraw.Draw(img)
-        for x in range(0, size, 8):
-            draw.line([(x, 0), (x, size)], fill=(0, 0, 0), width=2)
-    buf = BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
-
-
 class HelpersTest(unittest.TestCase):
     def test_merge_cnn_takes_max_and_maps(self):
         out = merge_cnn_predictions([{"top": [{"disease": "Psoriasis", "confidence": 0.4}]},
                                      {"top": [{"disease": "Psoriasis", "confidence": 0.7}, {"disease": "Vitiligo", "confidence": 0.2}]}, None])
         self.assertEqual(out[0], {"label": "Psoriasis", "prob": 0.7, "disease_id": "disease:5083"})
         self.assertIsNone(out[1]["disease_id"])
-
-    def test_image_quality(self):
-        self.assertIn("quá nhỏ", check_image_quality(png(100, True)) or "")
-        self.assertIn("mờ", check_image_quality(png(400, False)) or "")
-        self.assertIsNone(check_image_quality(png(400, True)))
 
     def test_parse_image_slots_from_text_with_noise(self):
         text = 'Đây: ```json\n{"items": [{"slot": "scale", "text": "vảy trắng", "text_en": "scaling", "assertion": "present"},' \

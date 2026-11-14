@@ -117,7 +117,7 @@ class AskNodeTest(unittest.TestCase):
 
 class AskPromptTest(unittest.TestCase):
     def test_image_issue_reminder(self):
-        text = build_ask_prompt(None, ["ảnh 1: ảnh mờ (độ nét 3)"])
+        text = build_ask_prompt(None, ["ảnh 1: model ảnh báo ảnh không nhận định được"])
         self.assertIn("gửi lại ảnh", text)
         self.assertIn("diễn biến", text)
 
