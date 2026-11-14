@@ -18,12 +18,13 @@ ENV UV_HTTP_TIMEOUT=300 \
     UV_HTTP_RETRIES=8
 RUN uv sync --frozen --no-dev
 
-# Checkpoint CNN 44MB chỉ nằm trong image ai
-COPY ml/model/model_output/AdaptiveCNN_SkinDisease_v5_best.pth /model/model_output/AdaptiveCNN_SkinDisease_v5_best.pth
+# Checkpoint CNN (5 model, ~229MB) chỉ nằm trong image ai
+COPY ml/model/model_output/ /model/model_output/
 
 ENV PATH="/app/ai_service/.venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
-    SKIN_CNN_CHECKPOINT_PATH=/model/model_output/AdaptiveCNN_SkinDisease_v5_best.pth
+    SKIN_CNN_MODEL_DIR=/model/model_output \
+    SKIN_CNN_DEFAULT_MODEL=efficientnet-b0
 
 EXPOSE 3055
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3055"]

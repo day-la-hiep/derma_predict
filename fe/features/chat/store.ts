@@ -6,7 +6,7 @@ import { chatService } from "@/services";
 import { toChatMessage, type ApiChatMessage } from "@/services/apiAdapters";
 import { getCurrentUserId } from "@/services/client";
 import { getActiveProfileId } from "@/features/patient-profile/store";
-import { MODEL_OPTIONS } from "./constants";
+import { MODEL_OPTIONS, IMAGE_MODEL_OPTIONS } from "./constants";
 import type {
   ChatMessage,
   ChatStreamEvent,
@@ -52,12 +52,14 @@ interface ChatState {
   loadingMessages: boolean;
   initialized: boolean;
   selectedModelId: string;
+  selectedImageModelId: string;
 
   init: () => Promise<void>;
   /** Vào trạng thái "hội thoại mới" (chưa tạo record); tạo thật khi gửi tin đầu tiên */
   startNewChat: () => void;
   selectConversation: (id: string) => Promise<void>;
   setModel: (modelId: string) => void;
+  setImageModel: (modelId: string) => void;
   /** Kéo về các tin còn thiếu sau khi room nối lại (Pub/Sub không replay) */
   syncMissingMessages: (conversationId: string) => Promise<void>;
   /** Lấy input state hiện tại của hội thoại */
@@ -467,6 +469,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     loadingMessages: false,
     initialized: false,
     selectedModelId: MODEL_OPTIONS[0].id,
+    selectedImageModelId: IMAGE_MODEL_OPTIONS[0].id,
 
     getInputState(convId) {
       const key = convId ?? get().activeId ?? "new";
@@ -539,6 +542,9 @@ export const useChatStore = create<ChatState>((set, get) => {
     setModel(modelId) {
       set({ selectedModelId: modelId });
     },
+    setImageModel(modelId) {
+      set({ selectedImageModelId: modelId });
+    },
 
     async syncMissingMessages(conversationId) {
       // đang có turn chạy thì bubble optimistic chưa có id thật, sync lúc này sẽ nhân đôi tin
@@ -601,7 +607,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         return;
       }
 
-      const { activeId, activeStreams, selectedModelId } = get();
+      const { activeId, activeStreams, selectedModelId, selectedImageModelId } = get();
       if (!activeId) return;
       // Không có Steer: đang có turn chạy thì không gửi tin mới (backend cũng trả 409).
       if ((activeStreams[activeId] ?? 0) > 0) return;
@@ -665,6 +671,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           clientMessageId,
           content: trimmed,
           modelId: selectedModelId,
+          imageModelId: selectedImageModelId,
           attachments,
         })
       ).then((result) => {

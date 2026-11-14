@@ -48,13 +48,17 @@ class Settings(SharedSettings):
     LOCAL_LLM_BASE_URL: str = "http://localhost:11434/v1"
     LOCAL_LLM_API_KEY: str = "local"
     LOCAL_LLM_TIMEOUT: float = 300.0
-    SKIN_CNN_CHECKPOINT_PATH: str = str(
-        _REPO_ROOT
-        / "ml"
-        / "model"
-        / "model_output"
-        / "AdaptiveCNN_SkinDisease_v5_best.pth"
+    SKIN_CNN_MODEL_DIR: str = str(
+        _REPO_ROOT / "ml" / "model" / "model_output"
     )
+    SKIN_CNN_DEFAULT_MODEL: str = "efficientnet-b0"
+    SKIN_CNN_MODELS: dict[str, str] = {
+        "resnet18-baseline": "ResNet18_Baseline_best.pth",
+        "resnet18-amkc": "ResNet18_AMKC_best.pth",
+        "resnet50": "ResNet50_best.pth",
+        "efficientnet-b0": "EfficientNetB0_best.pth",
+        "densenet121": "DenseNet121_best.pth",
+    }
     AGENT_VISION_MODEL: str = ""
     AGENT_VISION_TIMEOUT: float = 120.0
 

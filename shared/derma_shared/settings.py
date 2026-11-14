@@ -17,7 +17,7 @@ class SharedSettings(BaseSettings):
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
 
-    RABBITMQ_URL: str = "amqp://guest:guest@localhost:5672/"
+    RABBITMQ_URL: str = "amqp://derma:derma@localhost:5672/"
 
     MINIO_ENDPOINT: str = "localhost:9000"
     MINIO_ACCESS_KEY: str = "minio"

@@ -23,7 +23,8 @@ class AgentContext:
     image_keys: list[str] = field(default_factory=list)
     # "provider:model" đã resolve từ `Conversation.model`; rỗng thì `select_model` fallback `settings.AGENT_MODEL`.
     model: str = ""
-    # Middleware append trực tiếp; worker giữ cùng reference nên đọc được sau `astream()` để Core lưu lại
+    # id model CNN dùng để phân loại ảnh đính kèm (key trong `settings.SKIN_CNN_MODELS`); rỗng = default.
+    image_model: str = ""    # Middleware append trực tiếp; worker giữ cùng reference nên đọc được sau `astream()` để Core lưu lại
     # (SSE không replay được khi load lại hội thoại)..
     reasoning_steps: list[dict[str, Any]] = field(default_factory=list)
     # Ghi đè mức trần của graph cho riêng lượt này (None = dùng mặc định trong `graph/nodes.py`); chủ yếu để thử trong `agent/test/debug_app.py`.

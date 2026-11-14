@@ -82,6 +82,7 @@ export interface Conversation {
   id: string;
   patientProfileId?: string;
   title: string;
+  imageModel?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -264,6 +265,7 @@ export interface SendMessageInput {
   clientMessageId?: string;
   content: string;
   modelId?: string;
+  imageModelId?: string;
   attachments?: FileAttachment[];
 }
 

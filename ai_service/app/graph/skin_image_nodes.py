@@ -26,7 +26,7 @@ def _keys(runtime: Runtime[AgentContext]) -> list[str]:
 # Làn ảnh là subgraph `image_flow` chạy song song với làn chữ từ đầu lượt: mỗi subgraph có superstep riêng nên không chặn nhau
 # (trong một graph phẳng, node cùng bước chặn bước kế). Kết quả trao cho `label_evidence` qua `ctx.image_result`.
 async def image_cnn(state: SkinImageState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
-    results = [r for r in await asyncio.gather(*(predict_skin_image_labels(k) for k in _keys(runtime))) if r]
+    results = [r for r in await asyncio.gather(*(predict_skin_image_labels(k, runtime.context.image_model) for k in _keys(runtime))) if r]
     found = await search_similar_cases_by_cnn_label(results[0]["top"][0]["disease"]) if SEARCH_CASES_BY_LABEL and results and results[0]["top"] else {}
     return {"image_cnn": results, "image_cases": found}
 
@@ -48,7 +48,8 @@ async def image_done(state: SkinImageState, runtime: Runtime[AgentContext]) -> d
         hints.append(("search_finalize_report_by_image", {"label": found["label"]}, format_similar_cases_hint(found["label"], found["cases"])))
     # kết quả CNN theo ảnh gửi về Core (đợt bệnh), không còn thành fact image_finding
     runtime.context.turn_images = [
-        {"storage_key": r["key"], "top_k": [{"label": t["disease"], "score": float(t["confidence"])} for t in r["top"]]}
+        {"storage_key": r["key"], "model": r.get("model") or runtime.context.image_model or settings.SKIN_CNN_DEFAULT_MODEL,
+         "top_k": [{"label": t["disease"], "score": float(t["confidence"])} for t in r["top"]]}
         for r in cnn
     ]
     future = runtime.context.image_result

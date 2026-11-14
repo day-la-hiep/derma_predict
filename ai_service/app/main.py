@@ -1,7 +1,15 @@
+import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
 
 import uvicorn
+import uvicorn.loops.asyncio as _uvloop
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    # psycopg/asyncpg cần SelectorEventLoop; uvicorn mặc định dùng ProactorEventLoop trên Windows.
+    _uvloop.asyncio_loop_factory = lambda use_subprocess=False: asyncio.SelectorEventLoop
 from derma_shared.errors import AppError
 from derma_shared.log import RequestLogMiddleware, setup_logging
 from fastapi import FastAPI, Request
@@ -42,4 +50,4 @@ async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
 app.include_router(internal_router)
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=settings.PORT, reload=False)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=settings.PORT, reload=False, loop="asyncio")

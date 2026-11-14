@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "derma")
 public record DermaProperties(Jwt jwt, String internalApiKey, String aiUrl, String identityUrl, List<String> models,
-        String defaultModel, int streamReplaySeconds, int staleTurnMinutes, Minio minio, Webrtc webrtc) {
+        String defaultModel, List<String> imageModels, String defaultImageModel, int streamReplaySeconds, int staleTurnMinutes, Minio minio, Webrtc webrtc) {
 
     public record Jwt(String secret) {
     }

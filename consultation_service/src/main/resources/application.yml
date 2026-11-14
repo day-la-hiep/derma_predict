@@ -35,6 +35,8 @@ derma:
   # id ngắn hiển thị cho FE; AI map sang "provider:model" thật (services/ai/app/config/settings.py::AGENT_MODEL_CHOICES)
   models: deepseek-v4-pro,deepseek-v4-flash,gemma4-26b
   default-model: gemma4-26b
+  image-models: resnet18-baseline,resnet18-amkc,resnet50,efficientnet-b0,densenet121
+  default-image-model: efficientnet-b0
   # event còn trong Redis Stream bao lâu; SSE mới mở sẽ phát lại event trong cửa sổ này (bù đoạn POST → mở SSE)
   stream-replay-seconds: 30
   # lượt AI ở trạng thái queued/streaming quá lâu mà không có kết quả thì bị đóng bằng câu báo lỗi

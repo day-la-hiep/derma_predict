@@ -1,8 +1,18 @@
-"""Tool phân loại bệnh da liễu từ ẢNH"""
+"""Tool phân loại bệnh da liễu từ ẢNH.
+
+Hỗ trợ 5 model CNN khác kiến trúc (ResNet-18 Baseline, ResNet-18 + AMKC,
+ResNet-50, EfficientNet-B0, DenseNet-121) huấn luyện trên SkinDisease (22 lớp).
+Kiến trúc và tham số khớp `ml/notebook/adaptive-cnn-skindisease-models.ipynb`
+để `load_state_dict(strict=True)` không lỗi. Mỗi checkpoint tự chứa
+`model_name`, `class_names`, `normalization`, `image_size`, `architecture_config`.
+"""
 
 import asyncio
 import difflib
+import logging
+import threading
 from io import BytesIO
+from pathlib import Path
 from typing import Any, cast
 
 import torch
@@ -16,129 +26,196 @@ from app.context.agent_context import AgentContext
 from app.config.settings import settings
 from app.deps import get_attachment_store
 
+logger = logging.getLogger("ai.skin_cnn")
+
 IMG_SIZE = 224
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 
 
 # =============================================================================
-# KIẾN TRÚC MODEL — PHẢI khớp y hệt lúc train (`model/tool/cnn_predictor.py`) để
-# `load_state_dict(strict=True)` không lỗi.
+# KIẾN TRÚC MODEL — phải khớp y hệt lúc train (notebook Section 5)
 # =============================================================================
 
 
 class AdaptiveMultiKernelConv(nn.Module):
+    """AMKC: Y = X + lambda * sum(tanh(gate_k) * Conv_k(X)), conv khởi tạo 0."""
+
     def __init__(
         self,
-        channels: int = 3,
-        lambda_scale: float = 0.2,
-        init_gate: float = 1.0,
+        in_channels: int = 3,
+        out_channels: int = 3,
+        lambda_scale: float = 0.10,
+        kernels: list[int] | None = None,
+        learnable_gates: bool = True,
     ):
         super().__init__()
+        self.kernels = kernels or [3, 5]
         self.lambda_scale = lambda_scale
-        self.conv3 = nn.Conv2d(
-            channels, channels, kernel_size=3, padding=1, bias=False
-        )
-        self.conv5 = nn.Conv2d(
-            channels, channels, kernel_size=5, padding=2, bias=False
-        )
-        nn.init.zeros_(self.conv3.weight)
-        nn.init.zeros_(self.conv5.weight)
-        self.a = nn.Parameter(torch.tensor(float(init_gate)))
-        self.b = nn.Parameter(torch.tensor(float(init_gate)))
+        self.convs = nn.ModuleDict()
+        self.gates = nn.ParameterDict()
+        for k in self.kernels:
+            conv = nn.Conv2d(
+                in_channels,
+                out_channels,
+                kernel_size=k,
+                padding=k // 2,
+                bias=False,
+            )
+            nn.init.zeros_(conv.weight)
+            self.convs[f"conv{k}"] = conv
+            self.gates[f"gate{k}"] = nn.Parameter(
+                torch.ones(1), requires_grad=learnable_gates
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y3 = torch.tanh(self.a) * self.conv3(x)
-        y5 = torch.tanh(self.b) * self.conv5(x)
-        return x + self.lambda_scale * (y3 + y5)
+        residual = torch.zeros_like(x)
+        for k in self.kernels:
+            residual = residual + (
+                torch.tanh(self.gates[f"gate{k}"])
+                * self.convs[f"conv{k}"](x)
+            )
+        return x + self.lambda_scale * residual
 
 
-class AdaptiveGeM(nn.Module):
-    def __init__(self, p_init: float = 4.0, eps: float = 1e-6):
-        super().__init__()
-        self.p = nn.Parameter(torch.tensor(float(p_init)))
-        self.eps = eps
+def standard_head(
+    feat_dim: int,
+    num_classes: int,
+    hidden: int = 512,
+    dropout: float = 0.4,
+) -> nn.Sequential:
+    return nn.Sequential(
+        nn.BatchNorm1d(feat_dim),
+        nn.Dropout(dropout),
+        nn.Linear(feat_dim, hidden),
+        nn.ReLU(inplace=True),
+        nn.BatchNorm1d(hidden),
+        nn.Dropout(dropout * 0.5),
+        nn.Linear(hidden, num_classes),
+    )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        p = torch.clamp(self.p, min=0.1, max=10.0)
-        x = x.clamp(min=self.eps)
-        x = F.avg_pool2d(x.pow(p), kernel_size=(x.size(-2), x.size(-1)))
-        return x.pow(1.0 / p)
 
+class ResNet18Variant(nn.Module):
+    """ResNet-18 + GAP, có/không AMKC trước stem."""
 
-class AdaptiveCNN(nn.Module):
     def __init__(
         self,
         num_classes: int,
-        lambda_scale: float = 0.2,
-        p_init: float = 4.0,
-        pretrained: bool = True,
+        use_amkc: bool = False,
+        pretrained: bool = False,
+        hidden: int = 512,
+        dropout: float = 0.4,
+        lambda_scale: float = 0.10,
+        kernels: list[int] | None = None,
     ):
         super().__init__()
-        self.amkc = AdaptiveMultiKernelConv(
-            channels=3, lambda_scale=lambda_scale, init_gate=1.0
-        )
-
+        if use_amkc:
+            self.amkc = AdaptiveMultiKernelConv(
+                in_channels=3,
+                out_channels=3,
+                lambda_scale=lambda_scale,
+                kernels=kernels,
+            )
         weights = models.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None
         backbone = models.resnet18(weights=weights)
-        self.backbone = nn.Sequential(
+        self.stem = nn.Sequential(
             backbone.conv1,
             backbone.bn1,
             backbone.relu,
             backbone.maxpool,
-            backbone.layer1,
-            backbone.layer2,
-            backbone.layer3,
-            backbone.layer4,
+        )
+        self.layer1 = backbone.layer1
+        self.layer2 = backbone.layer2
+        self.layer3 = backbone.layer3
+        self.layer4 = backbone.layer4
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.head = standard_head(
+            backbone.fc.in_features, num_classes, hidden, dropout
         )
 
-        self.pool = AdaptiveGeM(p_init=p_init)
-        self.feature_dim = 512
-        self.dropout = nn.Dropout(0.3)
-        self.classifier = nn.Linear(self.feature_dim, num_classes)
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.amkc(x)
-        x = self.backbone(x)
+        if hasattr(self, "amkc"):
+            x = self.amkc(x)
+        x = self.stem(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
         x = self.pool(x)
-        x = torch.flatten(x, 1)
-        x = self.dropout(x)
-        return self.classifier(x)
+        return self.head(x.flatten(1))
+
+
+def build_resnet50(num_classes: int) -> nn.Module:
+    model = models.resnet50(weights=None)
+    model.fc = standard_head(model.fc.in_features, num_classes)
+    return model
+
+
+def build_efficientnet_b0(num_classes: int) -> nn.Module:
+    model = models.efficientnet_b0(weights=None)
+    model.classifier = standard_head(
+        model.classifier[1].in_features, num_classes
+    )
+    return model
+
+
+def build_densenet121(num_classes: int) -> nn.Module:
+    model = models.densenet121(weights=None)
+    model.classifier = standard_head(
+        model.classifier.in_features, num_classes
+    )
+    return model
+
+
+def build_model(model_name: str, num_classes: int, config: dict[str, Any]) -> nn.Module:
+    if model_name == "ResNet-18 Baseline":
+        return ResNet18Variant(num_classes, use_amkc=False, pretrained=False)
+    if model_name == "ResNet-18 + AMKC":
+        return ResNet18Variant(
+            num_classes,
+            use_amkc=True,
+            pretrained=False,
+            lambda_scale=config.get("lambda_scale", 0.10),
+            kernels=config.get("amkc_kernels", [3, 5]),
+        )
+    if model_name == "ResNet-50":
+        return build_resnet50(num_classes)
+    if model_name == "EfficientNet-B0":
+        return build_efficientnet_b0(num_classes)
+    if model_name == "DenseNet-121":
+        return build_densenet121(num_classes)
+    raise ValueError(f"Kiến trúc CNN không hỗ trợ: {model_name}")
 
 
 # =============================================================================
-# PREDICTOR — singleton lazy (load checkpoint tốn vài giây, chỉ load 1 lần/process)
+# PREDICTOR — cache lazy theo model id
 # =============================================================================
 
 
 class SkinCNNPredictor:
     def __init__(self, checkpoint_path: str):
-        self.device = torch.device("cpu")
-
         checkpoint = torch.load(
-            checkpoint_path, map_location=self.device, weights_only=False
+            checkpoint_path, map_location="cpu", weights_only=True
         )
-
+        self.model_name: str = checkpoint["model_name"]
         self.class_names: list[str] = checkpoint["class_names"]
         self.num_classes: int = checkpoint.get(
             "num_classes", len(self.class_names)
         )
-        config = checkpoint.get("config", {})
-
-        self.model = AdaptiveCNN(
-            num_classes=self.num_classes,
-            lambda_scale=config.get("lambda_scale", 0.2),
-            p_init=config.get("p_init", 4.0),
-            pretrained=False,
-        )
+        config = checkpoint.get("architecture_config", {}) or {}
+        self.model = build_model(self.model_name, self.num_classes, config)
         self.model.load_state_dict(checkpoint["model_state_dict"], strict=True)
         self.model.eval()
 
+        norm = checkpoint.get(
+            "normalization", {"mean": IMAGENET_MEAN, "std": IMAGENET_STD}
+        )
+        img_size = checkpoint.get("image_size", IMG_SIZE)
         self.transform = transforms.Compose(
             [
-                transforms.Resize((IMG_SIZE, IMG_SIZE)),
+                transforms.Resize((img_size, img_size)),
                 transforms.ToTensor(),
-                transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
+                transforms.Normalize(norm["mean"], norm["std"]),
             ]
         )
 
@@ -150,32 +227,41 @@ class SkinCNNPredictor:
         x = (
             cast(torch.Tensor, self.transform(image))
             .unsqueeze(0)
-            .to(self.device)
+            .to(torch.device("cpu"))
         )
-
         logits = self.model(x)
         probabilities = torch.softmax(logits, dim=1)[0]
         top_k = min(top_k, self.num_classes)
         scores, indices = torch.topk(probabilities, k=top_k)
-
         return [
             {
                 "rank": rank,
                 "disease": self.class_names[int(index.item())],
                 "confidence": float(score.item()),
             }
-            for rank, (score, index) in enumerate(zip(scores, indices), start=1)
+            for rank, (score, index) in enumerate(
+                zip(scores, indices), start=1
+            )
         ]
 
 
-_predictor: SkinCNNPredictor | None = None
+_predictors: dict[str, SkinCNNPredictor] = {}
+_lock = threading.Lock()
 
 
-def get_predictor() -> SkinCNNPredictor:
-    global _predictor
-    if _predictor is None:
-        _predictor = SkinCNNPredictor(settings.SKIN_CNN_CHECKPOINT_PATH)
-    return _predictor
+def get_predictor(model_id: str | None = None) -> SkinCNNPredictor:
+    mid = model_id or settings.SKIN_CNN_DEFAULT_MODEL
+    if mid not in settings.SKIN_CNN_MODELS:
+        raise ValueError(f"model CNN không hợp lệ: {mid}")
+    with _lock:
+        p = _predictors.get(mid)
+        if p is None:
+            path = Path(settings.SKIN_CNN_MODEL_DIR) / settings.SKIN_CNN_MODELS[mid]
+            logger.info("load checkpoint CNN: id=%s file=%s", mid, path.name)
+            p = SkinCNNPredictor(str(path))
+            logger.info("loaded CNN model: %s (%d classes)", p.model_name, p.num_classes)
+            _predictors[mid] = p
+        return p
 
 
 def _format_predictions(results: list[dict[str, Any]]) -> str:
@@ -187,7 +273,7 @@ def _format_predictions(results: list[dict[str, Any]]) -> str:
 
 
 def _resolve_object_key(object_key: str, turn_keys: list[str]) -> str:
-    """LLM hay chép sai 1-2 ký tự trong `object_key`"""
+    """LLM hay chép sai 1-2 ký tự trong `object_key`."""
     if not turn_keys or object_key in turn_keys:
         return object_key
     if len(turn_keys) == 1:
@@ -222,13 +308,11 @@ async def classify_skin_image(
     if image_bytes is None:
         return f"Không tìm thấy ảnh với object_key='{object_key}'."
 
-    predictor = get_predictor()
-    # torch inference (CPU) là tác vụ đồng bộ, chặn CPU — chạy trong thread riêng để
-    # không block event loop của Agent Worker (đang xử lý các turn/hội thoại khác).
+    predictor = get_predictor(ctx.image_model)
     results = await asyncio.to_thread(predictor.predict, image_bytes, 5)
 
     return (
-        "Kết quả phân loại ảnh (CNN, KHÔNG phải chẩn đoán y khoa):\n"
+        f"Kết quả phân loại ảnh ({predictor.model_name}, KHÔNG phải chẩn đoán y khoa):\n"
         + _format_predictions(results)
         + "\n\nCần đối chiếu tên bệnh top-1 qua hybrid_retrieval "
         "trước khi kết luận."

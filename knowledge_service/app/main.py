@@ -1,6 +1,13 @@
+import asyncio
+import sys
 from contextlib import asynccontextmanager
 
 import uvicorn
+import uvicorn.loops.asyncio as _uvloop
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    _uvloop.asyncio_loop_factory = lambda use_subprocess=False: asyncio.SelectorEventLoop
 from derma_shared.log import RequestLogMiddleware, setup_logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,4 +46,4 @@ app.include_router(internal_router)
 app.include_router(internal_case_router)
 
 if __name__ == "__main__":
-    uvicorn.run("app.main:app", host="0.0.0.0", port=settings.PORT, reload=False)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=settings.PORT, reload=False, loop="asyncio")

@@ -90,6 +90,10 @@ public class MessageService {
             conversation.model = input.modelId();
             conversations.save(conversation);
         }
+        if (input.imageModelId() != null && properties.imageModels().contains(input.imageModelId()) && !input.imageModelId().equals(conversation.imageModel)) {
+            conversation.imageModel = input.imageModelId();
+            conversations.save(conversation);
+        }
         Turn turn = openTurn(conversationId, input.content(), attachments);
         announce(turn.user(), attachments);
         dispatch(new AiClient.TurnRequest("turn", conversationId, turn.assistant().id, turn.user().id, input.clientMessageId(), input.content(),

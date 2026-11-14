@@ -16,6 +16,7 @@ import {
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_TOTAL_BYTES,
   MODEL_OPTIONS,
+  IMAGE_MODEL_OPTIONS,
   SKILL_OPTIONS,
   type SkillOption,
 } from "../constants";
@@ -93,6 +94,11 @@ export function ChatInput({
   const stopTurn = useChatStore((s) => s.stopTurn);
   const selectedModelId = useChatStore((s) => s.selectedModelId);
   const setModel = useChatStore((s) => s.setModel);
+  const selectedImageModelId = useChatStore((s) => s.selectedImageModelId);
+  const setImageModel = useChatStore((s) => s.setImageModel);
+  const selectedImageModel =
+    IMAGE_MODEL_OPTIONS.find((m) => m.id === selectedImageModelId) ??
+    IMAGE_MODEL_OPTIONS[0];
   const draft = useComposerStore((s) => s.draft);
   const setDraft = useComposerStore((s) => s.setDraft);
   const streaming = useChatStore((s) =>
@@ -521,6 +527,40 @@ export function ChatInput({
                     onValueChange={(val) => setModel(val)}
                   >
                     {MODEL_OPTIONS.map((model) => (
+                      <DropdownMenuRadioItem
+                        key={model.id}
+                        value={model.id}
+                        className="flex flex-col items-start gap-0.5 py-2 rounded-lg"
+                      >
+                        <span className="text-xs font-semibold text-foreground">
+                          {model.label}
+                        </span>
+                        <span className="text-[11px] leading-snug text-muted-foreground">
+                          {model.description}
+                        </span>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 rounded-lg border border-border/80 bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:border-brand/40 hover:bg-muted transition-all cursor-pointer"
+                  >
+                    <span className="text-brand">CNN</span>
+                    <span>{selectedImageModel.label}</span>
+                    <ChevronDown className="size-3.5 opacity-60" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-64 rounded-xl border border-border shadow-xl p-1">
+                  <DropdownMenuRadioGroup
+                    value={selectedImageModelId}
+                    onValueChange={(val) => setImageModel(val)}
+                  >
+                    {IMAGE_MODEL_OPTIONS.map((model) => (
                       <DropdownMenuRadioItem
                         key={model.id}
                         value={model.id}

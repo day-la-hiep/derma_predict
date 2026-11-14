@@ -30,7 +30,7 @@ def _rt(keys: list[str]) -> Any:
 def _patches(vision: str = "vision"):
     return (
         patch.object(image_tools, "get_attachment_store", lambda: _Store()),
-        patch.object(image_tools, "get_predictor", lambda: _Predictor()),
+        patch.object(image_tools, "get_predictor", lambda *a, **k: _Predictor()),
         patch.object(image_tools, "search_similar_cases", AsyncMock(return_value=[{"diagnosis": "Eczema", "doctor_reasoning": "ngứa, khô da"}])),
         patch.object(image_tools, "describe_skin_image", AsyncMock(return_value="Mảng đỏ, có vảy")),
         patch.object(image, "emit_tool_step", AsyncMock()),

@@ -36,6 +36,34 @@ export const MODEL_OPTIONS: ModelOption[] = [
   },
 ];
 
+export const IMAGE_MODEL_OPTIONS: ModelOption[] = [
+  {
+    id: "efficientnet-b0",
+    label: "EfficientNet-B0",
+    description: "Nhẹ nhất (18MB), 70% — mặc định",
+  },
+  {
+    id: "resnet18-baseline",
+    label: "ResNet-18 Baseline",
+    description: "44MB, 68.5%",
+  },
+  {
+    id: "resnet18-amkc",
+    label: "ResNet-18 + AMKC",
+    description: "44MB, 69.5% (có AMKC)",
+  },
+  {
+    id: "resnet50",
+    label: "ResNet-50",
+    description: "94MB, 75.1% — tốt nhất",
+  },
+  {
+    id: "densenet121",
+    label: "DenseNet-121",
+    description: "29MB, 72.0%",
+  },
+];
+
 /** Danh sách Kỹ năng (Skills) hiển thị khi gõ "/" trong ô nhập chat */
 export const SKILL_OPTIONS: SkillOption[] = [
   {

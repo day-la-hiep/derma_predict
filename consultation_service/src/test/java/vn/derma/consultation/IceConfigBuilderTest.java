@@ -20,7 +20,7 @@ class IceConfigBuilderTest {
 
     private IceConfigBuilder builder(String turnUrl, String meteredUser) {
         var webrtc = new DermaProperties.Webrtc(List.of("stun:s:1"), turnUrl, "bi-mat", 3600, "relay.example", meteredUser, meteredUser.isEmpty() ? "" : "mat-khau");
-        return new IceConfigBuilder(new DermaProperties(null, null, null, null, null, null, 0, 0, null, webrtc));
+        return new IceConfigBuilder(new DermaProperties(null, null, null, null, null, null, null, null, 0, 0, null, webrtc));
     }
 
     @Test

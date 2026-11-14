@@ -18,7 +18,7 @@ public final class MessageDtos {
     public record AttachedFile(@NotBlank String storageKey) {
     }
 
-    public record SendMessageInput(@NotBlank String clientMessageId, @NotNull String content, String modelId, List<AttachedFile> attachedFiles) {
+    public record SendMessageInput(@NotBlank String clientMessageId, @NotNull String content, String modelId, String imageModelId, List<AttachedFile> attachedFiles) {
     }
 
     public record AnswerInput(@NotBlank String optionId, @NotBlank String label, Boolean custom) {
@@ -43,6 +43,6 @@ public final class MessageDtos {
     public record MessageInfo(String id, String conversationId, String sender, String content, String createdAt, List<FileDto> files) {
     }
 
-    public record ConversationInfo(String userId, String patientProfileId, String model) {
+    public record ConversationInfo(String userId, String patientProfileId, String model, String imageModel) {
     }
 }
