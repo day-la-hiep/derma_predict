@@ -846,12 +846,62 @@ Dịch vụ giữ checkpoint của đồ thị lập luận và bộ nhớ dài 
 \subsection{Đăng nhập và đăng ký}
 
 \textbf{Đăng nhập}
+\textbf{Thiết kế biểu đồ lớp chi tiết cho client (đăng nhập):}
+\begin{itemize}[label=\textbullet, itemsep=0.4em]
+  \item \textbf{AuthScreen.tsx}: giao diện đăng nhập, chứa các trường username (input), password (input) và nút login (button).
+  \item \textbf{client.ts}: lớp gọi API, cung cấp phương thức fetchApi().
+  \item \textbf{localStorage}: lưu trữ token phiên đăng nhập, cung cấp:
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item setItem()
+    \item getItem()
+    \item removeItem()
+  \end{itemize}
+  \item \textbf{User} (lớp cha): username: String, fullName: String, dob: Date, gender: String, passwordHash: String, createAt: Date.
+  \item \textbf{Admin}, \textbf{Doctor}, \textbf{PatientProfile}: kế thừa từ User (Doctor có thêm description; PatientProfile có phone).
+\end{itemize}
+
+\vspace{0.5em}\noindent\textcolor{gray}{\rule{\linewidth}{0.4pt}}\vspace{0.5em}
+
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/chi_tiet_client_dang_nhap.jpg}
   \caption{Biểu đồ lớp chi tiết chức năng đăng nhập (client)}
   \label{fig:class_login_client}
 \end{figure}
+
+\textbf{Thiết kế biểu đồ lớp chi tiết cho \dbname{identity\_service} (đăng nhập):}
+\begin{itemize}[label=\textbullet, itemsep=0.4em]
+  \item \textbf{AuthController}: tiếp nhận yêu cầu đăng nhập, thuộc tính auth: AuthService.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{login(username): User}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: username
+      \item output: User
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{AuthService}: chứa logic nghiệp vụ đăng nhập, thuộc tính userRepository: UserRepository, token: TokenService.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{login(username): User}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: username
+      \item output: User
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{TokenService}: tạo access/refresh token.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item createAccessToken()
+    \item createRefreshToken()
+  \end{itemize}
+  \item \textbf{Redis}: lưu/xoá refresh token.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item set()
+    \item delete()
+  \end{itemize}
+  \item \textbf{UserRepository}: tầng truy xuất dữ liệu người dùng, triển khai giao diện JpaRepository.
+  \item \textbf{User} (lớp cha) và các lớp con Admin, Doctor, PatientProfile: các thực thể người dùng.
+\end{itemize}
+
+\vspace{0.5em}\noindent\textcolor{gray}{\rule{\linewidth}{0.4pt}}\vspace{0.5em}
 
 \begin{figure}[H]
   \centering
@@ -861,12 +911,62 @@ Dịch vụ giữ checkpoint của đồ thị lập luận và bộ nhớ dài 
 \end{figure}
 
 \textbf{Đăng ký}
+\textbf{Thiết kế biểu đồ lớp chi tiết cho client (đăng ký):}
+\begin{itemize}[label=\textbullet, itemsep=0.4em]
+  \item \textbf{AuthScreen.tsx}: giao diện đăng ký, chứa các trường username (input), password (input), fullName (input), dob (input), gender (select), confirmPassword (input) và nút register (button).
+  \item \textbf{client.ts}: lớp gọi API, cung cấp phương thức fetchApi().
+  \item \textbf{localStorage}: lưu trữ token, cung cấp:
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item setItem()
+    \item getItem()
+    \item removeItem()
+  \end{itemize}
+  \item \textbf{User} (lớp cha): username: String, fullName: String, dob: Date, gender: String, passwordHash: String, createAt: Date.
+  \item \textbf{PatientProfile}: kế thừa từ User, bổ sung fullName, dob, gender, phone, createAt.
+\end{itemize}
+
+\vspace{0.5em}\noindent\textcolor{gray}{\rule{\linewidth}{0.4pt}}\vspace{0.5em}
+
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/chi_tiet_client_dang_ki.jpg}
   \caption{Biểu đồ lớp chi tiết chức năng đăng ký (client)}
   \label{fig:class_register_client}
 \end{figure}
+
+\textbf{Thiết kế biểu đồ lớp chi tiết cho \dbname{identity\_service} (đăng ký):}
+\begin{itemize}[label=\textbullet, itemsep=0.4em]
+  \item \textbf{AuthController}: tiếp nhận yêu cầu đăng ký, thuộc tính auth: AuthService.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{register(user: User): User}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: user: User
+      \item output: User
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{AuthService}: chứa logic nghiệp vụ đăng ký, thuộc tính userRepository: UserRepository.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{register(user: User): User}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: user: User
+      \item output: User
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{TokenService}: tạo access/refresh token.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item createAccessToken()
+    \item createRefreshToken()
+  \end{itemize}
+  \item \textbf{Redis}: lưu refresh token.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item set()
+    \item delete()
+  \end{itemize}
+  \item \textbf{UserRepository}, \textbf{PatientProfileRepository}: tầng truy xuất dữ liệu, triển khai giao diện JpaRepository.
+  \item \textbf{User}, \textbf{PatientProfile}: các thực thể người dùng và hồ sơ bệnh nhân.
+\end{itemize}
+
+\vspace{0.5em}\noindent\textcolor{gray}{\rule{\linewidth}{0.4pt}}\vspace{0.5em}
 
 \begin{figure}[H]
   \centering
@@ -911,12 +1011,68 @@ Dịch vụ giữ checkpoint của đồ thị lập luận và bộ nhớ dài 
 
 \subsubsection{Biểu đồ lớp chi tiết}
 
+\textbf{Thiết kế biểu đồ lớp chi tiết cho client (hỏi đáp chatbot):}
+\begin{itemize}[label=\textbullet, itemsep=0.4em]
+  \item \textbf{ChatPage.tsx}: giao diện chat, chứa value (input), fileAtAttach (button), selectedModel (dropdown), selectedSkill (dropdown); cung cấp chat.sse.ts và FetchApi().
+  \item \textbf{chat.sse.ts}: xử lý kết nối SSE, cung cấp FetchApi().
+  \item \textbf{Conversation}: title: String, model: String, kind: String, followUntil: date, createAt: date, updateAt: date, messages: Message[].
+  \item \textbf{Message}: sender: String, messageType: String, content: Int, status: String, metadata: String, createAt: date, messageFiles: MessageFile[].
+  \item \textbf{File}: fileName: String, storageKey: String, contentType: String, size: Int, createAt: date, messageFiles: MessageFile[].
+  \item \textbf{MessageFile}: lớp trung gian liên kết Message và File.
+\end{itemize}
+
+\vspace{0.5em}\noindent\textcolor{gray}{\rule{\linewidth}{0.4pt}}\vspace{0.5em}
+
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/chi_tiet_client_hoi_dap_chatbot.jpg}
   \caption{Biểu đồ lớp chi tiết module hỏi đáp với chatbot (client)}
   \label{fig:uml_class_chatbot_client}
 \end{figure}
+
+\textbf{Thiết kế biểu đồ lớp chi tiết cho \dbname{consultation\_service} (hỏi đáp chatbot):}
+\begin{itemize}[label=\textbullet, itemsep=0.4em]
+  \item \textbf{ConversationController}: tiếp nhận yêu cầu, thuộc tính messageService: MessageService.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{listMessages(): Message[]}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item output: Message[]
+    \end{itemize}
+    \item \textbf{sendMessage(message: Message)}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: message: Message
+    \end{itemize}
+    \item \textbf{cancel()}
+    \item \textbf{answerQuestion(message: Message)}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: message: Message
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{MessageService}: chứa logic nghiệp vụ, thuộc tính messageRepository: MessageRepository.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{send(message: Message)}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: message: Message
+    \end{itemize}
+    \item \textbf{listMessage(): Message[]}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item output: Message[]
+    \end{itemize}
+    \item \textbf{answerQuestion(message: Message)}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: message: Message
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{AIService} (interface):
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item startTurn()
+    \item cancelTurn()
+  \end{itemize}
+  \item \textbf{MessageRepository}: tầng truy xuất dữ liệu, triển khai giao diện JpaRepository.
+  \item \textbf{Conversation}, \textbf{Message}, \textbf{File}, \textbf{MessageFile}: các thực thể cuộc hội thoại, tin nhắn, tệp và liên kết tin nhắn-tệp.
+\end{itemize}
+
+\vspace{0.5em}\noindent\textcolor{gray}{\rule{\linewidth}{0.4pt}}\vspace{0.5em}
 
 \begin{figure}[H]
   \centering
@@ -945,12 +1101,87 @@ Dịch vụ giữ checkpoint của đồ thị lập luận và bộ nhớ dài 
 
 \subsubsection{Biểu đồ lớp chi tiết}
 
+\textbf{Thiết kế biểu đồ lớp chi tiết cho client (đặt lịch hẹn):}
+\begin{itemize}[label=\textbullet, itemsep=0.4em]
+  \item \textbf{AppointmentsView.tsx}: giao diện danh sách lịch hẹn, chứa episodes (Tab), appointments (Tab), cancelling (Button).
+  \item \textbf{api.ts}: lớp gọi API, cung cấp fetchApi().
+  \item \textbf{BookDialog}: hộp thoại đặt lịch, chứa when (Input), reason (Input), booking (Button).
+  \item \textbf{DoctorCasePage.tsx}: giao diện ca khám của bác sĩ, chứa filter, search, appointmentsList (Table), confirm, cancelling.
+  \item \textbf{ClinicalEpisodes}: bodySite: String, status: String, summary: String, urgency: String, redFlag: String, imagePredictions: String, modelVersion: String, openedAt: date, updatedAt: date, closedAt: date, clinicalFacts: ClinicalFact[], appointments: Appointment[].
+  \item \textbf{ClinicalFact}: factType: String, label: String, detail: String, verifiedAt: date, createdAt: date, updatedAt: date.
+  \item \textbf{ClinicalProvenance}: kind: String, quote: String, detail: String, createdAt: date.
+  \item \textbf{Appointment}: doctorName: String, scheduledAt: date, status: String, reason: String, cancelReason: String, createdAt: date.
+  \item \textbf{Encounter}: status: String, openedAt: date, closedAt: date, appointment: Appointment, provenances: ClinicalProvenance[].
+\end{itemize}
+
+\vspace{0.5em}\noindent\textcolor{gray}{\rule{\linewidth}{0.4pt}}\vspace{0.5em}
+
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/chi_tiet_client_dat_lich_kham.jpg}
   \caption{Biểu đồ lớp chi tiết module đặt lịch hẹn và tiếp nhận lần khám (client)}
   \label{fig:uml_class_appointment_client}
 \end{figure}
+
+\textbf{Thiết kế biểu đồ lớp chi tiết cho \dbname{clinical\_service} (đặt lịch hẹn):}
+\begin{itemize}[label=\textbullet, itemsep=0.4em]
+  \item \textbf{AppointmentController}: tiếp nhận yêu cầu, thuộc tính appointmentService: AppointmentService.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{listEpisodes(u: User, profile: String): ClinicalEpisode[]}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: u: User, profile: String
+      \item output: ClinicalEpisode[]
+    \end{itemize}
+    \item \textbf{book(u: User): Appointment}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: u: User
+      \item output: Appointment
+    \end{itemize}
+    \item \textbf{listForDoctor(u: User, status: String): Appointment[]}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: u: User, status: String
+      \item output: Appointment[]
+    \end{itemize}
+    \item \textbf{detail(u: User, id: String): Appointment}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: u: User, id: String
+      \item output: Appointment
+    \end{itemize}
+    \item \textbf{confirm(u: User, id: String): Appointment}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: u: User, id: String
+      \item output: Appointment
+    \end{itemize}
+    \item \textbf{cancel(id: String)}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: id: String
+    \end{itemize}
+    \item \textbf{changeEpisode(id: String, when: date, reason: String)}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: id: String, when: date, reason: String
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{AppointmentService}: chứa logic nghiệp vụ, thuộc tính appointmentRepository, episodes, facts, provenance, encounter; cung cấp các phương thức tương ứng với controller.
+  \item \textbf{AppointmentRepository}: findForDoctor(doctorId: String): Appointment[].
+  \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+    \item input: doctorId: String
+    \item output: Appointment[]
+  \end{itemize}
+  \item \textbf{EncounterRepository}: findByAppointmentId(id: String): Encounter[].
+  \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+    \item input: id: String
+    \item output: Encounter[]
+  \end{itemize}
+  \item \textbf{ClinicalFactRepository}: findByEpisodeId(id: String): ClinicalFact[].
+  \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+    \item input: id: String
+    \item output: ClinicalFact[]
+  \end{itemize}
+  \item \textbf{ClinicalEpisodesRepository}, \textbf{ClinicalProvenanceRepository}: tầng truy xuất dữ liệu, triển khai giao diện JpaRepository.
+  \item \textbf{ClinicalEpisodes}, \textbf{ClinicalFact}, \textbf{ClinicalProvenance}, \textbf{Appointment}, \textbf{Encounter}: các thực thể lâm sàng và lịch hẹn.
+\end{itemize}
+
+\vspace{0.5em}\noindent\textcolor{gray}{\rule{\linewidth}{0.4pt}}\vspace{0.5em}
 
 \begin{figure}[H]
   \centering
@@ -979,12 +1210,73 @@ Dịch vụ giữ checkpoint của đồ thị lập luận và bộ nhớ dài 
 
 \subsubsection{Biểu đồ lớp chi tiết}
 
+\textbf{Thiết kế biểu đồ lớp chi tiết cho client (tư vấn trực tiếp):}
+\begin{itemize}[label=\textbullet, itemsep=0.4em]
+  \item \textbf{FollowChat.tsx}: giao diện chat theo dõi ca khám, chứa message (Input), send (Button), fileAttachment (Button), callVideo (Button), callStream (Button).
+  \item \textbf{api.ts}: lớp gọi API, cung cấp fetchApi().
+  \item \textbf{VideoCall}: status: String, startedAt: DateTime, endedAt: DateTime, createAt: Date.
+  \item \textbf{Conversation}: title: String, model: String, kind: String, followUntil: date, createAt: date, updateAt: date, messages: Message[], videoCalls: VideoCall[].
+  \item \textbf{Message}: sender: String, messageType: String, content: Int, status: String, metadata: String, createAt: date, messageFiles: MessageFile[].
+  \item \textbf{File}: fileName: String, storageKey: String, contentType: String, size: Int, createAt: date, messageFiles: MessageFile[].
+  \item \textbf{MessageFile}: lớp trung gian liên kết Message và File.
+\end{itemize}
+
+\vspace{0.5em}\noindent\textcolor{gray}{\rule{\linewidth}{0.4pt}}\vspace{0.5em}
+
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/chi_tiet_client_bac_si_tu_van.jpg}
   \caption{Biểu đồ lớp chi tiết module tư vấn trực tiếp và gọi video với bác sĩ (client)}
   \label{fig:uml_class_doctor_consulting_client}
 \end{figure}
+
+\textbf{Thiết kế biểu đồ lớp chi tiết cho \dbname{consultation\_service} (tư vấn trực tiếp):}
+\begin{itemize}[label=\textbullet, itemsep=0.4em]
+  \item \textbf{MessageController}: tiếp nhận yêu cầu nhắn tin, thuộc tính messageService: MessageService.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{sendMessage(conversationId: String, message: String): Message}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: conversationId: String, message: String
+      \item output: Message
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{VideoCallController}: tiếp nhận yêu cầu gọi video, thuộc tính videoCallService: VideoCallService.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{start(u: User, conversationId: String): VideoCall}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: u: User, conversationId: String
+      \item output: VideoCall
+    \end{itemize}
+    \item \textbf{acceptCall(conversationId: String, videoCall: VideoCall)}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: conversationId: String, videoCall: VideoCall
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{MessageService}: chứa logic nghiệp vụ nhắn tin, thuộc tính messageRepository: MessageRepository.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{sendMessage(conversationId: String, message: String): Message}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: conversationId: String, message: String
+      \item output: Message
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{VideoCallService}: chứa logic nghiệp vụ gọi video, thuộc tính videoCallRepository: VideoCallRepository.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{start(u: User, conversationId: String): VideoCall}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: u: User, conversationId: String
+      \item output: VideoCall
+    \end{itemize}
+    \item \textbf{acceptCall(conversationId: String, videoCall: VideoCall)}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: conversationId: String, videoCall: VideoCall
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{MessageRepository}, \textbf{VideoCallRepository}: tầng truy xuất dữ liệu, triển khai giao diện JpaRepository.
+  \item \textbf{Message}, \textbf{Conversation}, \textbf{VideoCall}, \textbf{MessageFile}, \textbf{File}: các thực thể tin nhắn, cuộc hội thoại, cuộc gọi video, tệp và liên kết tin nhắn-tệp.
+\end{itemize}
+
+\vspace{0.5em}\noindent\textcolor{gray}{\rule{\linewidth}{0.4pt}}\vspace{0.5em}
 
 \begin{figure}[H]
   \centering
@@ -1019,10 +1311,223 @@ Biểu đồ tuần tự mô tả các bước phối hợp giữa Bác sĩ, Cli
 
 \subsection{Số hóa giáo trình vào Knowledge Base}
 
-\subsubsection{Mô tả luồng}
-Người duyệt tải lên sách giáo khoa PDF. \dbname{knowledge\_service} điều phối Ingest Worker thực thi tuần tự các bước trích xuất nội dung, nhận diện mục lục AI, phân đoạn văn bản và nạp vector vào Qdrant. Người duyệt có thể xem trước và can thiệp sửa đổi kết quả ở từng bước.
+\subsubsection{Biểu đồ lớp chi tiết}
+
+\textbf{Thiết kế biểu đồ lớp chi tiết cho client (số hóa giáo trình):}
+\begin{itemize}[label=\textbullet, itemsep=0.4em]
+  \item \textbf{TocDocumentsPage.tsx}: giao diện danh sách tài liệu, chứa documentTable (table), createButton (button), confirmDialog (dialog), documents: DocumentSummary[], selectedId: String.
+  \item \textbf{DocumentPipelinePage.tsx}: giao diện pipeline số hóa, chứa stepBar (tab), runButton, cancelButton, approveButton, previewPane (image), settingsDialog, runDialog, document: Document, previewPage: Int, step: StepId, selectedId: String.
+  \item \textbf{CreateDocumentDialog.tsx}: hộp thoại tạo tài liệu, chứa fileInput (input), titleInput (input), engineSelect (dropdown), file: File, title: String, engine: String.
+  \item \textbf{hooks.ts}: queryKey: String[], refetchInterval: Int.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{useDocuments(): Query<DocumentSummary[]>}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item output: Query<DocumentSummary[]>
+    \end{itemize}
+    \item \textbf{useDocument(id: String): Query<Document>}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: id: String
+      \item output: Query<Document>
+    \end{itemize}
+    \item \textbf{useStageActions(id: String): StageActions}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: id: String
+      \item output: StageActions
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{documentApi.ts}: lớp gọi API, cung cấp fetchApi().
+  \item \textbf{DocumentSummary}: id: String, title: String, created\_at: date, pdf\_pages: Int, file\_size: Long, states: Record<StepId, StageState>.
+  \item \textbf{DocumentStage}: stage\_id: String, title: String, state: StageState, started\_at: date, finished\_at: date, approved\_at: date, progress: Progress, summary: JSON, error: String, options: JSON.
+  \item \textbf{Document}: id: String, title: String, created\_at: date, source\_file: File, pdf\_pages: Int, stages: Stage[].
+  \item \textbf{File}: file\_name: String, storage\_key: String, content\_type: String, size: Long, created\_at: date, url: String.
+\end{itemize}
+
+\vspace{0.5em}\noindent\textcolor{gray}{\rule{\linewidth}{0.4pt}}\vspace{0.5em}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/client_so_hoa_giao_trinh.jpg}
+  \caption{Biểu đồ lớp chi tiết module số hóa giáo trình vào Knowledge Base (client)}
+  \label{fig:uml_class_so_hoa_client}
+\end{figure}
+
+\textbf{Thiết kế biểu đồ lớp chi tiết cho \dbname{knowledge\_service} (số hóa giáo trình):}
+\begin{itemize}[label=\textbullet, itemsep=0.4em]
+  \item \textbf{DocumentController}: tiếp nhận yêu cầu, thuộc tính documentService: DocumentService, documentIngestPipelineService: DocumentIngestPipelineService.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{create\_document(file: UploadFile, title: String, engine: String): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: file: UploadFile, title: String, engine: String
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{list\_documents(): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{get\_document(document\_id: String): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{run\_stage(document\_id: String, stage\_id: String, options: JSON, force: Boolean): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String, stage\_id: String, options: JSON, force: Boolean
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{cancel\_stage(document\_id: String, stage\_id: String): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String, stage\_id: String
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{approve\_stage(document\_id: String, stage\_id: String): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String, stage\_id: String
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{get\_toc(document\_id: String): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{update\_toc(document\_id: String, body: JSON): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String, body: JSON
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{list\_chunks(document\_id: String, q: String, node: String, page: Int, page\_size: Int): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String, q: String, node: String, page: Int, page\_size: Int
+      \item output: JSON
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{DocumentService}: chứa logic nghiệp vụ tài liệu, thuộc tính repo: DocumentRepository.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{create\_document(upload: UploadFile, title: String, engine: String): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: upload: UploadFile, title: String, engine: String
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{list\_documents(): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{get\_document(document\_id: String): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{get\_toc(document\_id: String): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{update\_toc(document\_id: String, body: JSON): void}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String, body: JSON
+      \item output: void
+    \end{itemize}
+    \item \textbf{list\_chunks(document\_id: String, q: String, node: String, page: Int, page\_size: Int): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String, q: String, node: String, page: Int, page\_size: Int
+      \item output: JSON
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{DocumentIngestPipelineService}: điều phối pipeline, thuộc tính repo: DocumentRepository.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{start\_stage(document\_id: String, stage\_id: String, options: JSON, force: Boolean): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String, stage\_id: String, options: JSON, force: Boolean
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{cancel\_stage(document\_id: String, stage\_id: String): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String, stage\_id: String
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{execute(document\_id: String, stage\_id: String, options: JSON, cancel: Event): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String, stage\_id: String, options: JSON, cancel: Event
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{approve(document\_id: String, stage\_id: String): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String, stage\_id: String
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{reapply(document\_id: String, stage\_id: String): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String, stage\_id: String
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{update\_toc(document\_id: String, body: JSON): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: document\_id: String, body: JSON
+      \item output: JSON
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{FileStoreService}: lưu trữ file, thuộc tính repo: DocumentRepository, documentOverrideRepository: DocumentOverrideRepository.
+  \begin{itemize}[label=$\circ$, itemsep=0.2em, leftmargin=1.5em]
+    \item \textbf{put\_file(name: String, path: Path): void}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: name: String, path: Path
+      \item output: void
+    \end{itemize}
+    \item \textbf{put\_bytes(name: String, data: Bytes): void}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: name: String, data: Bytes
+      \item output: void
+    \end{itemize}
+    \item \textbf{local\_copy(name: String, dest: Path): Path}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: name: String, dest: Path
+      \item output: Path
+    \end{itemize}
+    \item \textbf{read\_json(name: String, default: Any): JSON}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: name: String, default: Any
+      \item output: JSON
+    \end{itemize}
+    \item \textbf{write\_json(name: String, data: JSON): void}
+    \begin{itemize}[label=$\blacksquare$, itemsep=0.1em, leftmargin=1.5em]
+      \item input: name: String, data: JSON
+      \item output: void
+    \end{itemize}
+  \end{itemize}
+  \item \textbf{DocumentRepository}, \textbf{DocumentOverrideRepository}: tầng truy xuất dữ liệu, triển khai giao diện JpaRepository.
+  \item \textbf{DocumentStage}, \textbf{Document}, \textbf{File}, \textbf{DocumentOverride}: các thực thể tài liệu, trạng thái giai đoạn, tệp và ghi đè dữ liệu.
+\end{itemize}
+
+\vspace{0.5em}\noindent\textcolor{gray}{\rule{\linewidth}{0.4pt}}\vspace{0.5em}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/knowledge_service_so_hoa_giao_trinh.jpg}
+  \caption{Biểu đồ lớp chi tiết module số hóa giáo trình vào Knowledge Base (\dbname{knowledge\_service})}
+  \label{fig:uml_class_so_hoa_service}
+\end{figure}
 
 \subsubsection{Biểu đồ tuần tự}
-Mô hình hóa quá trình phối hợp giữa giao diện quản trị, Knowledge Service, Ingest Worker, LLM và cơ sở dữ liệu vector trong pipeline xử lý tài liệu.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/tt_client_so_hoa_gt.jpg}
+  \caption{Biểu đồ tuần tự module số hóa giáo trình vào Knowledge Base (client)}
+  \label{fig:seq_so_hoa_client}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/tt_knowledge_service_so_hoa_gt.jpg}
+  \caption{Biểu đồ tuần tự module số hóa giáo trình vào Knowledge Base (\dbname{knowledge\_service})}
+  \label{fig:seq_so_hoa_service}
+\end{figure}
 
 \section{Kết luận}
+
+Chương này phân tích yêu cầu của hệ thống hỗ trợ tiền chẩn đoán và tư vấn bệnh da liễu. Bốn tác nhân gồm người dùng, bệnh nhân, bác sĩ và quản trị viên; sáu use case chính được đặc tả với tiền điều kiện, hậu điều kiện, kịch bản chính và ngoại lệ. Kết quả phân tích là đầu vào cho phần thiết kế thực thể và thiết kế kiến trúc.
+
+Sơ đồ lớp thực thể chia thành bốn nhóm miền: người dùng và hồ sơ, hội thoại và tương tác, lâm sàng và bệnh án, kho tri thức và tài liệu. Trong cùng một service, quan hệ giữa các lớp dùng khoá ngoại. Giữa các service, các lớp tham chiếu nhau bằng id mềm, ví dụ dòng lưu vết dữ kiện lâm sàng giữ mã tin nhắn của service tư vấn, nên tính toàn vẹn dữ liệu do tầng ứng dụng bảo đảm thay vì ràng buộc cơ sở dữ liệu.
+
+Hệ thống gồm sáu service: gateway, identity, consultation, clinical, knowledge và ai. Gateway là điểm truy cập duy nhất tại cổng 3040, định tuyến theo tiền tố đường dẫn và không kiểm tra token; mỗi service tự xác thực JWT bằng khoá dùng chung. Bốn service lưu trữ quan hệ sở hữu database riêng, service AI giữ checkpoint của đồ thị lập luận trong schema riêng, dữ liệu còn lại nằm ở Qdrant, Neo4j, MinIO, RabbitMQ và Redis. Giao tiếp đồng bộ đi qua REST nội bộ kèm khoá \texttt{X-Internal-Key}; pipeline số hóa chạy bất đồng bộ qua RabbitMQ; sự kiện của lượt chat đi qua Redis Stream để phục vụ SSE.
+
+Các mục thiết kế trong chương đi theo một trình tự thống nhất: tác nhân và use case xác định lớp thực thể, sơ đồ lớp xác định lược đồ dữ liệu của từng service, và lược đồ quyết định cách các service trao đổi với nhau. Nhờ trình tự đó, mỗi chức năng chính truy vết được từ kịch bản sử dụng tới một lớp, một bảng và một luồng xử lý cụ thể. Chương này dừng ở mức thiết kế; số đo hiệu năng, độ trễ và độ chính xác của từng luồng thuộc phần cài đặt và đánh giá.
