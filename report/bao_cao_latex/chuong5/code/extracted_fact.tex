@@ -1,0 +1,31 @@
+﻿\begin{Verbatim}[commandchars=\\\{\},numbers=left,numbersep=5pt,frame=single,framesep=4pt,breaklines=true,breakanywhere=true,fontsize=\fontsize{9pt}{10.5pt}\selectfont]
+\PY{k}{class}\PY{+w}{ }\PY{n+nc}{ExtractedFact}\PY{p}{(}\PY{n}{BaseModel}\PY{p}{)}\PY{p}{:}
+    \PY{n}{template\PYZus{}label}\PY{p}{:} \PY{n+nb}{str} \PY{o}{=} \PY{n}{Field}\PY{p}{(}\PY{n}{description}\PY{o}{=}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{Ten ngan cua du kien (toi da 8 tu)}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{n}{fact\PYZus{}type}\PY{p}{:} \PY{n}{FactType}            \PY{c+c1}{\PYZsh{} symptom, lesion, history, medication, allergy, other}
+    \PY{n}{detail}\PY{p}{:} \PY{n+nb}{str} \PY{o}{=} \PY{n}{Field}\PY{p}{(}\PY{n}{description}\PY{o}{=}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{Chi tiet theo loi nguoi benh (toi da 25 tu)}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{n}{body\PYZus{}site}\PY{p}{:} \PY{n+nb}{str} \PY{o}{=} \PY{n}{Field}\PY{p}{(}\PY{n}{default}\PY{o}{=}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{\PYZdq{}}\PY{p}{,} \PY{n}{description}\PY{o}{=}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{Vung da; rong neu chua ro hoac la history/medication/allergy}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+    \PY{n}{source\PYZus{}messages}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n+nb}{int}\PY{p}{]} \PY{o}{=} \PY{n}{Field}\PY{p}{(}\PY{n}{default\PYZus{}factory}\PY{o}{=}\PY{n+nb}{list}\PY{p}{)}
+
+
+\PY{k}{class}\PY{+w}{ }\PY{n+nc}{ExtractedFacts}\PY{p}{(}\PY{n}{BaseModel}\PY{p}{)}\PY{p}{:}
+    \PY{n}{facts}\PY{p}{:} \PY{n+nb}{list}\PY{p}{[}\PY{n}{ExtractedFact}\PY{p}{]} \PY{o}{=} \PY{n}{Field}\PY{p}{(}\PY{n}{default\PYZus{}factory}\PY{o}{=}\PY{n+nb}{list}\PY{p}{)}
+
+
+\PY{k}{def}\PY{+w}{ }\PY{n+nf}{validate\PYZus{}facts\PYZus{}evidence}\PY{p}{(}\PY{n}{raw\PYZus{}facts}\PY{p}{,} \PY{n}{messages\PYZus{}content}\PY{p}{)}\PY{p}{:}
+    \PY{n}{valid\PYZus{}facts} \PY{o}{=} \PY{p}{[}\PY{p}{]}
+    \PY{n}{total\PYZus{}messages} \PY{o}{=} \PY{n+nb}{len}\PY{p}{(}\PY{n}{messages\PYZus{}content}\PY{p}{)}
+    \PY{k}{for} \PY{n}{rf} \PY{o+ow}{in} \PY{n}{raw\PYZus{}facts}\PY{p}{:}
+        \PY{n}{source\PYZus{}indices} \PY{o}{=} \PY{n}{rf}\PY{o}{.}\PY{n}{get}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{source\PYZus{}messages}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)} \PY{o+ow}{or} \PY{p}{[}\PY{p}{]}
+        \PY{n}{valid\PYZus{}indices} \PY{o}{=} \PY{p}{[}\PY{n}{i} \PY{k}{for} \PY{n}{i} \PY{o+ow}{in} \PY{n}{source\PYZus{}indices}
+                        \PY{k}{if} \PY{n+nb}{isinstance}\PY{p}{(}\PY{n}{i}\PY{p}{,} \PY{n+nb}{int}\PY{p}{)} \PY{o+ow}{and} \PY{l+m+mi}{1} \PY{o}{\PYZlt{}}\PY{o}{=} \PY{n}{i} \PY{o}{\PYZlt{}}\PY{o}{=} \PY{n}{total\PYZus{}messages}\PY{p}{]}
+        \PY{k}{if} \PY{n}{valid\PYZus{}indices}\PY{p}{:}
+            \PY{n}{source\PYZus{}text} \PY{o}{=} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{ }\PY{l+s+s2}{\PYZdq{}}\PY{o}{.}\PY{n}{join}\PY{p}{(}\PY{n}{messages\PYZus{}content}\PY{p}{[}\PY{n}{i} \PY{o}{\PYZhy{}} \PY{l+m+mi}{1}\PY{p}{]} \PY{k}{for} \PY{n}{i} \PY{o+ow}{in} \PY{n}{valid\PYZus{}indices}\PY{p}{)}
+            \PY{n}{source\PYZus{}tokens} \PY{o}{=} \PY{n}{tokenize}\PY{p}{(}\PY{n}{source\PYZus{}text}\PY{p}{)}
+            \PY{n}{fact\PYZus{}tokens} \PY{o}{=} \PY{n}{tokenize}\PY{p}{(}\PY{l+s+sa}{f}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+si}{\PYZob{}}\PY{n}{rf}\PY{o}{.}\PY{n}{get}\PY{p}{(}\PY{l+s+s1}{\PYZsq{}}\PY{l+s+s1}{template\PYZus{}label}\PY{l+s+s1}{\PYZsq{}}\PY{p}{,}\PY{l+s+s1}{\PYZsq{}}\PY{l+s+s1}{\PYZsq{}}\PY{p}{)}\PY{l+s+si}{\PYZcb{}}\PY{l+s+s2}{ }\PY{l+s+si}{\PYZob{}}\PY{n}{rf}\PY{o}{.}\PY{n}{get}\PY{p}{(}\PY{l+s+s1}{\PYZsq{}}\PY{l+s+s1}{detail}\PY{l+s+s1}{\PYZsq{}}\PY{p}{,}\PY{l+s+s1}{\PYZsq{}}\PY{l+s+s1}{\PYZsq{}}\PY{p}{)}\PY{l+s+si}{\PYZcb{}}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+            \PY{k}{if} \PY{n}{fact\PYZus{}tokens} \PY{o+ow}{and} \PY{n}{source\PYZus{}tokens} \PY{o+ow}{and} \PY{n+nb}{len}\PY{p}{(}\PY{n}{fact\PYZus{}tokens} \PY{o}{\PYZam{}} \PY{n}{source\PYZus{}tokens}\PY{p}{)} \PY{o}{==} \PY{l+m+mi}{0}\PY{p}{:}
+                \PY{n}{logger}\PY{o}{.}\PY{n}{warning}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{Fact khong khop tu khoa voi tin nhan nguon}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}
+        \PY{n}{rf}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{source\PYZus{}messages}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]} \PY{o}{=} \PY{n}{valid\PYZus{}indices}
+        \PY{n}{rf}\PY{p}{[}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{detail}\PY{l+s+s2}{\PYZdq{}}\PY{p}{]} \PY{o}{=} \PY{n+nb}{str}\PY{p}{(}\PY{n}{rf}\PY{o}{.}\PY{n}{get}\PY{p}{(}\PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{detail}\PY{l+s+s2}{\PYZdq{}}\PY{p}{,} \PY{l+s+s2}{\PYZdq{}}\PY{l+s+s2}{\PYZdq{}}\PY{p}{)}\PY{p}{)}\PY{o}{.}\PY{n}{strip}\PY{p}{(}\PY{p}{)}\PY{p}{[}\PY{p}{:}\PY{n}{DETAIL\PYZus{}MAX\PYZus{}CHARS}\PY{p}{]}
+        \PY{n}{valid\PYZus{}facts}\PY{o}{.}\PY{n}{append}\PY{p}{(}\PY{n}{rf}\PY{p}{)}
+    \PY{k}{return} \PY{n}{valid\PYZus{}facts}
+\end{Verbatim}
