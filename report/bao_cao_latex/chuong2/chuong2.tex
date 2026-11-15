@@ -977,11 +977,37 @@ Dịch vụ giữ checkpoint của đồ thị lập luận và bộ nhớ dài 
 
 \subsection{Tư vấn trực tiếp và gọi video với bác sĩ}
 
-\subsubsection{Mô tả luồng}
-Trong quá trình khám, bác sĩ và bệnh nhân trao đổi trực tiếp thông qua kênh chat hoặc cuộc gọi video trực tuyến (WebRTC). Bác sĩ có thể yêu cầu bệnh nhân chụp ảnh bổ sung và quan sát trực tiếp tổn thương qua video call.
+\subsubsection{Biểu đồ lớp chi tiết}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/chi_tiet_client_bac_si_tu_van.jpg}
+  \caption{Biểu đồ lớp chi tiết module tư vấn trực tiếp và gọi video với bác sĩ (client)}
+  \label{fig:uml_class_doctor_consulting_client}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/chi_tiet_consultation_service_bac_si_tu_van.jpg}
+  \caption{Biểu đồ lớp chi tiết module tư vấn trực tiếp và gọi video với bác sĩ (\dbname{clinical\_service})}
+  \label{fig:uml_class_doctor_consulting_service}
+\end{figure}
 
 \subsubsection{Biểu đồ tuần tự}
-Biểu đồ tuần tự mô tả quá trình trao đổi tín hiệu (Signaling) và thiết lập kênh truyền dữ liệu video thời gian thực giữa hai phía dưới sự điều phối của \dbname{consultation\_service}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/tt_client_bac_si_tu_van.jpg}
+  \caption{Biểu đồ tuần tự module tư vấn trực tiếp và gọi video với bác sĩ (client)}
+  \label{fig:seq_appointment_client}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\linewidth,height=0.7\textheight,keepaspectratio]{chuong2/hinh/tt_consultation_service_bac_si_tu_van.jpg}
+  \caption{Biểu đồ tuần tự module tư vấn trực tiếp và gọi video với bác sĩ (\dbname{clinical\_service})}
+  \label{fig:seq_clinical_service}
+\end{figure}
 
 \subsection{Chốt báo cáo kết luận và nạp ca bệnh}
 
