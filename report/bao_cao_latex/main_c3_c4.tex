@@ -11,7 +11,15 @@
 
 \usepackage{fontspec}
 \setmainfont{Times New Roman}[Ligatures=TeX]
-\IfFontExistsTF{JetBrains Mono}{\setmonofont{JetBrains Mono}[Scale=0.9]}{\setmonofont{JetBrainsMono Nerd Font Mono}[Scale=0.9]}
+\IfFontExistsTF{Consolas}{%
+  \setmonofont{Consolas}[Scale=0.9]%
+}{%
+  \IfFontExistsTF{JetBrains Mono}{%
+    \setmonofont{JetBrains Mono}[Scale=0.9]%
+  }{%
+    \setmonofont{Courier New}[Scale=0.9]%
+  }%
+}
 \usepackage[a4paper,top=2.5cm,bottom=2.5cm,left=3cm,right=2cm]{geometry}
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
